@@ -1,6 +1,6 @@
 <h1 align="center"> Quickshell Rise </h1>
 
-<h4 align="center"> My Quickshell bar for Omarchy — modular, split-able, with a control center. Enjoy! </h4>
+<h4 align="center"> My Quickshell bar for Omarchy — my new Rise journey into Quickshell starts here. Enjoy! </h4>
 <div align="center">
 
 [![Stars](https://img.shields.io/github/stars/HANCORE-linux/quickshell-dots?style=for-the-badge&labelColor=000000&color=df6124&logo=github&logoColor=df6124)](https://github.com/HANCORE-linux/quickshell-dots)
