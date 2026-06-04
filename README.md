@@ -67,4 +67,5 @@ Every install also backs up the old config to `~/.config/quickshell/bar.bak.<tim
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
 ```
+The bar starts right away so you can try it. You'll be **asked** whether to enable autostart on login — skip it to just test, or pass `--autostart` / `--no-autostart` to decide non-interactively.
 <!-- drag a screenshot here on GitHub to embed it -->

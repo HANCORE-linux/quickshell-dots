@@ -7,7 +7,17 @@ set -euo pipefail
 
 REPO_URL="https://github.com/HANCORE-linux/quickshell-dots.git"
 DEST="$HOME/.config/quickshell/bar"
-WANT_VERSION="${1:-}"
+
+# args: a version name and/or --autostart / --no-autostart
+WANT_VERSION=""
+AUTOSTART=""   # "" = ask, 1 = yes, 0 = no
+for a in "$@"; do
+  case "$a" in
+    --autostart)    AUTOSTART=1 ;;
+    --no-autostart) AUTOSTART=0 ;;
+    *)              WANT_VERSION="$a" ;;
+  esac
+done
 
 c_b=$'\e[1m'; c_g=$'\e[32m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
 info() { printf "%s==>%s %s\n" "$c_g" "$c_0" "$*"; }
@@ -56,18 +66,27 @@ mkdir -p "$DEST"
 cp -r "$tmp/repo/versions/$choice/." "$DEST/"
 info "Installed '${c_b}$choice${c_0}' → $DEST"
 
-# ── 5. autostart (Omarchy: ~/.config/hypr/autostart.conf) ───────
-auto="$HOME/.config/hypr/autostart.conf"
-line="exec-once = quickshell -p $DEST"
-if [[ -f "$auto" ]] && ! grep -qF "quickshell -p $DEST" "$auto"; then
-  # preserve the original once, so uninstall can restore it exactly
-  [[ -e "$auto.qsrise-bak" ]] || cp "$auto" "$auto.qsrise-bak"
-  printf '\n# Quickshell Rise bar\n%s\n' "$line" >> "$auto"
-  info "Added autostart → $auto"
-fi
-
-# ── 6. (re)start now so the bar shows immediately ───────────────
+# ── 5. start now so you can try it immediately ──────────────────
 pkill -f "quickshell -p $DEST" 2>/dev/null || true
 sleep 0.3
 setsid quickshell -p "$DEST" >/dev/null 2>&1 &
-info "Bar started. ${c_b}Done — enjoy!${c_0}"
+info "Bar started — try it out."
+
+# ── 6. autostart on login? (opt-in; Omarchy: autostart.conf) ────
+if [[ -z "$AUTOSTART" ]]; then
+  printf "%sStart the bar automatically on every login? [y/N]%s " "$c_b" "$c_0"
+  read -r ans </dev/tty 2>/dev/null || ans=""
+  [[ "$ans" =~ ^[Yy]$ ]] && AUTOSTART=1 || AUTOSTART=0
+fi
+
+auto="$HOME/.config/hypr/autostart.conf"
+if [[ "$AUTOSTART" == 1 ]]; then
+  if [[ -f "$auto" ]] && ! grep -qF "quickshell -p $DEST" "$auto"; then
+    [[ -e "$auto.qsrise-bak" ]] || cp "$auto" "$auto.qsrise-bak"   # for exact uninstall restore
+    printf '\n# Quickshell Rise bar\n%s\n' "exec-once = quickshell -p $DEST" >> "$auto"
+  fi
+  info "Autostart enabled."
+else
+  info "No autostart — just testing. Re-run with ${c_b}--autostart${c_0} to enable it later."
+fi
+info "${c_b}Done — enjoy!${c_0}"
