@@ -50,10 +50,14 @@ versions/V1/
 
 </details>
 
-## Reset
+## Uninstall
 <details>
 
-Every install backs up your old config to `~/.config/quickshell/bar.bak.<timestamp>`. Restore that folder to roll back.
+One command (works for any installed version) — stops the bar, restores `autostart.conf` to its original state, and brings back your previous config from the backup:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/uninstall.sh)
+```
+Every install also backs up the old config to `~/.config/quickshell/bar.bak.<timestamp>` (older backups are kept).
 
 </details>
 

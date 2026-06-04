@@ -60,6 +60,8 @@ info "Installed '${c_b}$choice${c_0}' → $DEST"
 auto="$HOME/.config/hypr/autostart.conf"
 line="exec-once = quickshell -p $DEST"
 if [[ -f "$auto" ]] && ! grep -qF "quickshell -p $DEST" "$auto"; then
+  # preserve the original once, so uninstall can restore it exactly
+  [[ -e "$auto.qsrise-bak" ]] || cp "$auto" "$auto.qsrise-bak"
   printf '\n# Quickshell Rise bar\n%s\n' "$line" >> "$auto"
   info "Added autostart → $auto"
 fi
