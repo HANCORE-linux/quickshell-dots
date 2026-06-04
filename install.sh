@@ -56,11 +56,16 @@ mkdir -p "$DEST"
 cp -r "$tmp/repo/versions/$choice/." "$DEST/"
 info "Installed '${c_b}$choice${c_0}' → $DEST"
 
-# ── 5. launch / autostart ───────────────────────────────────────
-hypr="$HOME/.config/hypr/hyprland.conf"
+# ── 5. autostart (Omarchy: ~/.config/hypr/autostart.conf) ───────
+auto="$HOME/.config/hypr/autostart.conf"
 line="exec-once = quickshell -p $DEST"
-if [[ -f "$hypr" ]] && ! grep -qF "quickshell -p $DEST" "$hypr"; then
-  echo "$line" >> "$hypr"
-  info "Added Hyprland autostart"
+if [[ -f "$auto" ]] && ! grep -qF "quickshell -p $DEST" "$auto"; then
+  printf '\n# Quickshell Rise bar\n%s\n' "$line" >> "$auto"
+  info "Added autostart → $auto"
 fi
-info "Done. Launch now with:  ${c_b}quickshell -p $DEST${c_0}"
+
+# ── 6. (re)start now so the bar shows immediately ───────────────
+pkill -f "quickshell -p $DEST" 2>/dev/null || true
+sleep 0.3
+setsid quickshell -p "$DEST" >/dev/null 2>&1 &
+info "Bar started. ${c_b}Done — enjoy!${c_0}"
