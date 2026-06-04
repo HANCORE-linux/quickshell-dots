@@ -15,7 +15,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dot
 Pick a version from the menu, or install one directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) rise
+bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
 ```
 
 The installer backs up any existing `~/.config/quickshell/bar`, copies the chosen
@@ -27,12 +27,12 @@ Each folder under `versions/` is a complete, self-contained bar config.
 
 | Version | Description |
 |---------|-------------|
-| `rise`  | The full modular bar (workspaces, splits, control center, panels) |
+| `V1`    | The full modular bar (workspaces, splits, control center, panels) |
 
 Add a new version by copying an existing one:
 
 ```bash
-cp -r versions/rise versions/minimal
+cp -r versions/V1 versions/minimal
 # edit versions/minimal/... then commit
 ```
 
@@ -49,7 +49,7 @@ plus `quickshell`, `git`, `jq`, `curl`.
 ## Structure (per version)
 
 ```
-versions/rise/
+versions/V1/
 ├── shell.qml        # entry point
 ├── Bar.qml          # bar layout + dynamic split pills
 ├── Theme.qml        # colors, state, split/module flags

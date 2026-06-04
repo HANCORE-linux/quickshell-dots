@@ -2,7 +2,7 @@
 # Quickshell Rise — one-command installer
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh)
-#   bash <(curl -fsSL .../install.sh) rise        # install a specific version non-interactively
+#   bash <(curl -fsSL .../install.sh) V1          # install a specific version non-interactively
 set -euo pipefail
 
 REPO_URL="https://github.com/HANCORE-linux/quickshell-dots.git"
