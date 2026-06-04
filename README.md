@@ -1,61 +1,66 @@
-# Quickshell Rise
+<h1 align="center"> Quickshell Rise </h1>
 
-A modular [Quickshell](https://quickshell.outfoxxed.me/) bar for **[Omarchy](https://omarchy.org)** (Hyprland).
+<h4 align="center"> My Quickshell bar for Omarchy — modular, split-able, with a control center. Enjoy! </h4>
+<div align="center">
 
-> **Requires Omarchy.** The bar integrates tightly with the `omarchy-*` helper
-> commands (wifi/bluetooth/audio launchers, updates, screen recording, voxtype,
-> theme colors). It is not intended for plain Hyprland setups without Omarchy.
+[![Stars](https://img.shields.io/github/stars/HANCORE-linux/quickshell-dots?style=for-the-badge&labelColor=000000&color=df6124&logo=github&logoColor=df6124)](https://github.com/HANCORE-linux/quickshell-dots)
+[![Forks](https://img.shields.io/github/forks/HANCORE-linux/quickshell-dots?style=for-the-badge&labelColor=000000&color=df6124&logo=github&logoColor=df6124&cacheSeconds=3600)](https://github.com/HANCORE-linux/quickshell-dots/network)
+[![Issues](https://img.shields.io/github/issues/HANCORE-linux/quickshell-dots?style=for-the-badge&labelColor=000000&color=df6124&logo=github&logoColor=df6124)](https://github.com/HANCORE-linux/quickshell-dots/issues)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-SUPPORT-000000?style=for-the-badge&labelColor=000000&color=df6124&logo=buymeacoffee&logoColor=df6124)](https://buymeacoffee.com/hancore)
 
-## Install
+</div>
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh)
-```
+## Usability
+<details>
 
-Pick a version from the menu, or install one directly:
+- **Omarchy-based.** Integrates the `omarchy-*` helpers (wifi/bluetooth/audio launchers, update, screen recorder, voxtype) and reads the active Omarchy theme.
+- Built for Omarchy / Hyprland — not for plain setups without Omarchy.
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
-```
-
-The installer backs up any existing `~/.config/quickshell/bar`, copies the chosen
-version there, and adds a Hyprland autostart entry.
-
-## Versions
-
-Each folder under `versions/` is a complete, self-contained bar config.
-
-| Version | Description |
-|---------|-------------|
-| `V1`    | The full modular bar (workspaces, splits, control center, panels) |
-
-Add a new version by copying an existing one:
-
-```bash
-cp -r versions/V1 versions/minimal
-# edit versions/minimal/... then commit
-```
+</details>
 
 ## Dependencies
+<details>
 
-**Base:** a working **Omarchy** install (provides Hyprland, the `omarchy-*`
-helpers, fonts *JetBrainsMono Nerd Font* + *Material Symbols Rounded*, mako, etc.)
-plus `quickshell`, `git`, `jq`, `curl`.
+Comes with Omarchy: Hyprland, the `omarchy-*` helpers, fonts (JetBrainsMono Nerd Font + Material Symbols Rounded), mako.
 
-**Optional** (per widget, degrade gracefully if absent):
-`pamixer`, `brightnessctl`, `power-profiles-daemon`, `bluez`, `iwd` + `impala`,
-`hypridle`, `gpu-screen-recorder`, `voxtype`.
+Extra:
+```bash
+sudo pacman -S quickshell git jq curl
+```
+Optional per widget: `pamixer`, `brightnessctl`, `power-profiles-daemon`, `bluez`, `iwd` + `impala`, `hypridle`, `gpu-screen-recorder`, `voxtype`.
 
-## Structure (per version)
+</details>
+
+## Structure
+<details>
+
+Each folder under `versions/` is a complete, self-contained bar.
 
 ```
 versions/V1/
 ├── shell.qml        # entry point
-├── Bar.qml          # bar layout + dynamic split pills
-├── Theme.qml        # colors, state, split/module flags
-├── Palette.js       # reads omarchy theme colors.toml
-├── IconMap.js       # Material Symbols name → codepoint
-├── assets/          # logo etc.
-├── modules/         # bar widgets (*Widget.qml)
-└── panels/          # popups / panels (*Panel.qml, *Popup.qml, TooltipOverlay)
+├── Bar.qml          # layout + dynamic split pills
+├── Theme.qml        # colors, state, flags
+├── Palette.js       # reads Omarchy colors.toml
+├── IconMap.js       # icon name → codepoint
+├── assets/          # logo
+├── modules/         # bar widgets  (*Widget.qml)
+└── panels/          # popups       (*Panel.qml, TooltipOverlay)
 ```
+
+</details>
+
+## Reset
+<details>
+
+Every install backs up your old config to `~/.config/quickshell/bar.bak.<timestamp>`. Restore that folder to roll back.
+
+</details>
+
+## V1
+- workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
+##### V1 Install-command (copy & paste in your terminal):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
+```
+<!-- drag a screenshot here on GitHub to embed it -->
