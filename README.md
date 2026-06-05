@@ -55,7 +55,7 @@ versions/V1/
 
 One command (works for any installed version) — stops the bar, removes theme hook and post-boot hook, and brings back your previous config from the backup:
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/uninstall.sh)
+curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/uninstall.sh | bash
 ```
 Every install also backs up the old config to `~/.config/quickshell/bar.bak.<timestamp>` (older backups are kept).
 
@@ -79,7 +79,7 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 - workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
 ##### V1 Install-command (copy & paste in your terminal):
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
+curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh | bash -s V1
 ```
 The bar launches immediately so you can try it.
 <!-- drag a screenshot here on GitHub to embed it -->
