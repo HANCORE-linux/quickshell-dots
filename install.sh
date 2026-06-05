@@ -33,8 +33,15 @@ fi
 optmiss=()
 for b in "${opt[@]}"; do command -v "$b" >/dev/null 2>&1 || optmiss+=("$b"); done
 ((${#optmiss[@]})) && warn "Optional tools missing (some widgets disabled): ${optmiss[*]}"
-fc-list | grep -qi "JetBrainsMono Nerd" || warn "Font 'JetBrainsMono Nerd Font' not found"
-fc-list | grep -qi "Material Symbols"   || warn "Font 'Material Symbols Rounded' not found"
+fontmiss=()
+fc-list | grep -qi "JetBrainsMono Nerd"  || fontmiss+=("ttf-jetbrains-mono-nerd")
+fc-list | grep -qi "Material Symbols"    || fontmiss+=("ttf-material-symbols-variable-git (AUR)")
+if ((${#fontmiss[@]})); then
+  err "Missing fonts:"
+  warn "  sudo pacman -S ttf-jetbrains-mono-nerd"
+  warn "  paru -S ttf-material-symbols-variable-git   # AUR"
+  exit 1
+fi
 
 # ── 2. fetch repo ───────────────────────────────────────────────
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
