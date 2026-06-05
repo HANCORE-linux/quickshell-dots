@@ -87,7 +87,7 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: String(rootMod.percent).padStart(3) + "%"
+            text: rootMod.percent + "%"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             font.family: root.mono
             font.pixelSize: 12
