@@ -53,7 +53,10 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
 
             readonly property real ratio: Math.max(0, Math.min(1, rootMod.percent / 100))
-            readonly property color sunColor: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+            // turns theme-red at full brightness, like the battery's full state
+            readonly property color sunColor: rootMod.percent >= 100
+                ? root.seal
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
 
             Rectangle {
                 anchors.centerIn: parent
@@ -61,6 +64,7 @@ Item {
                 height: 6.5
                 radius: 3.25
                 color: sun.sunColor
+                Behavior on color { ColorAnimation { duration: 200 } }
             }
 
             Repeater {
@@ -80,6 +84,7 @@ Item {
                         opacity: 0.35 + 0.65 * sun.ratio
                         Behavior on height  { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 250 } }
+                        Behavior on color   { ColorAnimation  { duration: 200 } }
                     }
                 }
             }
@@ -88,9 +93,12 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+            color: rootMod.percent >= 100
+                ? root.seal
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             font.family: root.mono
             font.pixelSize: 12
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
     }
 
