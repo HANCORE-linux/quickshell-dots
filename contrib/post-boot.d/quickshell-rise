@@ -1,5 +1,4 @@
 #!/bin/bash
 # Quickshell Rise — launch the bar at session start.
-# -d daemonizes so this hook script can exit immediately.
 # -n bails out if an instance is already running (idempotent).
-qs -n -d -c bar
+qs -n -c bar
