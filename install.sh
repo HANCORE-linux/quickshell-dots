@@ -48,13 +48,19 @@ if ((${#fontmiss[@]})); then
     sudo pacman -S --noconfirm ttf-jetbrains-mono-nerd
   fi
   if ! fc-list | grep -qi "Material Symbols"; then
-    if command -v paru &>/dev/null; then
+    aur=; command -v paru &>/dev/null && aur=paru; command -v yay &>/dev/null && aur=yay
+    if [[ -n "$aur" ]]; then
       info "Installing ttf-material-symbols-variable-git (AUR)..."
-      paru -S --noconfirm ttf-material-symbols-variable-git
+      "$aur" -S --noconfirm ttf-material-symbols-variable-git
     else
-      err "paru not found — needed for AUR package ttf-material-symbols-variable-git"
-      err "Install it first: sudo pacman -S --needed base-devel && git clone https://aur.archlinux.org/paru.git /tmp/paru && cd /tmp/paru && makepkg -si"
-      exit 1
+      info "Installing yay (AUR helper)..."
+      sudo pacman -S --needed --noconfirm base-devel
+      yaytmp=$(mktemp -d)
+      git clone https://aur.archlinux.org/yay.git "$yaytmp"
+      (cd "$yaytmp" && makepkg -si --noconfirm)
+      rm -rf "$yaytmp"
+      info "Installing ttf-material-symbols-variable-git (AUR)..."
+      yay -S --noconfirm ttf-material-symbols-variable-git
     fi
   fi
 fi
