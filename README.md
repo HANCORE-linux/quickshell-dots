@@ -74,7 +74,8 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 </details>
 
 ## V1
-<img width="2560" height="1440" alt="screenshot-2026-06-04_21-15-54" src="https://github.com/user-attachments/assets/40d89cf8-5930-4499-a4d9-bf69aa883553" />
+<video src="https://github.com/user-attachments/assets/ac2c48a6-c6ef-4eb7-bee3-ed1a483d2f20" controls="controls" style="max-width: 100%;">
+</video>
 
 - workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
 ##### V1 Install-command (copy & paste in your terminal):
