@@ -114,9 +114,9 @@ Item {
                 anchors.left: body.right
                 anchors.leftMargin: -0.5
                 anchors.verticalCenter: parent.verticalCenter
-                width: 2.5
-                height: 5
-                radius: 1.2
+                width: 1.8
+                height: 4
+                radius: 1
                 color: rootMod.battColor
                 Behavior on color { ColorAnimation { duration: 200 } }
             }
