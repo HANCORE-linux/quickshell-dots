@@ -1,20 +1,38 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
+import Quickshell.Services.UPower
 
 Item {
     id: rootMod
     required property var root
 
-    property bool   hasBattery: false
-    property int    percent:    0
-    property string status:     "Unknown"
-
-    readonly property bool charging: status === "Charging"
-    readonly property bool full:     status === "Full"
+    // event-driven UPower data — updates instantly on plug / unplug
+    readonly property var dev: UPower.displayDevice
+    readonly property bool hasBattery: dev !== null && dev.isLaptopBattery
+    readonly property int percent: {
+        if (!dev) return 0
+        var p = dev.percentage
+        // robust to either 0..1 or 0..100 reporting
+        return Math.round(p <= 1.0 ? p * 100 : p)
+    }
+    readonly property int devState: dev ? dev.state : UPowerDeviceState.Unknown
+    readonly property bool charging: devState === UPowerDeviceState.Charging
+    readonly property bool full:     devState === UPowerDeviceState.FullyCharged
     readonly property bool low:      !charging && !full && percent <= 20
 
-    readonly property string tooltipText: status + " · " + percent + "%"
+    readonly property string statusText:
+        full ? "Full"
+        : charging ? "Charging"
+        : devState === UPowerDeviceState.Discharging ? "Discharging"
+        : "On battery"
+    readonly property string tooltipText: statusText + " · " + percent + "%"
+
+    // colour shared by the drawn battery body, fill and nub
+    readonly property color battColor:
+        full ? root.inkDeep
+        : charging ? root.indigo
+        : (low ? root.seal
+        : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
 
     implicitWidth:  hasBattery ? (row.implicitWidth + 18) : 0
     implicitHeight: 28
@@ -34,12 +52,6 @@ Item {
         border.color: root.sep
         border.width: 1
     }
-
-    // colour shared by the drawn battery body, fill and nub
-    readonly property color battColor:
-        (charging || full) ? root.indigo
-        : (low ? root.seal
-        : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
 
     Row {
         id: row
@@ -76,9 +88,9 @@ Item {
                 border.color: rootMod.battColor
                 Behavior on border.color { ColorAnimation { duration: 200 } }
 
-                // faint indigo wash so a charging / full cell reads "active" at any level
+                // faint indigo wash so a charging cell reads "active" at any level
                 Rectangle {
-                    visible: rootMod.charging || rootMod.full
+                    visible: rootMod.charging
                     anchors.fill: parent
                     anchors.margins: 1.8
                     radius: 1.2
@@ -144,33 +156,6 @@ Item {
                         function onPaperChanged() { bolt.requestPaint() }
                     }
                 }
-
-                // full indicator — check mark when fully charged
-                Canvas {
-                    id: fullCheck
-                    visible: rootMod.full
-                    anchors.centerIn: parent
-                    width: 8
-                    height: 7
-                    onPaint: {
-                        var ctx = getContext("2d")
-                        ctx.clearRect(0, 0, width, height)
-                        ctx.beginPath()
-                        ctx.moveTo(width * 0.12, height * 0.55)
-                        ctx.lineTo(width * 0.40, height * 0.82)
-                        ctx.lineTo(width * 0.88, height * 0.18)
-                        ctx.lineWidth = 1.5
-                        ctx.lineCap = "round"
-                        ctx.lineJoin = "round"
-                        ctx.strokeStyle = root.paper.toString()
-                        ctx.stroke()
-                    }
-                    Component.onCompleted: requestPaint()
-                    Connections {
-                        target: root
-                        function onPaperChanged() { fullCheck.requestPaint() }
-                    }
-                }
             }
 
             // terminal nub (positive pole)
@@ -186,13 +171,11 @@ Item {
             }
         }
 
-        // natural width: value hugs the icon AND the pill closes flush on the
-        // right; the rare 99↔100 width change rides the implicitWidth Behavior
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
             color: {
-                if (rootMod.charging || rootMod.full) return root.indigo
+                if (rootMod.charging || rootMod.full) return rootMod.battColor
                 if (rootMod.low) return root.seal
                 return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             }
@@ -200,42 +183,6 @@ Item {
             font.pixelSize: 12
             Behavior on color { ColorAnimation { duration: 200 } }
         }
-    }
-
-    // detect battery on startup
-    Process {
-        id: detectProc
-        command: ["bash", "-c", "ls /sys/class/power_supply/ 2>/dev/null | grep -c '^BAT'"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: { rootMod.hasBattery = parseInt(this.text.trim()) > 0 }
-        }
-    }
-
-    Process {
-        id: batProc
-        command: ["bash", "-c",
-            "BAT=$(ls /sys/class/power_supply/ 2>/dev/null | grep -m1 '^BAT'); " +
-            "[ -z \"$BAT\" ] && exit; " +
-            "CAP=$(cat /sys/class/power_supply/$BAT/capacity 2>/dev/null || echo 0); " +
-            "STA=$(cat /sys/class/power_supply/$BAT/status 2>/dev/null || echo Unknown); " +
-            "echo \"$CAP $STA\""
-        ]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var parts = this.text.trim().split(" ")
-                if (parts.length >= 2) {
-                    rootMod.percent = parseInt(parts[0]) || 0
-                    rootMod.status  = parts[1] || "Unknown"
-                }
-            }
-        }
-    }
-
-    Timer {
-        interval: 5000; running: rootMod.hasBattery; repeat: true; triggeredOnStart: true
-        onTriggered: { batProc.running = false; batProc.running = true }
     }
 
     Timer {
