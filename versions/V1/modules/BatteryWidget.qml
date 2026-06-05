@@ -86,19 +86,11 @@ Item {
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 
-        // reserve the width of "100%" and left-align, so the value hugs the
-        // icon (no leading-space gap) while the pill width stays stable
-        TextMetrics {
-            id: pctMetrics
-            font.family: root.mono
-            font.pixelSize: 12
-            text: "100%"
-        }
+        // natural width: value hugs the icon AND the pill closes flush on the
+        // right; the rare 99↔100 width change rides the implicitWidth Behavior
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
-            width: pctMetrics.width
-            horizontalAlignment: Text.AlignLeft
             color: {
                 if (rootMod.charging || rootMod.full) return root.indigo
                 if (rootMod.low) return root.seal
