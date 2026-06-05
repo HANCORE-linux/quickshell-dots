@@ -45,6 +45,46 @@ Item {
             font.letterSpacing: 0.5
         }
 
+        // drawn sun — core + rays that grow/brighten with the level
+        Item {
+            id: sun
+            width: 13
+            height: 13
+            anchors.verticalCenter: parent.verticalCenter
+
+            readonly property real ratio: Math.max(0, Math.min(1, rootMod.percent / 100))
+            readonly property color sunColor: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: 6.5
+                height: 6.5
+                radius: 3.25
+                color: sun.sunColor
+            }
+
+            Repeater {
+                model: 8
+                delegate: Item {
+                    required property int index
+                    anchors.fill: parent
+                    rotation: index * 45
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: 0.3
+                        width: 1.5
+                        height: 2 + 1.4 * sun.ratio
+                        radius: 0.75
+                        color: sun.sunColor
+                        opacity: 0.35 + 0.65 * sun.ratio
+                        Behavior on height  { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on opacity { NumberAnimation { duration: 250 } }
+                    }
+                }
+            }
+        }
+
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: String(rootMod.percent).padStart(3) + "%"
