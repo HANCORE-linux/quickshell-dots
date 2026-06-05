@@ -109,7 +109,9 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Hyprland.dispatch("workspace " + modelData.id)
+                                wsPanelDispatch.command = ["hyprctl", "dispatch", "workspace", String(modelData.id)]
+                                wsPanelDispatch.running = false
+                                wsPanelDispatch.running = true
                                 root.workspaceVisible = false
                             }
                         }
@@ -117,5 +119,11 @@ PanelWindow {
                 }
             }
         }
+    }
+
+    Process {
+        id: wsPanelDispatch
+        command: ["true"]
+        running: false
     }
 }
