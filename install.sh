@@ -41,13 +41,7 @@ if ((${#fontmiss[@]})); then
   warn "The bar needs these to display icons correctly."
   if [[ -z "$WANT_VERSION" ]]; then
     read -p "Install missing fonts? [Y/n] " ans </dev/tty || true
-    case "${ans,,}" in n|no) ;; *) ans=y ;; esac
-  else
-    ans=n
-  fi
-  if [[ "$ans" != y ]]; then
-    err "Fonts required — aborting."
-    exit 1
+    case "${ans,,}" in n|no) err "Fonts required — aborting."; exit 1 ;; esac
   fi
   if ! fc-list | grep -qi "JetBrainsMono Nerd"; then
     info "Installing ttf-jetbrains-mono-nerd..."
