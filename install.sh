@@ -34,13 +34,35 @@ optmiss=()
 for b in "${opt[@]}"; do command -v "$b" >/dev/null 2>&1 || optmiss+=("$b"); done
 ((${#optmiss[@]})) && warn "Optional tools missing (some widgets disabled): ${optmiss[*]}"
 fontmiss=()
-fc-list | grep -qi "JetBrainsMono Nerd"  || fontmiss+=("ttf-jetbrains-mono-nerd")
-fc-list | grep -qi "Material Symbols"    || fontmiss+=("ttf-material-symbols-variable-git (AUR)")
+fc-list | grep -qi "JetBrainsMono Nerd"  || fontmiss+=("JetBrainsMono Nerd Font")
+fc-list | grep -qi "Material Symbols"    || fontmiss+=("Material Symbols Rounded")
 if ((${#fontmiss[@]})); then
-  err "Missing fonts:"
-  warn "  sudo pacman -S ttf-jetbrains-mono-nerd"
-  warn "  paru -S ttf-material-symbols-variable-git   # AUR"
-  exit 1
+  warn "Missing fonts: ${fontmiss[*]}"
+  warn "The bar needs these to display icons correctly."
+  if [[ -z "$WANT_VERSION" ]]; then
+    read -p "Install missing fonts? [Y/n] " ans </dev/tty || true
+    case "${ans,,}" in n|no) ;; *) ans=y ;; esac
+  else
+    ans=n
+  fi
+  if [[ "$ans" != y ]]; then
+    err "Fonts required — aborting."
+    exit 1
+  fi
+  if ! fc-list | grep -qi "JetBrainsMono Nerd"; then
+    info "Installing ttf-jetbrains-mono-nerd..."
+    sudo pacman -S --noconfirm ttf-jetbrains-mono-nerd
+  fi
+  if ! fc-list | grep -qi "Material Symbols"; then
+    if command -v paru &>/dev/null; then
+      info "Installing ttf-material-symbols-variable-git (AUR)..."
+      paru -S --noconfirm ttf-material-symbols-variable-git
+    else
+      err "paru not found — needed for AUR package ttf-material-symbols-variable-git"
+      err "Install it first: sudo pacman -S --needed base-devel && git clone https://aur.archlinux.org/paru.git /tmp/paru && cd /tmp/paru && makepkg -si"
+      exit 1
+    fi
+  fi
 fi
 
 # ── 2. fetch repo ───────────────────────────────────────────────
