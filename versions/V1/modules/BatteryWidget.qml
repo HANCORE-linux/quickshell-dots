@@ -35,10 +35,27 @@ Item {
         border.width: 1
     }
 
-    readonly property string battIcon:
-        charging ? "\uE1A3"          // battery_charging_full
-      : (low    ? "\uE19C"           // battery_alert
-      :           "\uE1A4")          // battery_full
+    // stepped Material Symbols glyph that tracks the charge level
+    readonly property string battIcon: {
+        if (full) return "\uE1A4"                       // battery_full
+        if (charging) {
+            if (percent >= 95) return "\uE1A3"          // battery_charging_full
+            if (percent >= 90) return "\uF0A7"          // battery_charging_90
+            if (percent >= 80) return "\uF0A6"          // battery_charging_80
+            if (percent >= 60) return "\uF0A5"          // battery_charging_60
+            if (percent >= 50) return "\uF0A4"          // battery_charging_50
+            if (percent >= 30) return "\uF0A3"          // battery_charging_30
+            return "\uF0A2"                             // battery_charging_20
+        }
+        if (percent >= 95) return "\uE1A4"              // battery_full
+        if (percent >= 85) return "\uEBD2"              // battery_6_bar
+        if (percent >= 70) return "\uEBD4"              // battery_5_bar
+        if (percent >= 55) return "\uEBE2"              // battery_4_bar
+        if (percent >= 40) return "\uEBDD"              // battery_3_bar
+        if (percent >= 25) return "\uEBE0"              // battery_2_bar
+        if (percent >= 10) return "\uEBD9"              // battery_1_bar
+        return "\uEBDC"                                 // battery_0_bar
+    }
 
     Row {
         id: row
@@ -54,32 +71,29 @@ Item {
             font.letterSpacing: 0.5
         }
 
-        Row {
-            spacing: 2
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: rootMod.battIcon
-                color: (rootMod.charging || rootMod.full)
-                    ? root.indigo
-                    : (rootMod.low ? root.seal
-                    : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
-                font.family: "Material Symbols Rounded"
-                font.pixelSize: 12
-                Behavior on color { ColorAnimation { duration: 200 } }
-            }
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: rootMod.battIcon
+            color: (rootMod.charging || rootMod.full)
+                ? root.indigo
+                : (rootMod.low ? root.seal
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
+            font.family: "Material Symbols Rounded"
+            font.pixelSize: 14
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: String(rootMod.percent).padStart(3) + "%"
-                color: {
-                    if (rootMod.charging || rootMod.full) return root.indigo
-                    if (rootMod.low) return root.seal
-                    return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
-                }
-                font.family: root.mono
-                font.pixelSize: 12
-                Behavior on color { ColorAnimation { duration: 200 } }
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: String(rootMod.percent).padStart(3) + "%"
+            color: {
+                if (rootMod.charging || rootMod.full) return root.indigo
+                if (rootMod.low) return root.seal
+                return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             }
+            font.family: root.mono
+            font.pixelSize: 12
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
     }
 
