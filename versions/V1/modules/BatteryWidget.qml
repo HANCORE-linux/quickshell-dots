@@ -29,7 +29,7 @@ Item {
 
     // colour shared by the drawn battery body, fill and nub
     readonly property color battColor:
-        full ? root.inkDeep
+        full ? root.seal
         : charging ? root.indigo
         : (low ? root.seal
         : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
