@@ -15,7 +15,7 @@ Item {
 
     readonly property bool hasUpdates: rootMod.updateCount > 0
 
-    implicitWidth: hasUpdates ? ic.implicitWidth + 4 + ct.implicitWidth + 2 : 24
+    implicitWidth: 26
     implicitHeight: 28
 
     Process {
@@ -86,11 +86,14 @@ Item {
         command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'paru'"]
     }
 
-    Row {
+    Item {
         anchors.centerIn: parent
-        spacing: 4
+        width: 20
+        height: 20
+
         Text {
             id: ic
+            anchors.centerIn: parent
             text: rootMod.refreshing ? "\uE5D5" : IconMap.icon("package_2")
             color: rootMod.refreshing
                 ? Qt.rgba(root.sumi.r, root.sumi.g, root.sumi.b, 1)
@@ -98,17 +101,27 @@ Item {
             font.family: "Material Symbols Rounded"
             font.pixelSize: 14
         }
-        Text {
-            id: ct
-            visible: rootMod.hasUpdates || rootMod.refreshing
-            text: rootMod.refreshing ? "\u22EF" : String(rootMod.updateCount)
-            color: rootMod.refreshing
-                ? Qt.rgba(root.sumi.r, root.sumi.g, root.sumi.b, 1)
-                : (rootMod.hasUpdates ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4))
-            font.family: root.mono
-            font.pixelSize: 12
-            font.letterSpacing: 1
-            anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+            visible: rootMod.hasUpdates && !rootMod.refreshing
+            anchors.verticalCenter: ic.verticalCenter
+            anchors.verticalCenterOffset: -6
+            anchors.horizontalCenter: ic.horizontalCenter
+            anchors.horizontalCenterOffset: 7
+            width: Math.max(12, badgeText.implicitWidth + 6)
+            height: 12
+            radius: 6
+            color: root.seal
+
+            Text {
+                id: badgeText
+                anchors.centerIn: parent
+                text: rootMod.updateCount > 99 ? "99+" : String(rootMod.updateCount)
+                color: root.paper
+                font.family: root.mono
+                font.pixelSize: 7
+                font.weight: Font.Bold
+            }
         }
     }
 

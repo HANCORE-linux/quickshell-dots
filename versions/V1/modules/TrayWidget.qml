@@ -87,13 +87,18 @@ Item {
 
             // count badge — top-right
             Rectangle {
+                id: toggleBadge
                 visible: toggleBtn.hiddenCount > 0
-                width: 11; height: 11; radius: 5.5
+                width: Math.max(12, toggleBadgeTxt.implicitWidth + 6)
+                height: 12
+                radius: 6
                 color: root.seal
-                anchors.horizontalCenter: moreIcon.right
                 anchors.verticalCenter: moreIcon.verticalCenter
-                anchors.verticalCenterOffset: -5
+                anchors.verticalCenterOffset: -6
+                anchors.horizontalCenter: moreIcon.horizontalCenter
+                anchors.horizontalCenterOffset: 7
                 Text {
+                    id: toggleBadgeTxt
                     anchors.centerIn: parent
                     text: toggleBtn.hiddenCount
                     color: root.paper
