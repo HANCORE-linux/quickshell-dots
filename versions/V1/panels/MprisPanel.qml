@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Services.Mpris
+import "../modules"
 
 PanelWindow {
     id: mprisPanel
@@ -18,27 +19,12 @@ PanelWindow {
     readonly property int gap: 8
 
     // ── pick a REAL active player ───────────────────────────────────
-    // playerctld (and dead apps it proxies) can leave ghost entries that
-    // report Stopped or carry no metadata. Treat those as "no player".
-    function isReal(p) {
-        if (!p) return false
-        if (p.playbackState === MprisPlaybackState.Stopped) return false
-        var hasMeta = (p.trackTitle && p.trackTitle.length > 0)
-        return hasMeta || p.playbackState === MprisPlaybackState.Playing
-    }
-    readonly property var player: {
-        var vals = Mpris.players.values
-        var paused = null
-        for (var i = 0; i < vals.length; i++) {
-            var p = vals[i]
-            if (!isReal(p)) continue
-            if (p.playbackState === MprisPlaybackState.Playing) return p
-            if (p.playbackState === MprisPlaybackState.Paused && paused === null) paused = p
-        }
-        return paused
-    }
-    readonly property bool active:  player !== null
-    readonly property bool playing: active && player.playbackState === MprisPlaybackState.Playing
+    // Selection (incl. ghost-filtering) lives in MprisSelect so the bar
+    // widget and this panel always agree on the active player.
+    MprisSelect { id: sel }
+    readonly property var  player:  sel.player
+    readonly property bool active:  sel.active
+    readonly property bool playing: sel.playing
 
     readonly property string playerName: {
         if (!active) return ""

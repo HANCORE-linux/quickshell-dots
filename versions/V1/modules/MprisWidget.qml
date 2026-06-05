@@ -6,19 +6,11 @@ Item {
     id: rootMod
     required property var root
 
-    readonly property var player: {
-        var vals = Mpris.players.values
-        var paused = null
-        for (var i = 0; i < vals.length; i++) {
-            var p = vals[i]
-            if (p.playbackState === MprisPlaybackState.Playing) return p
-            if (p.playbackState === MprisPlaybackState.Paused && paused === null) paused = p
-        }
-        return paused
-    }
-
-    readonly property bool active:  player !== null
-    readonly property bool playing: active && player.playbackState === MprisPlaybackState.Playing
+    // shared player selection (ghost-filtering) — see MprisSelect.qml
+    MprisSelect { id: sel }
+    readonly property var  player:  sel.player
+    readonly property bool active:  sel.active
+    readonly property bool playing: sel.playing
 
     readonly property string trackLabel: {
         if (!active) return ""
