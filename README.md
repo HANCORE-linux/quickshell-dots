@@ -59,8 +59,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dot
 ```
 Every install also backs up the old config to `~/.config/quickshell/bar.bak.<timestamp>` (older backups are kept).
 
+</details>
+
+## Autostart
 <details>
-<summary>Autostart on login (opt-in)</summary>
+<summary>Post-boot hook (opt-in)</summary>
 
 ```bash
 curl -fsSL -o ~/.config/omarchy/hooks/post-boot.d/quickshell-rise \
@@ -68,7 +71,6 @@ curl -fsSL -o ~/.config/omarchy/hooks/post-boot.d/quickshell-rise \
 chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
 Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
-</details>
 </details>
 
 ## V1
