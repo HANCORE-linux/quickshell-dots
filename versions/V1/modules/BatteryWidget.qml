@@ -48,9 +48,10 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: "BAT"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.55)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
             font.family: root.mono
-            font.pixelSize: 10
+            font.pixelSize: 12
+            font.letterSpacing: 0.5
         }
 
         Text {
