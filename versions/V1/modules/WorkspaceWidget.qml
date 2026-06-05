@@ -1,5 +1,4 @@
 import Quickshell.Hyprland
-import Quickshell.Io
 import QtQuick
 
 Item {
@@ -95,7 +94,7 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
-                    onClicked: { wsDispatch.command = ["hyprctl", "dispatch", "workspace", String(wsId)]; wsDispatch.running = false; wsDispatch.running = true }
+                    onClicked: Hyprland.dispatch("workspace " + wsId)
                     onEntered: dot.scale = 1.2
                     onExited:  dot.scale = 1.0
                 }
@@ -103,9 +102,4 @@ Item {
         }
     }
 
-    Process {
-        id: wsDispatch
-        command: ["true"]
-        running: false
-    }
 }
