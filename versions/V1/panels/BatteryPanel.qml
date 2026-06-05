@@ -125,9 +125,8 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                border.color: root.sep; border.width: 1
-                Text { anchors.centerIn: parent; text: "Open btop"; color: root.sumi; font.family: root.mono; font.pixelSize: 11 }
+                color: root.seal
+                Text { anchors.centerIn: parent; text: "Open btop"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
                 MouseArea {
                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                     onClicked: { root.batteryVisible = false; btopRunner.running = false; btopRunner.running = true }
