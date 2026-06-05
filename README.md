@@ -25,8 +25,7 @@ Comes with Omarchy: Hyprland, the `omarchy-*` helpers, fonts (JetBrainsMono Nerd
 
 Extra:
 ```bash
-sudo pacman -S quickshell git jq curl ttf-jetbrains-mono-nerd
-yay -S ttf-material-symbols-variable-git    # AUR (install.sh does this automatically)
+sudo pacman -S quickshell git jq curl ttf-jetbrains-mono-nerd ttf-material-symbols-variable
 ```
 Optional per widget: `pamixer`, `brightnessctl`, `power-profiles-daemon`, `bluez`, `iwd` + `impala`, `hypridle`, `gpu-screen-recorder`, `voxtype`.
 
