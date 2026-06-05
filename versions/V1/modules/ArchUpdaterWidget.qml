@@ -27,7 +27,7 @@ Item {
                 rootMod.refreshing = false
             }
         }
-        onExited: {
+        onExited: (exitCode) => {
             if (exitCode !== 0) rootMod.refreshing = false
         }
     }
