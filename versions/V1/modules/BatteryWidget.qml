@@ -43,7 +43,7 @@ Item {
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 4
+        spacing: 5
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -54,29 +54,32 @@ Item {
             font.letterSpacing: 0.5
         }
 
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: rootMod.battIcon
-            color: (rootMod.charging || rootMod.full)
-                ? root.indigo
-                : (rootMod.low ? root.seal
-                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
-            font.family: "Material Symbols Rounded"
-            font.pixelSize: 15
-            Behavior on color { ColorAnimation { duration: 200 } }
-        }
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: String(rootMod.percent).padStart(3) + "%"
-            color: {
-                if (rootMod.charging || rootMod.full) return root.indigo
-                if (rootMod.low) return root.seal
-                return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+        Row {
+            spacing: 2
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: rootMod.battIcon
+                color: (rootMod.charging || rootMod.full)
+                    ? root.indigo
+                    : (rootMod.low ? root.seal
+                    : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
+                font.family: "Material Symbols Rounded"
+                font.pixelSize: 12
+                Behavior on color { ColorAnimation { duration: 200 } }
             }
-            font.family: root.mono
-            font.pixelSize: 12
-            Behavior on color { ColorAnimation { duration: 200 } }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: String(rootMod.percent).padStart(3) + "%"
+                color: {
+                    if (rootMod.charging || rootMod.full) return root.indigo
+                    if (rootMod.low) return root.seal
+                    return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+                }
+                font.family: root.mono
+                font.pixelSize: 12
+                Behavior on color { ColorAnimation { duration: 200 } }
+            }
         }
     }
 
