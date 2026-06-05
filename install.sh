@@ -3,20 +3,16 @@
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh)
 #   bash <(curl -fsSL .../install.sh) V1          # install a specific version non-interactively
+# Autostart via Omarchy post-boot hook (opt-in): see step 7.
 set -euo pipefail
 
 REPO_URL="https://github.com/HANCORE-linux/quickshell-dots.git"
 DEST="$HOME/.config/quickshell/bar"
 
-# args: a version name and/or --autostart / --no-autostart
+# args: optional version name
 WANT_VERSION=""
-AUTOSTART=""   # "" = ask, 1 = yes, 0 = no
 for a in "$@"; do
-  case "$a" in
-    --autostart)    AUTOSTART=1 ;;
-    --no-autostart) AUTOSTART=0 ;;
-    *)              WANT_VERSION="$a" ;;
-  esac
+  [[ "$a" != "--autostart" && "$a" != "--no-autostart" ]] && WANT_VERSION="$a"
 done
 
 c_b=$'\e[1m'; c_g=$'\e[32m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
@@ -83,28 +79,17 @@ fi
 
 # ── 6. stop waybar (would overlap) and start the bar now ────────
 pkill -x waybar 2>/dev/null && info "Stopped waybar (use the panel/control to manage)" || true
-  # stop existing bar (supports both -c bar and -p $DEST modes)
-  pkill -f "qs.*-c bar" 2>/dev/null || true
-  pkill -f "quickshell -p $DEST" 2>/dev/null || true
+# stop existing bar (supports both -c bar and -p $DEST modes)
+pkill -f "qs.*-c bar" 2>/dev/null || true
+pkill -f "quickshell -p $DEST" 2>/dev/null || true
 sleep 0.3
 setsid quickshell -p "$DEST" >/dev/null 2>&1 &
 info "Bar started — try it out."
 
-# ── 7. autostart on login? (opt-in; Omarchy: autostart.conf) ────
-if [[ -z "$AUTOSTART" ]]; then
-  printf "%sStart the bar automatically on every login? [y/N]%s " "$c_b" "$c_0"
-  read -r ans </dev/tty 2>/dev/null || ans=""
-  [[ "$ans" =~ ^[Yy]$ ]] && AUTOSTART=1 || AUTOSTART=0
-fi
-
-auto="$HOME/.config/hypr/autostart.conf"
-if [[ "$AUTOSTART" == 1 ]]; then
-  if [[ -f "$auto" ]] && ! grep -qF "quickshell -p $DEST" "$auto"; then
-    [[ -e "$auto.qsrise-bak" ]] || cp "$auto" "$auto.qsrise-bak"   # for exact uninstall restore
-    printf '\n# Quickshell Rise bar\n%s\n' "exec-once = quickshell -p $DEST" >> "$auto"
-  fi
-  info "Autostart enabled."
-else
-  info "No autostart — just testing. Re-run with ${c_b}--autostart${c_0} to enable it later."
-fi
+# ── 7. autostart hint ────────────────────────────────────────────
+info "Autostart at login via Omarchy post-boot hook:"
+printf "  ${c_b}install -m 755 contrib/post-boot.d/quickshell-rise %s${c_0}\n" \
+  "\$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
+  "\$HOME/.config/omarchy/hooks/post-boot.d"
 info "${c_b}Done — enjoy!${c_0}"

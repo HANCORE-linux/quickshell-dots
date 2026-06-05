@@ -53,7 +53,7 @@ versions/V1/
 ## Uninstall
 <details>
 
-One command (works for any installed version) — stops the bar, restores `autostart.conf` to its original state, and brings back your previous config from the backup:
+One command (works for any installed version) — stops the bar, removes theme hook and post-boot hook, and brings back your previous config from the backup:
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/uninstall.sh)
 ```
@@ -67,5 +67,9 @@ Every install also backs up the old config to `~/.config/quickshell/bar.bak.<tim
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
 ```
-The bar launches immediately so you can try it. You'll get one yes/no question — *"start automatically on login?"* — answer **n** to just test, **y** to keep it.
+The bar launches immediately so you can try it. To start it automatically on every login, install the post-boot hook:
+```bash
+install -m 755 contrib/post-boot.d/quickshell-rise ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
+```
+Remove it with `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`.
 <!-- drag a screenshot here on GitHub to embed it -->
