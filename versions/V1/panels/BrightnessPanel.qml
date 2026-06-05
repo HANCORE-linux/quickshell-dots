@@ -119,22 +119,42 @@ PanelWindow {
                 width: parent.width
                 spacing: 8
                 Rectangle {
+                    id: btnDown
                     width: (parent.width - 8) / 2; height: 28; radius: 4
-                    color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                    border.color: root.sep; border.width: 1
-                    Text { anchors.centerIn: parent; text: "− 5%"; color: root.sumi; font.family: root.mono; font.pixelSize: 11 }
+                    color: _dn.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    border.color: _dn.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "− 5%"; color: _dn.containsMouse ? root.seal : root.sumi
+                        font.family: root.mono; font.pixelSize: 11
+                    }
                     MouseArea {
+                        id: _dn
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
                         onClicked: { downRunner.running = false; downRunner.running = true; Qt.callLater(briPanel.refresh) }
                     }
                 }
                 Rectangle {
+                    id: btnUp
                     width: (parent.width - 8) / 2; height: 28; radius: 4
-                    color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                    border.color: root.sep; border.width: 1
-                    Text { anchors.centerIn: parent; text: "+ 5%"; color: root.sumi; font.family: root.mono; font.pixelSize: 11 }
+                    color: _up.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    border.color: _up.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "+ 5%"; color: _up.containsMouse ? root.seal : root.sumi
+                        font.family: root.mono; font.pixelSize: 11
+                    }
                     MouseArea {
+                        id: _up
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
                         onClicked: { upRunner.running = false; upRunner.running = true; Qt.callLater(briPanel.refresh) }
                     }
                 }
