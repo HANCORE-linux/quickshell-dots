@@ -74,6 +74,9 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.battIcon
+            // trim the glyph's ~4px side bearings so spacing:5 reads clean
+            width: 8
+            horizontalAlignment: Text.AlignHCenter
             color: (rootMod.charging || rootMod.full)
                 ? root.indigo
                 : (rootMod.low ? root.seal
