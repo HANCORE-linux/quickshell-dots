@@ -76,9 +76,9 @@ Item {
                 border.color: rootMod.battColor
                 Behavior on border.color { ColorAnimation { duration: 200 } }
 
-                // faint indigo wash so a charging cell reads "active" at any level
+                // faint indigo wash so a charging / full cell reads "active" at any level
                 Rectangle {
-                    visible: rootMod.charging
+                    visible: rootMod.charging || rootMod.full
                     anchors.fill: parent
                     anchors.margins: 1.8
                     radius: 1.2
@@ -122,17 +122,17 @@ Item {
                     id: bolt
                     visible: rootMod.charging && !rootMod.full
                     anchors.centerIn: parent
-                    width: 5
-                    height: 7
+                    width: 6
+                    height: 8
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.clearRect(0, 0, width, height)
                         ctx.beginPath()
                         ctx.moveTo(width * 0.55, 0)
-                        ctx.lineTo(width * 0.20, height * 0.55)
+                        ctx.lineTo(width * 0.12, height * 0.55)
                         ctx.lineTo(width * 0.45, height * 0.55)
-                        ctx.lineTo(width * 0.40, height)
-                        ctx.lineTo(width * 0.80, height * 0.45)
+                        ctx.lineTo(width * 0.38, height)
+                        ctx.lineTo(width * 0.88, height * 0.45)
                         ctx.lineTo(width * 0.55, height * 0.45)
                         ctx.closePath()
                         ctx.fillStyle = root.paper.toString()
@@ -142,6 +142,33 @@ Item {
                     Connections {
                         target: root
                         function onPaperChanged() { bolt.requestPaint() }
+                    }
+                }
+
+                // full indicator — check mark when fully charged
+                Canvas {
+                    id: fullCheck
+                    visible: rootMod.full
+                    anchors.centerIn: parent
+                    width: 8
+                    height: 7
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.beginPath()
+                        ctx.moveTo(width * 0.12, height * 0.55)
+                        ctx.lineTo(width * 0.40, height * 0.82)
+                        ctx.lineTo(width * 0.88, height * 0.18)
+                        ctx.lineWidth = 1.5
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+                        ctx.strokeStyle = root.paper.toString()
+                        ctx.stroke()
+                    }
+                    Component.onCompleted: requestPaint()
+                    Connections {
+                        target: root
+                        function onPaperChanged() { fullCheck.requestPaint() }
                     }
                 }
             }
@@ -207,7 +234,7 @@ Item {
     }
 
     Timer {
-        interval: 30000; running: rootMod.hasBattery; repeat: true; triggeredOnStart: true
+        interval: 5000; running: rootMod.hasBattery; repeat: true; triggeredOnStart: true
         onTriggered: { batProc.running = false; batProc.running = true }
     }
 
