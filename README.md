@@ -67,11 +67,15 @@ Every install also backs up the old config to `~/.config/quickshell/bar.bak.<tim
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
 ```
-The bar launches immediately so you can try it. To start it automatically on every login, install the post-boot hook:
+The bar launches immediately so you can try it.
+<details>
+<summary>Autostart on login (opt-in)</summary>
+
 ```bash
 curl -fsSL -o ~/.config/omarchy/hooks/post-boot.d/quickshell-rise \
   https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/contrib/post-boot.d/quickshell-rise
 chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
-Remove it with `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`.
+Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
+</details>
 <!-- drag a screenshot here on GitHub to embed it -->
