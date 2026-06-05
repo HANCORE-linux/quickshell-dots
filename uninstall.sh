@@ -24,17 +24,32 @@ hook="$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
 [[ -f "$hook" ]] && { rm -f "$hook"; info "Removed theme hook"; }
 
 # 4. remove the config — restore the most recent backup if one exists
+restored=false
 if [[ -d "$DEST" ]]; then
   rm -rf "$DEST"
   latest="$(ls -dt "$DEST".bak.* 2>/dev/null | head -1 || true)"
   if [[ -n "${latest:-}" ]]; then
     mv "$latest" "$DEST"
     info "Restored previous config from backup ($(basename "$latest"))"
+    restored=true
   else
     info "Removed $DEST"
   fi
 else
   warn "Nothing installed at $DEST"
+fi
+
+# 5. restart the bar that was in use before install
+if [[ "$restored" == true ]] && [[ -f "$DEST/shell.qml" ]]; then
+  setsid quickshell -p "$DEST" >/dev/null 2>&1 & disown
+  info "Restarted quickshell from backup"
+else
+  if command -v omarchy &>/dev/null; then
+    omarchy restart waybar 2>/dev/null && info "Restarted waybar" || true
+  else
+    setsid waybar >/dev/null 2>&1 & disown 2>/dev/null || true
+    info "Restarted waybar"
+  fi
 fi
 
 info "Uninstalled.${c_0}  (older backups under ~/.config/quickshell/bar.bak.* are kept)"
