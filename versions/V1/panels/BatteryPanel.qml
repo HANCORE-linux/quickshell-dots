@@ -13,7 +13,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-battery"
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 8
 
     property int    percent: 0

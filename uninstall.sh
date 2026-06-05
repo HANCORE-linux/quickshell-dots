@@ -12,6 +12,8 @@ info() { printf "%s==>%s %s\n" "$c_g" "$c_0" "$*"; }
 warn() { printf "%s!!%s %s\n"  "$c_y" "$c_0" "$*"; }
 
 # 1. stop the running bar
+# stop existing bar (supports both -c bar and -p $DEST modes)
+pkill -f "qs.*-c bar" 2>/dev/null && info "Stopped the bar" || true
 pkill -f "quickshell -p $DEST" 2>/dev/null && info "Stopped the bar" || true
 
 # 2. restore autostart.conf exactly as it was — only if WE changed it

@@ -12,7 +12,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-calendar"
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 8
 
     property real reveal: root.calendarVisible ? 1 : 0
@@ -59,18 +59,71 @@ PanelWindow {
             anchors.margins: 12
             spacing: 10
 
-            // ── header: month name ──
+            // ── header: month name + navigation chevrons ──
             Item {
                 width: parent.width
                 height: 24
+
+                // ‹ previous month
+                Rectangle {
+                    id: prevBtn
+                    anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                    width: 24; height: 24; radius: 4
+                    color: prevMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "‹"   // ‹
+                        color: prevMa.containsMouse ? root.seal : root.sumi
+                        font.family: root.mono; font.pixelSize: 16
+                    }
+                    MouseArea {
+                        id: prevMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.calendarMonthOffset--
+                    }
+                }
+
+                // month + year — click to jump back to today
                 Text {
                     anchors.centerIn: parent
                     text: root.calendarMonthName + "  " + root.calendarYear
-                    color: root.ink
+                    color: monthMa.containsMouse && root.calendarMonthOffset !== 0 ? root.seal : root.ink
                     font.family: root.mono
                     font.pixelSize: 12
                     font.letterSpacing: 2
                     font.weight: Font.Medium
+                    MouseArea {
+                        id: monthMa
+                        anchors.fill: parent; anchors.margins: -6
+                        hoverEnabled: true
+                        cursorShape: root.calendarMonthOffset !== 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.calendarMonthOffset = 0
+                    }
+                }
+
+                // › next month
+                Rectangle {
+                    id: nextBtn
+                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    width: 24; height: 24; radius: 4
+                    color: nextMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "›"   // ›
+                        color: nextMa.containsMouse ? root.seal : root.sumi
+                        font.family: root.mono; font.pixelSize: 16
+                    }
+                    MouseArea {
+                        id: nextMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.calendarMonthOffset++
+                    }
                 }
             }
 
@@ -116,7 +169,7 @@ PanelWindow {
                         readonly property int dayOfWeek: index % 7
                         readonly property bool isCurrentMonth: modelData.day !== 0
                         readonly property bool isToday: modelData.today
-                        readonly property bool isSelected: isCurrentMonth && root.selectedDay === modelData.day
+                        readonly property bool isSelected: isCurrentMonth && root.selectedDay === modelData.day && root.calendarMonthOffset === 0
 
                         readonly property color textColor: {
                             if (isToday) return root.seal.hsvValue < 0.5 ? root.ink : root.paper;

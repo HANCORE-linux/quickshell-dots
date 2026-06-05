@@ -12,7 +12,7 @@ PanelWindow {
     color: "transparent"
     anchors { top: true; left: true; right: true }
     exclusionMode: ExclusionMode.Auto
-    implicitHeight: 37
+    implicitHeight: 35
 
     // split state lives in Theme (shared with the ControlPanel)
     readonly property int gap: 6
@@ -21,7 +21,7 @@ PanelWindow {
     Item {
         id: island
         anchors {
-            top: parent.top; topMargin: 5
+            top: parent.top; topMargin: 3
             left: parent.left; leftMargin: 5
             right: parent.right; rightMargin: 5
         }

@@ -8,6 +8,7 @@ Item {
 
     property string state: "idle"   // idle | recording | transcribing
     property string tip:   ""
+    property bool   hasVoxtype: true   // turns off polling entirely when absent
 
     readonly property string displayIcon: {
         if (state === "recording")    return "\uE029"   // mic
@@ -46,12 +47,17 @@ Item {
         command: ["bash", "-c",
             "if command -v voxtype >/dev/null 2>&1; then " +
             "timeout 1 voxtype status --extended --format json 2>/dev/null | jq -r '[(.class // .alt // \"idle\"), ((.tooltip // \"\") | split(\"\\n\")[0])] | @tsv' 2>/dev/null; " +
-            "else echo 'idle\\t'; fi"
+            "else echo 'MISSING'; fi"
         ]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
                 var parts = this.text.trim().split("\t")
+                if (parts[0] === "MISSING") {
+                    rootMod.hasVoxtype = false   // stops the timer → no more polling
+                    rootMod.state = "idle"; rootMod.tip = ""
+                    return
+                }
                 rootMod.state = parts[0] || "idle"
                 rootMod.tip   = parts[1] || ""
             }
@@ -59,7 +65,7 @@ Item {
     }
 
     Timer {
-        interval: 500; running: true; repeat: true; triggeredOnStart: true
+        interval: 1000; running: rootMod.hasVoxtype; repeat: true; triggeredOnStart: true
         onTriggered: { vtProc.running = false; vtProc.running = true }
     }
 

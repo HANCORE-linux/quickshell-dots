@@ -36,7 +36,7 @@ Item {
     }
 
     Timer {
-        interval: 1000; running: true; repeat: true; triggeredOnStart: true
+        interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { idleProc.running = false; idleProc.running = true }
     }
 

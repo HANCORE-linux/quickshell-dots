@@ -35,9 +35,9 @@ Item {
             id: badgeTxt
             anchors.centerIn: parent
             text: root.notifCount > 99 ? "99" : root.notifCount
-            color: "#ffffff"
+            color: root.paper
             font.family: root.mono
-            font.pixelSize: 8
+            font.pixelSize: 7
             font.weight: Font.Bold
         }
     }

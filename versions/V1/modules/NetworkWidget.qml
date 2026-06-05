@@ -158,20 +158,22 @@ Item {
             visible: rootMod.mode === "ethernet"
             spacing: 0
             Text {
-                width: 48
+                width: 54; height: 11
+                verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignRight
                 text: "↓" + rootMod.formatSpeed(rootMod.dlRate)
                 color: root.seal
                 font.family: root.mono
-                font.pixelSize: 9
+                font.pixelSize: 10
             }
             Text {
-                width: 48
+                width: 54; height: 11
+                verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignRight
                 text: "↑" + rootMod.formatSpeed(rootMod.ulRate)
                 color: root.indigo
                 font.family: root.mono
-                font.pixelSize: 9
+                font.pixelSize: 10
             }
         }
 

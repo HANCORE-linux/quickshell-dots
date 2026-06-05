@@ -34,7 +34,7 @@ Item {
     }
 
     Timer {
-        interval: 1000; running: true; repeat: true; triggeredOnStart: true
+        interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { dndProc.running = false; dndProc.running = true }
     }
 

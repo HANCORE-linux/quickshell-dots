@@ -67,7 +67,7 @@ Item {
     }
     onPlayingChanged: { if (!playing) dropAnim.restart() }
 
-    implicitWidth: active ? (row.implicitWidth + 18) : 0
+    implicitWidth: active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)
     implicitHeight: 28
     clip: true
 
@@ -76,8 +76,8 @@ Item {
     }
 
     Rectangle {
-        anchors.centerIn: row
-        width: row.implicitWidth + 18
+        anchors.centerIn: parent
+        width: rootMod.active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)
         height: 24
         radius: 12
         color: root.pill
@@ -85,8 +85,26 @@ Item {
         border.width: 1
     }
 
+    // ── idle: a single music-note, clickable to open the no-song panel ──
+    Text {
+        id: idleNote
+        anchors.centerIn: parent
+        visible: !rootMod.active
+        text: ""   // music_note
+        font.family: "Material Symbols Rounded"
+        font.pixelSize: 15
+        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.mprisVisible = !root.mprisVisible
+        }
+    }
+
     Row {
         id: row
+        visible: rootMod.active
         anchors.centerIn: parent
         spacing: 4
 

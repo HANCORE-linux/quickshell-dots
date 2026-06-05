@@ -13,7 +13,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-cpu"
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 8
 
     property int cpuPct: 0
@@ -266,10 +266,12 @@ PanelWindow {
         command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'btop'"]
     }
 
-    onVisibleChanged: {
-        if (visible) {
-            dataProc.running = false
-            dataProc.running = true
-        }
+    // refresh live while the panel is open
+    Timer {
+        interval: 1500
+        running: cpuPanel.visible && root.cpuVisible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: { dataProc.running = false; dataProc.running = true }
     }
 }

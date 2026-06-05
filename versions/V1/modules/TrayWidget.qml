@@ -14,10 +14,6 @@ Item {
         root.trayToggleHide(item)
     }
 
-    QsMenuAnchor {
-        id: ctxMenu
-    }
-
     Row {
         id: trayRow
         anchors.centerIn: parent
@@ -58,12 +54,8 @@ Item {
                             rootMod.toggleHide(modelData)
                         else if (e.button === Qt.MiddleButton) {
                             if (modelData.hasMenu) {
-                                ctxMenu.anchor.item = trayDelegate
-                                ctxMenu.anchor.rect = Qt.rect(0, trayDelegate.height, trayDelegate.width, 1)
-                                ctxMenu.anchor.edges = Edges.Top
-                                ctxMenu.anchor.gravity = Edges.Top
-                                ctxMenu.menu = modelData.menu
-                                ctxMenu.open()
+                                var gp = trayDelegate.mapToItem(null, 0, 0)
+                                root.openTrayMenu(modelData.menu, gp.x - 98)
                             }
                         }
                     }

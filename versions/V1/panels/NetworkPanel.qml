@@ -13,7 +13,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-network"
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 8
 
     property string mode:  "none"   // wifi | ethernet | none
@@ -34,14 +34,15 @@ PanelWindow {
         scanning = true
         scanProc.running = false
         scanProc.running = true
+        scanWatchdog.restart()        // never stay stuck in "scanning"
     }
 
     function connectTo(ssid, sec) {
         var isKnown = known.indexOf(ssid) >= 0
         if (sec === "open" || isKnown) {
-            connectProc.command = ["bash", "-c",
-                "DEV=$(for d in /sys/class/net/*/wireless; do basename \"$(dirname \"$d\")\"; break; done); " +
-                "iwctl station \"$DEV\" connect \"" + ssid.replace(/"/g, '') + "\" 2>/dev/null"]
+            if (!netPanel.wdev) return
+            // argv form (no shell) → a crafted SSID cannot inject commands
+            connectProc.command = ["iwctl", "station", netPanel.wdev, "connect", ssid]
             connectProc.running = false
             connectProc.running = true
             // re-scan shortly to reflect new connection
@@ -388,6 +389,7 @@ PanelWindow {
                 netPanel.networks = nets
                 netPanel.known = kn
                 netPanel.scanning = false
+                scanWatchdog.stop()
             }
         }
     }
@@ -395,6 +397,8 @@ PanelWindow {
     Process { id: connectProc; command: ["bash", "-c", "true"] }
 
     Timer { id: rescanTimer; interval: 1500; onTriggered: { netData.running = false; netData.running = true; netPanel.scan() } }
+    // safety: if a scan hangs, don't block future rescans forever
+    Timer { id: scanWatchdog; interval: 8000; onTriggered: netPanel.scanning = false }
 
     onVisibleChanged: {
         if (visible) {

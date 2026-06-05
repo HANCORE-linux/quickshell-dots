@@ -83,7 +83,9 @@ fi
 
 # ── 6. stop waybar (would overlap) and start the bar now ────────
 pkill -x waybar 2>/dev/null && info "Stopped waybar (use the panel/control to manage)" || true
-pkill -f "quickshell -p $DEST" 2>/dev/null || true
+  # stop existing bar (supports both -c bar and -p $DEST modes)
+  pkill -f "qs.*-c bar" 2>/dev/null || true
+  pkill -f "quickshell -p $DEST" 2>/dev/null || true
 sleep 0.3
 setsid quickshell -p "$DEST" >/dev/null 2>&1 &
 info "Bar started — try it out."

@@ -35,20 +35,25 @@ Item {
         border.width: 1
     }
 
+    readonly property string battIcon:
+        charging ? "\uE1A3"          // battery_charging_full
+      : (low    ? "\uE19C"           // battery_alert
+      :           "\uE1A4")          // battery_full
+
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 5
+        spacing: 4
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "BAT"
+            text: rootMod.battIcon
             color: (rootMod.charging || rootMod.full)
-                ? Qt.rgba(root.indigo.r, root.indigo.g, root.indigo.b, 0.7)
-                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
-            font.family: root.mono
-            font.pixelSize: 12
-            font.letterSpacing: 0.5
+                ? root.indigo
+                : (rootMod.low ? root.seal
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
+            font.family: "Material Symbols Rounded"
+            font.pixelSize: 15
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 

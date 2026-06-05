@@ -193,6 +193,16 @@ Item {
     property var trayPinned: []
     property real trayBarX: 10
 
+    // ── Tray context-menu state (themed menu, rendered by TrayMenu.qml) ──
+    property bool trayMenuVisible: false
+    property var  trayMenuHandle: null   // the QsMenuHandle of the clicked item
+    property real trayMenuX: 0           // global x to anchor the menu under the icon
+    function openTrayMenu(handle, x) {
+        trayMenuHandle = handle
+        trayMenuX = x
+        trayMenuVisible = true
+    }
+
     function trayIsHidden(item) {
         return trayPinned.indexOf(item.id) < 0
     }

@@ -13,7 +13,7 @@ PanelWindow {
     WlrLayershell.namespace: "omarchy-tooltip"
     mask: Region {}
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 6
 
     property real reveal: root.tooltipShown ? 1 : 0

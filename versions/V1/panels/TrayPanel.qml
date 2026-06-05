@@ -14,7 +14,7 @@ PanelWindow {
     WlrLayershell.namespace: "omarchy-tray"
     mask: Region { item: card }
 
-    readonly property int barBottom: 37
+    readonly property int barBottom: 35
     readonly property int gap: 8
     readonly property int popupW: 56
 
@@ -29,11 +29,6 @@ PanelWindow {
         return n
     }
     onHiddenCountChanged: if (root.trayVisible && hiddenCount === 0) root.trayVisible = false
-
-    QsMenuAnchor {
-        id: ctxMenu
-        anchor.window: trayPanel
-    }
 
     Rectangle {
         id: card
@@ -129,12 +124,8 @@ PanelWindow {
                                 root.trayToggleHide(modelData)
                             } else if (e.button === Qt.MiddleButton) {
                                 if (modelData.hasMenu) {
-                                    ctxMenu.anchor.item = ma
-                                    ctxMenu.anchor.rect = Qt.rect(0, ma.height, ma.width, 1)
-                                    ctxMenu.anchor.edges = Edges.Top
-                                    ctxMenu.anchor.gravity = Edges.Top
-                                    ctxMenu.menu = modelData.menu
-                                    ctxMenu.open()
+                                    var gp = ma.mapToItem(null, 0, 0)
+                                    root.openTrayMenu(modelData.menu, gp.x - 98)
                                 }
                             }
                         }

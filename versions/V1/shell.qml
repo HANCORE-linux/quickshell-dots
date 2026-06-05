@@ -26,4 +26,5 @@ ShellRoot {
     WeatherPanel { root: theme }
     WorkspacePanel { root: theme }
     ControlPanel { root: theme }
+    TrayMenu { root: theme }
 }
