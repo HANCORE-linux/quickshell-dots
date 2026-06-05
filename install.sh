@@ -56,23 +56,39 @@ if [[ -z "$choice" ]]; then
 fi
 printf '%s\n' "${versions[@]}" | grep -qx "$choice" || { err "Unknown version: $choice"; exit 1; }
 
-# ── 4. install (with backup) ────────────────────────────────────
+# ── 4. install ──────────────────────────────────────────────────
+# back up only a FOREIGN config (no .qsrise marker). Re-installing our own
+# bar just replaces it — no redundant backups.
 if [[ -d "$DEST" ]]; then
-  bak="$DEST.bak.$(date +%Y%m%d-%H%M%S)"
-  info "Backing up existing config → $bak"
-  mv "$DEST" "$bak"
+  if [[ -e "$DEST/.qsrise" ]]; then
+    rm -rf "$DEST"
+  else
+    bak="$DEST.bak.$(date +%Y%m%d-%H%M%S)"
+    info "Backing up your existing config → $bak"
+    mv "$DEST" "$bak"
+  fi
 fi
 mkdir -p "$DEST"
 cp -r "$tmp/repo/versions/$choice/." "$DEST/"
+echo "$choice" > "$DEST/.qsrise"
 info "Installed '${c_b}$choice${c_0}' → $DEST"
 
-# ── 5. start now so you can try it immediately ──────────────────
+# ── 5. theme hook (live color updates on Omarchy theme switch) ──
+hookdst="$HOME/.config/omarchy/hooks/theme-set.d"
+if [[ -f "$tmp/repo/hooks/50-quickshell-bar.sh" ]]; then
+  mkdir -p "$hookdst"
+  install -m 0755 "$tmp/repo/hooks/50-quickshell-bar.sh" "$hookdst/50-quickshell-bar.sh"
+  info "Theme hook installed (bar follows Omarchy themes)"
+fi
+
+# ── 6. stop waybar (would overlap) and start the bar now ────────
+pkill -x waybar 2>/dev/null && info "Stopped waybar (use the panel/control to manage)" || true
 pkill -f "quickshell -p $DEST" 2>/dev/null || true
 sleep 0.3
 setsid quickshell -p "$DEST" >/dev/null 2>&1 &
 info "Bar started — try it out."
 
-# ── 6. autostart on login? (opt-in; Omarchy: autostart.conf) ────
+# ── 7. autostart on login? (opt-in; Omarchy: autostart.conf) ────
 if [[ -z "$AUTOSTART" ]]; then
   printf "%sStart the bar automatically on every login? [y/N]%s " "$c_b" "$c_0"
   read -r ans </dev/tty 2>/dev/null || ans=""
