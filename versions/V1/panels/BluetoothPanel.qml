@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import "../IconMap.js" as IconMap
 
 PanelWindow {
     id: btPanel
@@ -20,6 +21,11 @@ PanelWindow {
     property bool scanning: false
     property var devices: []   // [{name, mac, connected, paired}]
     readonly property var shownDevices: devices.slice(0, 8)
+    readonly property int numConnected: {
+        var n = 0
+        for (var i = 0; i < devices.length; i++) if (devices[i].connected) n++
+        return n
+    }
     property string connCmd: ""
 
     function refresh() { btData.running = false; btData.running = true }
@@ -66,11 +72,32 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                Row {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                    text: "Bluetooth"
-                    color: root.ink; font.family: root.mono; font.pixelSize: 13
-                    font.letterSpacing: 2; font.weight: Font.Medium
+                    spacing: 8
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Bluetooth"
+                        color: root.ink; font.family: root.mono; font.pixelSize: 13
+                        font.letterSpacing: 2; font.weight: Font.Medium
+                    }
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: btPanel.btOn && btPanel.numConnected > 0
+                        spacing: 3
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: IconMap.icon("bluetooth_connected")
+                            color: root.seal
+                            font.family: "Material Symbols Rounded"; font.pixelSize: 13
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: String(btPanel.numConnected)
+                            color: root.seal
+                            font.family: root.mono; font.pixelSize: 11
+                        }
+                    }
                 }
                 Row {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
