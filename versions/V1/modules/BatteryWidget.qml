@@ -58,8 +58,8 @@ Item {
         // drawn landscape battery — body + stepless fill + terminal nub
         Item {
             id: batt
-            width: 22
-            height: 12
+            width: 19
+            height: 10
             anchors.verticalCenter: parent.verticalCenter
 
             readonly property real ratio: Math.max(0, Math.min(1, rootMod.percent / 100))
@@ -68,11 +68,11 @@ Item {
                 id: body
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 19
-                height: 11
-                radius: 3
+                width: 16
+                height: 9
+                radius: 2.5
                 color: "transparent"
-                border.width: 1.4
+                border.width: 1.2
                 border.color: rootMod.battColor
                 Behavior on border.color { ColorAnimation { duration: 200 } }
 
@@ -81,8 +81,8 @@ Item {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    anchors.margins: 2.2
-                    width: Math.max(batt.ratio > 0 ? 1.5 : 0, (parent.width - 4.4) * batt.ratio)
+                    anchors.margins: 1.8
+                    width: Math.max(batt.ratio > 0 ? 1.5 : 0, (parent.width - 3.6) * batt.ratio)
                     radius: 1.2
                     clip: true
                     color: rootMod.battColor
@@ -114,9 +114,9 @@ Item {
                 anchors.left: body.right
                 anchors.leftMargin: -0.5
                 anchors.verticalCenter: parent.verticalCenter
-                width: 1.8
-                height: 4
-                radius: 1
+                width: 2.5
+                height: 5
+                radius: 1.2
                 color: rootMod.battColor
                 Behavior on color { ColorAnimation { duration: 200 } }
             }
