@@ -94,7 +94,7 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
-                    onClicked: Hyprland.dispatch("workspace " + wsId)
+                    onClicked: root.gotoWorkspace(wsId)
                     onEntered: dot.scale = 1.2
                     onExited:  dot.scale = 1.0
                 }

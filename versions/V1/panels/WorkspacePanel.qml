@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 
@@ -110,9 +109,7 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                wsPanelDispatch.command = ["hyprctl", "dispatch", "workspace", String(modelData.id)]
-                                wsPanelDispatch.running = false
-                                wsPanelDispatch.running = true
+                                root.gotoWorkspace(modelData.id)
                                 root.workspaceVisible = false
                             }
                         }
@@ -122,9 +119,4 @@ PanelWindow {
         }
     }
 
-    Process {
-        id: wsPanelDispatch
-        command: ["true"]
-        running: false
-    }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import "Palette.js" as Palette
 
 Item {
@@ -181,6 +182,29 @@ Item {
                 if (p) theme.powerProfileCurrent = p
             }
         }
+    }
+
+    // ── Hyprland workspace dispatch (config-mode-aware) ──
+    // Hyprland 0.55 added Lua configs but still supports classic hyprlang, and
+    // BOTH ship the same version number — so the dispatch form depends on which
+    // config is ACTIVE, not the version: classic wants "workspace N", Lua wants
+    // hl.dsp.focus({ workspace = N }). Probe the mode once with a harmless token:
+    // "hl.dsp" alone yields the Lua error "hl.dispatch: expected a dispatcher"
+    // under Lua, or "Invalid dispatcher" under classic — neither switches.
+    property bool hyprUsesLua: false
+    Process {
+        id: hyprDispatchProbe
+        command: ["bash", "-c", "hyprctl dispatch 'hl.dsp' 2>&1 | grep -qi 'hl\\.dispatch' && echo lua || echo classic"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: { theme.hyprUsesLua = (this.text.trim() === "lua") }
+        }
+    }
+    function gotoWorkspace(id) {
+        if (hyprUsesLua)
+            Hyprland.dispatch("hl.dsp.focus({ workspace = " + id + " })")
+        else
+            Hyprland.dispatch("workspace " + id)
     }
 
     // ── Arch Updater state ──
