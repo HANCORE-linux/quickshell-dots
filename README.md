@@ -59,15 +59,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dot
 ```
 Every install also backs up the old config to `~/.config/quickshell/bar.bak.<timestamp>` (older backups are kept).
 
-</details>
-
-## V1
-- workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
-##### V1 Install-command (copy & paste in your terminal):
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
-```
-The bar launches immediately so you can try it.
 <details>
 <summary>Autostart on login (opt-in)</summary>
 
@@ -78,4 +69,13 @@ chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
 Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 </details>
+</details>
+
+## V1
+- workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
+##### V1 Install-command (copy & paste in your terminal):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh) V1
+```
+The bar launches immediately so you can try it.
 <!-- drag a screenshot here on GitHub to embed it -->
