@@ -11,8 +11,18 @@ import Quickshell.Services.Mpris
 QtObject {
     id: sel
 
+    // playerctld is an aggregator proxy: it mirrors the last player and
+    // freezes its state (often "Playing") once that player quits, leaving a
+    // ghost entry. Real players always appear under their own bus name too,
+    // so skip the proxy entirely and let the real entry win.
+    function isProxy(p) {
+        var n = (p.dbusName || "") + " " + (p.identity || "")
+        return /playerctld/i.test(n)
+    }
+
     function isReal(p) {
         if (!p) return false
+        if (isProxy(p)) return false
         if (p.playbackState === MprisPlaybackState.Stopped) return false
         var hasMeta = (p.trackTitle && p.trackTitle.length > 0)
         return hasMeta || p.playbackState === MprisPlaybackState.Playing
