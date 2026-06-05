@@ -83,10 +83,13 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
-                    color: root.sumi
+                    color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea {
+                        id: closeMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.volVisible = false
                     }
@@ -153,19 +156,23 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: volPanel.muted
-                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                color: muteMa.containsMouse
+                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                    : volPanel.muted ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
                     : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                border.color: volPanel.muted ? root.seal : root.sep
+                border.color: (muteMa.containsMouse || volPanel.muted) ? root.seal : root.sep
                 border.width: 1
+                Behavior on color { ColorAnimation { duration: 120 } }
                 Text {
                     anchors.centerIn: parent
                     text: volPanel.muted ? "Unmute" : "Mute"
-                    color: volPanel.muted ? root.seal : root.sumi
+                    color: (muteMa.containsMouse || volPanel.muted) ? root.seal : root.sumi
                     font.family: root.mono; font.pixelSize: 11
                 }
                 MouseArea {
+                    id: muteMa
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         muteRunner.running = false
@@ -208,19 +215,23 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: volPanel.micMuted
-                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                color: micMuteMa.containsMouse
+                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                    : volPanel.micMuted ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
                     : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                border.color: volPanel.micMuted ? root.seal : root.sep
+                border.color: (micMuteMa.containsMouse || volPanel.micMuted) ? root.seal : root.sep
                 border.width: 1
+                Behavior on color { ColorAnimation { duration: 120 } }
                 Text {
                     anchors.centerIn: parent
                     text: volPanel.micMuted ? "Unmute mic" : "Mute mic"
-                    color: volPanel.micMuted ? root.seal : root.sumi
+                    color: (micMuteMa.containsMouse || volPanel.micMuted) ? root.seal : root.sumi
                     font.family: root.mono; font.pixelSize: 11
                 }
                 MouseArea {
+                    id: micMuteMa
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         micMuteRunner.running = false
@@ -239,7 +250,8 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: root.seal
+                color: audioBtnMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                Behavior on color { ColorAnimation { duration: 120 } }
                 Text {
                     anchors.centerIn: parent
                     text: "Open audio"
@@ -247,7 +259,9 @@ PanelWindow {
                     font.family: root.mono; font.pixelSize: 11
                 }
                 MouseArea {
+                    id: audioBtnMa
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         root.volVisible = false

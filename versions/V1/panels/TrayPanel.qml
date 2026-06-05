@@ -65,13 +65,15 @@ PanelWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 Text {
                     anchors.centerIn: parent
-                    text: "Esc"
-                    color: root.sumi
-                    font.family: root.mono
-                    font.pixelSize: 9
+                    text: "✕"
+                    color: closeMa.containsMouse ? root.seal : root.sumi
+                    font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                 }
                 MouseArea {
+                    id: closeMa
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.trayVisible = false
                 }
@@ -93,7 +95,10 @@ PanelWindow {
                     Rectangle {
                         anchors.fill: parent
                         radius: 4
-                        color: ma.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08) : "transparent"
+                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : "transparent"
+                        border.color: ma.containsMouse ? root.seal : "transparent"
+                        border.width: ma.containsMouse ? 1 : 0
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     Row {

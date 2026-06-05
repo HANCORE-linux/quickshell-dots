@@ -70,8 +70,9 @@ PanelWindow {
                 }
                 Text {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    text: "✕"; color: root.sumi; font.pixelSize: 12
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.batteryVisible = false }
+                    text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    MouseArea { id: closeMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.batteryVisible = false }
                 }
             }
 
@@ -125,10 +126,12 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: root.seal
+                color: btopMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                Behavior on color { ColorAnimation { duration: 120 } }
                 Text { anchors.centerIn: parent; text: "Open btop"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
                 MouseArea {
-                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    id: btopMa
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: { root.batteryVisible = false; btopRunner.running = false; btopRunner.running = true }
                 }
             }

@@ -83,10 +83,13 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
-                    color: root.sumi
+                    color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea {
+                        id: closeMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.archVisible = false
                     }
@@ -206,16 +209,19 @@ PanelWindow {
                 Rectangle {
                     width: (parent.width - 8) / 2
                     height: 28; radius: 4
-                    color: root.sep
-                    border.color: "transparent"
+                    color: refreshMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.sep
+                    border.color: refreshMa.containsMouse ? root.seal : "transparent"
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     Text {
                         anchors.centerIn: parent
                         text: "Refresh"
-                        color: root.ink
+                        color: refreshMa.containsMouse ? root.seal : root.ink
                         font.family: root.mono; font.pixelSize: 11
                     }
                     MouseArea {
+                        id: refreshMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             root.archRefreshTick++;
@@ -226,8 +232,9 @@ PanelWindow {
                 Rectangle {
                     width: (parent.width - 8) / 2
                     height: 28; radius: 4
-                    color: root.seal
+                    color: updateMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
                     border.color: "transparent"
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     Text {
                         anchors.centerIn: parent
                         text: "Update"
@@ -235,7 +242,9 @@ PanelWindow {
                         font.family: root.mono; font.pixelSize: 11
                     }
                     MouseArea {
+                        id: updateMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             root.archVisible = false;

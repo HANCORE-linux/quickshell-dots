@@ -203,10 +203,13 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
-                    color: root.sumi
+                    color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea {
+                        id: closeMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.notifVisible = false
                     }
@@ -229,10 +232,11 @@ PanelWindow {
                         height: entryCol.implicitHeight + 16
                         radius: 4
                         color: entryMa.containsMouse
-                            ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10)
+                            ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
-                        border.color: root.sep
+                        border.color: entryMa.containsMouse ? root.seal : root.sep
                         border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
 
                         Column {
                             id: entryCol
@@ -288,6 +292,7 @@ PanelWindow {
                             anchors.topMargin: 4; anchors.rightMargin: 4
                             width: 18; height: 18; radius: 9
                             color: xMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20) : "transparent"
+                            Behavior on color { ColorAnimation { duration: 120 } }
                             Text {
                                 anchors.centerIn: parent
                                 text: "✕"

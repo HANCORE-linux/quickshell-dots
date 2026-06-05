@@ -65,8 +65,9 @@ PanelWindow {
                 }
                 Text {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    text: "✕"; color: root.sumi; font.pixelSize: 12
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.workspaceVisible = false }
+                    text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    MouseArea { id: closeMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.workspaceVisible = false }
                 }
             }
 
@@ -83,16 +84,18 @@ PanelWindow {
                         readonly property bool isActive: Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === modelData.id
                         width: col.width
                         height: 30; radius: 4
-                        color: isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                                        : (ma.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06) : "transparent")
-                        border.color: isActive ? root.seal : "transparent"
-                        border.width: isActive ? 1 : 0
+                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                : isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                                : "transparent"
+                        border.color: (ma.containsMouse || isActive) ? root.seal : "transparent"
+                        border.width: (ma.containsMouse || isActive) ? 1 : 0
+                        Behavior on color { ColorAnimation { duration: 120 } }
 
                         Text {
                             anchors.left: parent.left; anchors.leftMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Workspace " + modelData.id
-                            color: isActive ? root.seal : root.ink
+                            color: (ma.containsMouse || isActive) ? root.seal : root.ink
                             font.family: root.mono; font.pixelSize: 12
                             font.weight: isActive ? Font.Medium : Font.Normal
                         }

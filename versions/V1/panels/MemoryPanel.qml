@@ -88,10 +88,13 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
-                    color: root.sumi
+                    color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea {
+                        id: closeMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.memVisible = false
                     }
@@ -154,7 +157,8 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: 4
-                color: root.seal
+                color: btopMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                Behavior on color { ColorAnimation { duration: 120 } }
                 Text {
                     anchors.centerIn: parent
                     text: "Open btop"
@@ -162,7 +166,9 @@ PanelWindow {
                     font.family: root.mono; font.pixelSize: 11
                 }
                 MouseArea {
+                    id: btopMa
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         root.memVisible = false;

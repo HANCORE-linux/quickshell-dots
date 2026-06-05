@@ -105,8 +105,9 @@ PanelWindow {
                 }
                 Text {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    text: "✕"; color: root.sumi; font.pixelSize: 12
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.networkVisible = false }
+                    text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    MouseArea { id: closeMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.networkVisible = false }
                 }
             }
 
@@ -192,8 +193,10 @@ PanelWindow {
                 Text {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: netPanel.scanning ? "scanning…" : "rescan"
-                    color: root.seal; font.family: root.mono; font.pixelSize: 10
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: netPanel.scan() }
+                    color: rescanMa.containsMouse ? Qt.lighter(root.seal, 1.25) : root.seal
+                    font.family: root.mono; font.pixelSize: 10
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    MouseArea { id: rescanMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: netPanel.scan() }
                 }
             }
 
@@ -217,10 +220,12 @@ PanelWindow {
                             required property var modelData
                             width: netList.width
                             height: 30; radius: 4
-                            color: modelData.conn ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                                                   : (nma.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06) : "transparent")
-                            border.color: modelData.conn ? root.seal : "transparent"
-                            border.width: modelData.conn ? 1 : 0
+                            color: nma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                   : modelData.conn ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                                   : "transparent"
+                            border.color: (nma.containsMouse || modelData.conn) ? root.seal : "transparent"
+                            border.width: (nma.containsMouse || modelData.conn) ? 1 : 0
+                            Behavior on color { ColorAnimation { duration: 120 } }
 
                             Row {
                                 anchors.left: parent.left; anchors.leftMargin: 8
@@ -234,7 +239,7 @@ PanelWindow {
                                 }
                                 Text {
                                     text: modelData.ssid
-                                    color: modelData.conn ? root.seal : root.ink
+                                    color: (nma.containsMouse || modelData.conn) ? root.seal : root.ink
                                     font.family: root.mono; font.pixelSize: 11
                                     font.weight: modelData.conn ? Font.Medium : Font.Normal
                                     width: 170; elide: Text.ElideRight

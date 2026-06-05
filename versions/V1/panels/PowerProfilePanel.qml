@@ -84,10 +84,13 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
-                    color: root.sumi
+                    color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea {
+                        id: closeMa
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.powerProfileVisible = false
                     }
@@ -112,9 +115,12 @@ PanelWindow {
                     Rectangle {
                         anchors.fill: parent
                         radius: 4
-                        color: isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.2) : "transparent"
-                        border.color: isActive ? root.seal : "transparent"
-                        border.width: isActive ? 1 : 0
+                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                               : isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.2)
+                               : "transparent"
+                        border.color: (ma.containsMouse || isActive) ? root.seal : "transparent"
+                        border.width: (ma.containsMouse || isActive) ? 1 : 0
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     Row {
@@ -125,14 +131,14 @@ PanelWindow {
 
                         Text {
                             text: modelData.icon
-                            color: isActive ? root.seal : root.ink
+                            color: (ma.containsMouse || isActive) ? root.seal : root.ink
                             font.family: root.mono
                             font.pixelSize: 14
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Text {
                             text: modelData.label
-                            color: isActive ? root.seal : root.ink
+                            color: (ma.containsMouse || isActive) ? root.seal : root.ink
                             font.family: root.mono
                             font.pixelSize: 12
                             font.weight: isActive ? Font.Medium : Font.Normal
@@ -141,7 +147,9 @@ PanelWindow {
                     }
 
                     MouseArea {
+                        id: ma
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             setProfileProc.command = ["bash", "-c", "powerprofilesctl set " + modelData.key]
