@@ -35,27 +35,11 @@ Item {
         border.width: 1
     }
 
-    // stepped Material Symbols glyph that tracks the charge level
-    readonly property string battIcon: {
-        if (full) return "\uE1A4"                       // battery_full
-        if (charging) {
-            if (percent >= 95) return "\uE1A3"          // battery_charging_full
-            if (percent >= 90) return "\uF0A7"          // battery_charging_90
-            if (percent >= 80) return "\uF0A6"          // battery_charging_80
-            if (percent >= 60) return "\uF0A5"          // battery_charging_60
-            if (percent >= 50) return "\uF0A4"          // battery_charging_50
-            if (percent >= 30) return "\uF0A3"          // battery_charging_30
-            return "\uF0A2"                             // battery_charging_20
-        }
-        if (percent >= 95) return "\uE1A4"              // battery_full
-        if (percent >= 85) return "\uEBD2"              // battery_6_bar
-        if (percent >= 70) return "\uEBD4"              // battery_5_bar
-        if (percent >= 55) return "\uEBE2"              // battery_4_bar
-        if (percent >= 40) return "\uEBDD"              // battery_3_bar
-        if (percent >= 25) return "\uEBE0"              // battery_2_bar
-        if (percent >= 10) return "\uEBD9"              // battery_1_bar
-        return "\uEBDC"                                 // battery_0_bar
-    }
+    // colour shared by the drawn battery body, fill and nub
+    readonly property color battColor:
+        (charging || full) ? root.indigo
+        : (low ? root.seal
+        : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
 
     Row {
         id: row
@@ -71,19 +55,71 @@ Item {
             font.letterSpacing: 0.5
         }
 
-        Text {
+        // drawn landscape battery — body + stepless fill + terminal nub
+        Item {
+            id: batt
+            width: 22
+            height: 12
             anchors.verticalCenter: parent.verticalCenter
-            text: rootMod.battIcon
-            // trim the glyph's ~4px side bearings so spacing:5 reads clean
-            width: 8
-            horizontalAlignment: Text.AlignHCenter
-            color: (rootMod.charging || rootMod.full)
-                ? root.indigo
-                : (rootMod.low ? root.seal
-                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
-            font.family: "Material Symbols Rounded"
-            font.pixelSize: 14
-            Behavior on color { ColorAnimation { duration: 200 } }
+
+            readonly property real ratio: Math.max(0, Math.min(1, rootMod.percent / 100))
+
+            Rectangle {
+                id: body
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: 19
+                height: 11
+                radius: 3
+                color: "transparent"
+                border.width: 1.4
+                border.color: rootMod.battColor
+                Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                Rectangle {
+                    id: fill
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 2.2
+                    width: Math.max(batt.ratio > 0 ? 1.5 : 0, (parent.width - 4.4) * batt.ratio)
+                    radius: 1.2
+                    clip: true
+                    color: rootMod.battColor
+                    Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                    Behavior on color { ColorAnimation { duration: 200 } }
+
+                    // font-free charging shimmer that sweeps across the fill
+                    Rectangle {
+                        visible: rootMod.charging && !rootMod.full
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 6
+                        radius: parent.radius
+                        color: Qt.rgba(1, 1, 1, 0.18)
+                        property real pos: 0
+                        x: (parent.width + width) * pos - width
+                        SequentialAnimation on pos {
+                            running: rootMod.charging && !rootMod.full
+                            loops: Animation.Infinite
+                            NumberAnimation { from: 0; to: 1; duration: 1100; easing.type: Easing.InOutSine }
+                            PauseAnimation { duration: 500 }
+                        }
+                    }
+                }
+            }
+
+            // terminal nub (positive pole)
+            Rectangle {
+                anchors.left: body.right
+                anchors.leftMargin: -0.5
+                anchors.verticalCenter: parent.verticalCenter
+                width: 2.5
+                height: 5
+                radius: 1.2
+                color: rootMod.battColor
+                Behavior on color { ColorAnimation { duration: 200 } }
+            }
         }
 
         // natural width: value hugs the icon AND the pill closes flush on the
