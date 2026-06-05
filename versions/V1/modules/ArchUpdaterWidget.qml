@@ -83,7 +83,7 @@ Item {
 
     Process {
         id: updateRunner
-        command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'paru'"]
+        command: ["bash", "-c", "AUR=$(command -v paru || command -v yay); omarchy-launch-floating-terminal-with-presentation \"$AUR\""]
     }
 
     Item {
