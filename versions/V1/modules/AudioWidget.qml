@@ -87,6 +87,7 @@ Item {
     Process {
         id: audioProc
         command: ["bash", "-c",
+            "export LC_ALL=C; " +
             "pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oP '[0-9]+(?=%)' | head -1; " +
             "pactl get-sink-mute   @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}'; " +
             "pactl list sinks 2>/dev/null | grep -A80 \"Name: $(pactl get-default-sink)\" | grep 'Active Port' | awk '{print $NF}'"
