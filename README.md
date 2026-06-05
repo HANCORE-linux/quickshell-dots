@@ -69,7 +69,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dot
 ```
 The bar launches immediately so you can try it. To start it automatically on every login, install the post-boot hook:
 ```bash
-install -m 755 contrib/post-boot.d/quickshell-rise ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
+curl -fsSL -o ~/.config/omarchy/hooks/post-boot.d/quickshell-rise \
+  https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/contrib/post-boot.d/quickshell-rise
+chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
 Remove it with `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`.
 <!-- drag a screenshot here on GitHub to embed it -->

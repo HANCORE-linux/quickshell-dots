@@ -88,8 +88,11 @@ info "Bar started — try it out."
 
 # ── 7. autostart hint ────────────────────────────────────────────
 info "Autostart at login via Omarchy post-boot hook:"
-printf "  ${c_b}install -m 755 contrib/post-boot.d/quickshell-rise %s${c_0}\n" \
-  "\$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+RAW="https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main"
+printf "  ${c_b}curl -fsSL -o %s/quickshell-rise %s/contrib/post-boot.d/quickshell-rise${c_0}\n" \
+  "\$HOME/.config/omarchy/hooks/post-boot.d" "$RAW"
+printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
+  "\$HOME/.config/omarchy/hooks/post-boot.d"
 printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
   "\$HOME/.config/omarchy/hooks/post-boot.d"
 info "${c_b}Done — enjoy!${c_0}"
