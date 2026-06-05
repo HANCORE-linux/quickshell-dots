@@ -76,6 +76,15 @@ Item {
                 border.color: rootMod.battColor
                 Behavior on border.color { ColorAnimation { duration: 200 } }
 
+                // faint indigo wash so a charging cell reads "active" at any level
+                Rectangle {
+                    visible: rootMod.charging
+                    anchors.fill: parent
+                    anchors.margins: 1.8
+                    radius: 1.2
+                    color: Qt.rgba(root.indigo.r, root.indigo.g, root.indigo.b, 0.28)
+                }
+
                 Rectangle {
                     id: fill
                     anchors.left: parent.left
@@ -105,6 +114,34 @@ Item {
                             NumberAnimation { from: 0; to: 1; duration: 1100; easing.type: Easing.InOutSine }
                             PauseAnimation { duration: 500 }
                         }
+                    }
+                }
+
+                // charging bolt overlay — clear "is charging" cue
+                Canvas {
+                    id: bolt
+                    visible: rootMod.charging && !rootMod.full
+                    anchors.centerIn: parent
+                    width: 5
+                    height: 7
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.beginPath()
+                        ctx.moveTo(width * 0.55, 0)
+                        ctx.lineTo(width * 0.20, height * 0.55)
+                        ctx.lineTo(width * 0.45, height * 0.55)
+                        ctx.lineTo(width * 0.40, height)
+                        ctx.lineTo(width * 0.80, height * 0.45)
+                        ctx.lineTo(width * 0.55, height * 0.45)
+                        ctx.closePath()
+                        ctx.fillStyle = root.paper.toString()
+                        ctx.fill()
+                    }
+                    Component.onCompleted: requestPaint()
+                    Connections {
+                        target: root
+                        function onPaperChanged() { bolt.requestPaint() }
                     }
                 }
             }
