@@ -44,7 +44,7 @@ PanelWindow {
         property string label
         property color accent: root.seal
         signal activated()
-        height: 30
+        height: 25
         radius: 4
         color: _ma.containsMouse ? Qt.rgba(accent.r, accent.g, accent.b, 0.18)
                                  : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
@@ -130,8 +130,6 @@ PanelWindow {
                 onActivated: { root.controlVisible = false; Quickshell.execDetached(["omarchy-menu"]) }
             }
 
-            Rectangle { width: parent.width; height: 1; color: root.sep }
-
             // ── POWER (collapsed sub-menu; nothing destructive pre-shown) ──
             Tile {
                 width: parent.width
@@ -171,6 +169,48 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
+            // ── BAR-COLOR: seal color source ──
+            Text {
+                text: "BAR-COLOR"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Grid {
+                width: parent.width; columns: 2; columnSpacing: 8
+                Repeater {
+                    model: [
+                        { label: "Red",    accent: false },
+                        { label: "Accent", accent: true  }
+                    ]
+                    delegate: Rectangle {
+                        required property var modelData
+                        readonly property bool on:      root.useThemeAccent === modelData.accent
+                        readonly property bool hovered: _cma.containsMouse
+                        width: (col.width - 8) / 2; height: 25; radius: 4
+                        color: on     ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                             : hovered ? Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.12)
+                                       : Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.06)
+                        border.color: (on || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: (parent.on || parent.hovered) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 11
+                            font.weight: parent.on ? Font.Medium : Font.Normal
+                        }
+                        MouseArea {
+                            id: _cma
+                            anchors.fill: parent; hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.useThemeAccent = modelData.accent
+                        }
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
             // ── SPLITS ──
             Text {
                 text: "SPLITS"
@@ -190,7 +230,7 @@ PanelWindow {
                         readonly property bool active: root[modelData.key] === true
                         readonly property bool hovered: splitMa.containsMouse
                         width: (col.width - 8) / 2
-                        height: 30
+                        height: 25
                         radius: 4
                         color: active ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
                                       : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
@@ -217,12 +257,41 @@ PanelWindow {
                 }
             }
 
+            // ── particle stream toggle (only shown when a split is active) ──
+            Rectangle {
+                id: particleTile
+                visible: ctrlPanel.anySplit
+                readonly property bool on:      root.particleEnabled
+                readonly property bool hovered: particleMa.containsMouse
+                width: parent.width; height: 25; radius: 4
+                color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                           : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+                                     : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                border.color: (on || hovered) ? root.seal : root.sep
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "Particles"
+                    color: (particleTile.on || particleTile.hovered) ? root.seal : root.ink
+                    font.family: root.mono; font.pixelSize: 11
+                    font.weight: particleTile.on ? Font.Medium : Font.Normal
+                }
+                MouseArea {
+                    id: particleMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.particleEnabled = !root.particleEnabled
+                }
+            }
+
             // ── merge all ──
             Rectangle {
                 id: mergeBtn
                 readonly property bool hovered: mergeMa.containsMouse && ctrlPanel.anySplit
                 width: parent.width
-                height: 28; radius: 4
+                height: 23; radius: 4
                 color: ctrlPanel.anySplit ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
                 border.color: ctrlPanel.anySplit ? root.seal : root.sep
                 border.width: 1

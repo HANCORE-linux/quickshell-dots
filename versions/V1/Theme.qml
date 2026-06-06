@@ -14,9 +14,11 @@ Item {
     property color inkDeep: "#c8c093"
     property color sumi:    "#a6a69c"
     property color indigo:  "#658594"
-    property color sealRaw: "#c4746e"
+    property color sealRaw:    "#c4746e"
+    property color accentHint: sealRaw    // filled by palette; default = same as red
+    property bool  useThemeAccent: false
 
-    readonly property color seal: sealRaw
+    readonly property color seal: useThemeAccent ? accentHint : sealRaw
 
     readonly property string mono:  "JetBrainsMono Nerd Font"
 
@@ -132,6 +134,7 @@ Item {
     property bool splitMon:    false
     property bool splitNet:    false
     property bool splitMprisL: false
+    property bool particleEnabled: true
 
     // splitLeft/splitRight kept as constant-false (toggles removed); the clean
     // content-edge cuts are splitMon (Left) and splitMprisL (Right).

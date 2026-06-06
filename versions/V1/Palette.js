@@ -8,8 +8,9 @@ const WANTED = {
     foreground: "ink",
     color7:     "inkDeep",
     color8:     "sumi",
-    accent:     "indigo",
     color1:     "sealRaw",
+    color4:     "indigo",
+    accent:     "accentHint",
 };
 
 const LINE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"/;
@@ -45,6 +46,7 @@ function apply(theme, palette) {
     if (palette.ink)     theme.ink     = palette.ink;
     if (palette.inkDeep) theme.inkDeep = palette.inkDeep;
     if (palette.sumi)    theme.sumi    = palette.sumi;
-    if (palette.indigo)  theme.indigo  = palette.indigo;
-    if (palette.sealRaw) theme.sealRaw = palette.sealRaw;
+    if (palette.indigo)      theme.indigo      = palette.indigo;
+    if (palette.sealRaw)     theme.sealRaw     = palette.sealRaw;
+    if (palette.accentHint)  theme.accentHint  = palette.accentHint;
 }
