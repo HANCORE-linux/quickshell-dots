@@ -8,8 +8,8 @@ const WANTED = {
     foreground: "ink",
     color7:     "inkDeep",
     color8:     "sumi",
-    accent:     "indigo",
-    color1:     "sealRaw",
+    accent:     "sealRaw",
+    color4:     "indigo",
 };
 
 const LINE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"/;
