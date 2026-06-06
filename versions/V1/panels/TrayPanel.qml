@@ -12,7 +12,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-tray"
-    mask: Region { item: card }
+    // no mask → whole overlay is interactive (modal): click-outside + ESC work
 
     readonly property int barBottom: 35
     readonly property int gap: 8
@@ -29,6 +29,9 @@ PanelWindow {
         return n
     }
     onHiddenCountChanged: if (root.trayVisible && hiddenCount === 0) root.trayVisible = false
+
+    // click-outside-to-close: full-overlay dismiss area behind the card
+    MouseArea { anchors.fill: parent; onClicked: root.trayVisible = false }
 
     Rectangle {
         id: card
