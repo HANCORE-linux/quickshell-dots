@@ -65,16 +65,42 @@ Item {
         }
     }
 
-    // ── bob2 logo (above the wave) ──
-    Image {
+    // ── bob2 logo: transparent PNG colorized with theme seal ──
+    Canvas {
         id: logo
         anchors.centerIn: parent
-        source: "../assets/bob2.svg"
         height: 20
-        fillMode: Image.PreserveAspectFit
-        sourceSize.height: 192   // render at native PNG height → crisp downscale
-        smooth: true
-        mipmap: true
+        width: Math.round(height * 656 / 192)   // native aspect ratio
+
+        property color tint: root.seal
+        onTintChanged: requestPaint()
+
+        Image {
+            id: logoSrc
+            source: "../assets/bob2.png"
+            visible: false
+            sourceSize.height: 192
+            onStatusChanged: if (status === Image.Ready) logo.requestPaint()
+        }
+
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+            if (logoSrc.status !== Image.Ready || width < 1 || height < 1) return
+            ctx.drawImage(logoSrc, 0, 0, width, height)
+            var img = ctx.getImageData(0, 0, width, height)
+            var d   = img.data
+            var r   = Math.round(tint.r * 255)
+            var g   = Math.round(tint.g * 255)
+            var b   = Math.round(tint.b * 255)
+            for (var i = 0; i < d.length; i += 4) {
+                d[i]   = r
+                d[i+1] = g
+                d[i+2] = b
+                // d[i+3]: alpha unchanged — preserves the logo shape
+            }
+            ctx.putImageData(img, 0, 0)
+        }
     }
 
     Timer {
