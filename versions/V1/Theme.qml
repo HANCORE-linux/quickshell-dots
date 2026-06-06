@@ -134,7 +134,7 @@ Item {
     property bool splitMon:    false
     property bool splitNet:    false
     property bool splitMprisL: false
-    property bool particleEnabled: true
+    property bool particleEnabled: false
 
     // splitLeft/splitRight kept as constant-false (toggles removed); the clean
     // content-edge cuts are splitMon (Left) and splitMprisL (Right).
