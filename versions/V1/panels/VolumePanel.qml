@@ -20,6 +20,8 @@ PanelWindow {
     property bool   muted:    false
     property string portType: "default"
     property bool   micMuted: false
+    property var    eePresets: []
+    property string eeActive:  ""
 
     property real reveal: root.volVisible ? 1 : 0
     Behavior on reveal {
@@ -188,6 +190,53 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
+            // ── easyeffects presets ──
+            Text {
+                text: "EFFECTS"
+                color: root.sumi
+                font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                visible: volPanel.eePresets.length > 0
+            }
+
+            Repeater {
+                model: volPanel.eePresets
+                Rectangle {
+                    width: col.width
+                    height: 26; radius: 4
+                    color: volPanel.eeActive === modelData
+                        ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                        : prMa.containsMouse
+                            ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                            : "transparent"
+                    border.color: volPanel.eeActive === modelData ? root.seal : "transparent"
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 100 } }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left; anchors.leftMargin: 8
+                        anchors.right: parent.right; anchors.rightMargin: 8
+                        text: modelData
+                        color: volPanel.eeActive === modelData ? root.seal : root.ink
+                        font.family: root.mono; font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+                    MouseArea {
+                        id: prMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            volPanel.eeActive = modelData
+                            eeLoadProc.preset = modelData
+                            eeLoadProc.running = false
+                            eeLoadProc.running = true
+                        }
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep; visible: volPanel.eePresets.length > 0 }
+
             // ── mic section ──
             Text {
                 text: "INPUT"
@@ -302,6 +351,34 @@ PanelWindow {
     Process { id: audioRunner;   command: ["bash", "-c", "omarchy-launch-audio"] }
 
     Process {
+        id: eeListProc
+        command: ["bash", "-c", "easyeffects -p 2>/dev/null | grep -E '^[0-9]' | cut -f2-"]
+        stdout: SplitParser {
+            onRead: function(line) {
+                var t = line.trim()
+                if (t) volPanel.eePresets = volPanel.eePresets.concat([t])
+            }
+        }
+    }
+
+    Process {
+        id: eeActiveProc
+        command: ["bash", "-c", "easyeffects -a output 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var t = this.text.trim()
+                if (t) volPanel.eeActive = t
+            }
+        }
+    }
+
+    Process {
+        id: eeLoadProc
+        property string preset: ""
+        command: ["easyeffects", "-l", eeLoadProc.preset]
+    }
+
+    Process {
         id: micData
         command: ["bash", "-c", "pactl get-source-mute @DEFAULT_SOURCE@ 2>/dev/null | awk '{print $2}'"]
         running: false
@@ -319,6 +396,11 @@ PanelWindow {
             audioData.running = true
             micData.running = false
             micData.running = true
+            volPanel.eePresets = []
+            eeListProc.running = false
+            eeListProc.running = true
+            eeActiveProc.running = false
+            eeActiveProc.running = true
         }
     }
 }
