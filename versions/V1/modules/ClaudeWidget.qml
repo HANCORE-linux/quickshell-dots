@@ -17,6 +17,8 @@ Item {
     implicitWidth: claudeActive ? row.implicitWidth + 18 : 0
     implicitHeight: 28
 
+    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
     Process {
         id: detectProc
         command: ["bash", "-c", "pgrep -x claude >/dev/null 2>&1 || pgrep -x opencode >/dev/null 2>&1"]
@@ -43,9 +45,9 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: String.fromCodePoint(0xF167A)
+            text: "\uE65F"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
-            font.family: root.mono
+            font.family: "Material Symbols Rounded"
             font.pixelSize: 14
         }
 
