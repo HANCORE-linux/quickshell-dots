@@ -87,7 +87,21 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
   </tr>
 </table>
 
-- workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
+##### V1 Features
+<details>
+
+| Module | Function |
+|---|---|
+| Workspaces | switch · overview |
+| Weather | current · forecast |
+| Clock | time · calendar |
+| Mpris | media controls |
+| System monitors | CPU · RAM · battery · net · bt |
+| Control center | quick toggles · power |
+| Split groups | splittable module pills |
+| Per-widget panels | click widget → popup |
+
+</details>
 ##### V1 Install-command (copy & paste in your terminal):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh | bash -s V1
