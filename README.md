@@ -81,7 +81,7 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
       </video>
     </td>
     <td>
-      <video src="https://github.com/user-attachments/assets/1bd3123a-f474-4b91-838d-0c4c4cd3b3e3" controls="controls" style="max-width: 100%;">
+      <video src="https://github.com/user-attachments/assets/121bbe05-52b4-4cdf-b294-3f431cd15012" controls="controls" style="max-width: 100%;">
       </video>
     </td>
   </tr>
@@ -129,6 +129,10 @@ Default: left-click opens the widget panel. Exceptions:
 
 </details>
 <!-- drag a screenshot here on GitHub to embed it -->
+
+
+
+
 
 
 
