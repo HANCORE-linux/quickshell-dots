@@ -224,6 +224,7 @@ PanelWindow {
             anchors { top: parent.top; bottom: parent.bottom }
             x: claudeW.x + claudeW.width + 4
             width: 12
+            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         }
         Item { id: gMonL
             anchors { top: parent.top; bottom: parent.bottom }

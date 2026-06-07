@@ -9,7 +9,6 @@ Item {
     property bool claudeActive: false
     property int  pct5h:   0
     property bool blocked: false
-    property bool warning: false
     property string tooltipFull: ""
 
     readonly property string tooltipText: tooltipFull || ("Claude " + pct5h + "%")
@@ -24,7 +23,7 @@ Item {
     // ── process detection ──
     Process {
         id: detectProc
-        command: ["bash", "-c", "pgrep -x claude >/dev/null 2>&1 && echo 1 || pgrep -x opencode >/dev/null 2>&1 && echo 1 || echo 0"]
+        command: ["bash", "-c", "pgrep -x claude >/dev/null 2>&1 && echo 1 || echo 0"]
         stdout: StdioCollector {
             onStreamFinished: { rootMod.claudeActive = (this.text.trim() === "1") }
         }
@@ -49,21 +48,46 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        // icon with bottom-to-top red fill based on usage %
+        Item {
+            id: iconItem
             anchors.verticalCenter: parent.verticalCenter
-            text: String.fromCodePoint(0xF167A)
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
-            font.family: root.mono
-            font.pixelSize: 14
+            implicitWidth: iconBg.implicitWidth
+            implicitHeight: iconBg.implicitHeight
+
+            Text {
+                id: iconBg
+                text: String.fromCodePoint(0xF167A)
+                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
+                font.family: root.mono
+                font.pixelSize: 14
+            }
+
+            Item {
+                clip: true
+                width: parent.width
+                anchors.bottom: parent.bottom
+                height: parent.height * Math.min(rootMod.pct5h / 100, 1.0)
+                Behavior on height { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
+
+                Text {
+                    anchors.bottom: parent.bottom
+                    text: String.fromCodePoint(0xF167A)
+                    color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 14
+                    Behavior on color { ColorAnimation { duration: 200 } }
+                }
+            }
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.blocked ? "BLK" : String(rootMod.pct5h).padStart(2, "0") + "%"
-            color: rootMod.pct5h >= 90 || rootMod.blocked ? root.seal
-                 : rootMod.pct5h >= 80
-                     ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.7)
-                     : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+            // icon fill conveys the level; text stays neutral & readable (blocked → red)
+            color: rootMod.blocked
+                ? root.seal
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             font.family: root.mono
             font.pixelSize: 12
             Behavior on color { ColorAnimation { duration: 200 } }
@@ -101,7 +125,7 @@ Item {
                     rootMod.tooltipFull =
                         "Claude Code\n" +
                         "5h: " + rootMod.pct5h + "%  (reset in " + resetStr + ")\n" +
-                        "7d: " + pct7d + "%\n" +
+                        (pct7d > 0 ? "7d: " + pct7d + "%\n" : "") +
                         tokUsed + " / " + tokLimit + " tokens" +
                         (rateH > 0 ? "  · " + rateH + "k tok/h" : "")
                 } catch (e) {
