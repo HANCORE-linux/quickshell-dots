@@ -6,9 +6,10 @@ Item {
     id: rootMod
     required property var root
 
-    property int volume: 50
-    property bool muted: false
-    property string portType: "default"
+    AudioData { id: audio; poll: true }
+    readonly property int    volume:   audio.volume
+    readonly property bool   muted:    audio.muted
+    readonly property string portType: audio.portType
 
     readonly property string tooltipText: muted
         ? "Muted · " + volume + "%"
@@ -84,37 +85,6 @@ Item {
         }
     }
 
-    Process {
-        id: audioProc
-        command: ["bash", "-c",
-            "export LC_ALL=C; " +
-            "pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oP '[0-9]+(?=%)' | head -1; " +
-            "pactl get-sink-mute   @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}'; " +
-            "pactl list sinks 2>/dev/null | grep -A80 \"Name: $(pactl get-default-sink)\" | grep 'Active Port' | awk '{print $NF}'"
-        ]
-        running: false
-        stdout: SplitParser {
-            onRead: function(line) { audioProc.lines.push(line.trim()) }
-        }
-        onExited: {
-            if (audioProc.lines.length >= 2) {
-                rootMod.volume = parseInt(audioProc.lines[0]) || 0
-                rootMod.muted  = (audioProc.lines[1] === "yes")
-                var port = audioProc.lines[2] || ""
-                if (port.includes("headphone"))    rootMod.portType = "headphone"
-                else if (port.includes("headset")) rootMod.portType = "headset"
-                else                               rootMod.portType = "default"
-            }
-            audioProc.lines = []
-        }
-        property var lines: []
-    }
-
-    Timer {
-        interval: 3000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { audioProc.lines = []; audioProc.running = true }
-    }
-
     Timer {
         id: tipDelay
         interval: 320
@@ -139,7 +109,7 @@ Item {
         onWheel: (e) => {
             if (e.angleDelta.y > 0) { volUpRunner.running = false; volUpRunner.running = true }
             else                    { volDownRunner.running = false; volDownRunner.running = true }
-            audioProc.lines = []; audioProc.running = false; audioProc.running = true
+            audio.refresh()
         }
         onClicked: (e) => {
             tipDelay.stop(); root.hideTooltip(rootMod)

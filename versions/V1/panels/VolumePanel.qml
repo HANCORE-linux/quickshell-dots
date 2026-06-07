@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import "../modules"
 
 PanelWindow {
     id: volPanel
@@ -16,9 +17,10 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    property int    volume:   0
-    property bool   muted:    false
-    property string portType: "default"
+    AudioData { id: audio }
+    readonly property int    volume:   audio.volume
+    readonly property bool   muted:    audio.muted
+    readonly property string portType: audio.portType
     property bool   micMuted: false
 
     property real reveal: root.volVisible ? 1 : 0
@@ -177,11 +179,7 @@ PanelWindow {
                     onClicked: {
                         muteRunner.running = false
                         muteRunner.running = true
-                        Qt.callLater(function() {
-                            audioData.lines = []
-                            audioData.running = false
-                            audioData.running = true
-                        })
+                        Qt.callLater(function() { audio.refresh() })
                     }
                 }
             }
@@ -273,30 +271,6 @@ PanelWindow {
         }
     }
 
-    Process {
-        id: audioData
-        command: ["bash", "-c",
-            "pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oP '[0-9]+(?=%)' | head -1; " +
-            "pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}'; " +
-            "pactl list sinks 2>/dev/null | grep -A80 \"Name: $(pactl get-default-sink)\" | grep 'Active Port' | awk '{print $NF}'"
-        ]
-        stdout: SplitParser {
-            onRead: function(line) { audioData.lines.push(line.trim()) }
-        }
-        onExited: {
-            if (audioData.lines.length >= 2) {
-                volPanel.volume = parseInt(audioData.lines[0]) || 0
-                volPanel.muted  = (audioData.lines[1] === "yes")
-                var port = audioData.lines[2] || ""
-                if (port.includes("headphone"))    volPanel.portType = "headphone"
-                else if (port.includes("headset")) volPanel.portType = "headset"
-                else                               volPanel.portType = "default"
-            }
-            audioData.lines = []
-        }
-        property var lines: []
-    }
-
     Process { id: muteRunner;    command: ["bash", "-c", "pamixer -t"] }
     Process { id: micMuteRunner; command: ["bash", "-c", "pamixer --default-source -t"] }
     Process { id: audioRunner;   command: ["bash", "-c", "omarchy-launch-audio"] }
@@ -314,9 +288,7 @@ PanelWindow {
 
     onVisibleChanged: {
         if (visible) {
-            audioData.lines = []
-            audioData.running = false
-            audioData.running = true
+            audio.refresh()
             micData.running = false
             micData.running = true
         }
