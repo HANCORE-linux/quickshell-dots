@@ -109,6 +109,8 @@ Default: left-click opens the widget panel. Exceptions:
 | Voxtype | cycle model | config | — |
 | Workspace | click dot: switch | overview | — |
 | Mpris | ‹ play › buttons inline | toggle panel | — |
+| Tray (bar) | toggle tray panel | — | — |
+| Tray icon | activate | hide icon | context menu |
 
 </details>
 <!-- drag a screenshot here on GitHub to embed it -->
