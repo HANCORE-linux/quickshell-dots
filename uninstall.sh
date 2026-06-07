@@ -20,8 +20,11 @@ pkill -f "quickshell -p $DEST" 2>/dev/null && info "Stopped the bar" || true
 unitdir="$HOME/.config/systemd/user"
 bindir="$HOME/.local/bin"
 if compgen -G "$unitdir/claude-usage*" >/dev/null 2>&1 || compgen -G "$bindir/claude-usage*" >/dev/null 2>&1; then
+  # stop + disable timers AND services (covers a oneshot run that's mid-flight)
   systemctl --user disable --now \
     claude-usage.timer claude-usage-cookie.timer claude-usage-calc.timer >/dev/null 2>&1 || true
+  systemctl --user stop \
+    claude-usage.service claude-usage-cookie.service claude-usage-calc.service >/dev/null 2>&1 || true
   rm -f "$unitdir"/claude-usage.service       "$unitdir"/claude-usage.timer \
         "$unitdir"/claude-usage-calc.service   "$unitdir"/claude-usage-calc.timer \
         "$unitdir"/claude-usage-cookie.service "$unitdir"/claude-usage-cookie.timer
@@ -30,7 +33,10 @@ if compgen -G "$unitdir/claude-usage*" >/dev/null 2>&1 || compgen -G "$bindir/cl
         "$HOME/.cache/claude-usage-skip" "$HOME/.cache/claude-usage-notified" \
         "$HOME/.cache/claude-usage-calibration.json"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
-  info "Removed Claude usage backend (script, timer, cache)"
+  systemctl --user reset-failed 'claude-usage*' >/dev/null 2>&1 || true   # clear any ghost state
+  # belt-and-suspenders: kill any lingering process (there shouldn't be one)
+  pkill -f "$bindir/claude-usage" 2>/dev/null || true
+  info "Removed Claude usage backend (script, timer, cache; nothing left running)"
 fi
 
 # 2. remove the post-boot hook (if the user installed it)
