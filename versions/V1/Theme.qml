@@ -136,6 +136,10 @@ Item {
     property bool splitMprisL: false
     property bool particleEnabled: false
 
+    readonly property bool anySplit: splitLeft || splitRight || splitArch
+                                  || splitMon  || splitNet  || splitMprisL
+    onAnySplitChanged: if (!anySplit) particleEnabled = false
+
     // splitLeft/splitRight kept as constant-false (toggles removed); the clean
     // content-edge cuts are splitMon (Left) and splitMprisL (Right).
     function mergeAllSplits() {

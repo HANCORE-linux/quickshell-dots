@@ -92,8 +92,7 @@ PanelWindow {
             anchors.fill: parent
             theme: root
             layout: island
-            active: root.particleEnabled && (root.splitLeft || root.splitRight
-                 || root.splitArch || root.splitMon || root.splitNet || root.splitMprisL)
+            active: root.particleEnabled && root.anySplit
         }
 
         // ── dynamic section pills (one per content run) ──
