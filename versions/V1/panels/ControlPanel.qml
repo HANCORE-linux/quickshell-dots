@@ -257,32 +257,48 @@ PanelWindow {
                 }
             }
 
-            // ── particle stream toggle (only shown when a split is active) ──
-            Rectangle {
-                id: particleTile
+            // ── gap animation picker: 3 buttons in a row (only when a split is active) ──
+            Row {
+                id: animRow
                 visible: ctrlPanel.anySplit
-                readonly property bool on:      root.particleEnabled
-                readonly property bool hovered: particleMa.containsMouse
-                width: parent.width; height: 25; radius: 4
-                color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                           : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                     : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                border.color: (on || hovered) ? root.seal : root.sep
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
-                    anchors.centerIn: parent
-                    text: "Particles"
-                    color: (particleTile.on || particleTile.hovered) ? root.seal : root.ink
-                    font.family: root.mono; font.pixelSize: 11
-                    font.weight: particleTile.on ? Font.Medium : Font.Normal
-                }
-                MouseArea {
-                    id: particleMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.particleEnabled = !root.particleEnabled
+                width: parent.width
+                spacing: 4
+                readonly property var opts: [
+                    { label: "Stream", mode: 1 },
+                    { label: "Surge",  mode: 2 },
+                    { label: "Bolt",   mode: 3 }
+                ]
+                Repeater {
+                    model: animRow.opts
+                    delegate: Rectangle {
+                        id: animTile
+                        required property var modelData
+                        readonly property bool on:      root.barAnim === modelData.mode
+                        readonly property bool hovered: animMa.containsMouse
+                        width: (animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length
+                        height: 25; radius: 4
+                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                   : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        border.color: (on || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: animTile.modelData.label
+                            color: (animTile.on || animTile.hovered) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 11
+                            font.weight: animTile.on ? Font.Medium : Font.Normal
+                        }
+                        MouseArea {
+                            id: animMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.barAnim = (root.barAnim === animTile.modelData.mode
+                                                       ? 0 : animTile.modelData.mode)
+                        }
+                    }
                 }
             }
 

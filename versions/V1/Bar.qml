@@ -87,12 +87,13 @@ PanelWindow {
             return gNetL.x
         }
 
-        // ── gap particle stream (below pills; draws only within clipped gap areas) ──
+        // ── gap animation (below pills; draws only within clipped gap areas) ──
         ParticleStream {
             anchors.fill: parent
             theme: root
             layout: island
-            active: root.particleEnabled && root.anySplit
+            mode:   root.barAnim
+            active: root.barAnim > 0 && root.anySplit
         }
 
         // ── dynamic section pills (one per content run) ──

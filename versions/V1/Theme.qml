@@ -134,11 +134,11 @@ Item {
     property bool splitMon:    false
     property bool splitNet:    false
     property bool splitMprisL: false
-    property bool particleEnabled: false
+    property int barAnim: 0   // 0=off, 1=stream, 2=surge, 3=bolt
 
     readonly property bool anySplit: splitLeft || splitRight || splitArch
                                   || splitMon  || splitNet  || splitMprisL
-    onAnySplitChanged: if (!anySplit) particleEnabled = false
+    onAnySplitChanged: if (!anySplit) barAnim = 0
 
     // splitLeft/splitRight kept as constant-false (toggles removed); the clean
     // content-edge cuts are splitMon (Left) and splitMprisL (Right).
