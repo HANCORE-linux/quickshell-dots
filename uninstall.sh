@@ -15,6 +15,24 @@ warn() { printf "%s!!%s %s\n"  "$c_y" "$c_0" "$*"; }
 pkill -f "qs.*-c bar" 2>/dev/null && info "Stopped the bar" || true
 pkill -f "quickshell -p $DEST" 2>/dev/null && info "Stopped the bar" || true
 
+# 1b. remove the Claude usage backend, if it was installed (idempotent).
+# Covers the current OAuth backend and any older split cookie/calc install.
+unitdir="$HOME/.config/systemd/user"
+bindir="$HOME/.local/bin"
+if compgen -G "$unitdir/claude-usage*" >/dev/null 2>&1 || compgen -G "$bindir/claude-usage*" >/dev/null 2>&1; then
+  systemctl --user disable --now \
+    claude-usage.timer claude-usage-cookie.timer claude-usage-calc.timer >/dev/null 2>&1 || true
+  rm -f "$unitdir"/claude-usage.service       "$unitdir"/claude-usage.timer \
+        "$unitdir"/claude-usage-calc.service   "$unitdir"/claude-usage-calc.timer \
+        "$unitdir"/claude-usage-cookie.service "$unitdir"/claude-usage-cookie.timer
+  rm -f "$bindir"/claude-usage "$bindir"/claude-usage-calc "$bindir"/claude-usage-cookie
+  rm -f "$HOME/.cache/claude-usage.json" "$HOME/.cache/claude-usage-api.json" \
+        "$HOME/.cache/claude-usage-skip" "$HOME/.cache/claude-usage-notified" \
+        "$HOME/.cache/claude-usage-calibration.json"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  info "Removed Claude usage backend (script, timer, cache)"
+fi
+
 # 2. remove the post-boot hook (if the user installed it)
 boot="$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
 [[ -f "$boot" ]] && { rm -f "$boot"; info "Removed post-boot hook"; }

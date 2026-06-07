@@ -9,16 +9,54 @@ set -euo pipefail
 REPO_URL="https://github.com/HANCORE-linux/quickshell-dots.git"
 DEST="$HOME/.config/quickshell/bar"
 
-# args: optional version name
+# args: optional version name + flags
 WANT_VERSION=""
+WANT_CLAUDE=""   # "" = ask interactively, "yes"/"no" = non-interactive
 for a in "$@"; do
-  [[ "$a" != "--autostart" && "$a" != "--no-autostart" ]] && WANT_VERSION="$a"
+  case "$a" in
+    --autostart|--no-autostart) ;;
+    --claude-backend)    WANT_CLAUDE="yes" ;;
+    --no-claude-backend) WANT_CLAUDE="no"  ;;
+    *) WANT_VERSION="$a" ;;
+  esac
 done
 
 c_b=$'\e[1m'; c_g=$'\e[32m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
 info() { printf "%s==>%s %s\n" "$c_g" "$c_0" "$*"; }
 warn() { printf "%s!!%s %s\n"  "$c_y" "$c_0" "$*"; }
 err()  { printf "%s✗%s %s\n"   "$c_r" "$c_0" "$*" >&2; }
+
+# ── claude-usage backend (opt-in) ───────────────────────────────
+# Installs the script + systemd timer that feed the Claude quota widget.
+# It reads the OAuth token Claude Code already stores (~/.claude/.credentials.json)
+# and queries the same endpoint that powers Claude Code's `/usage` — no browser,
+# no cookie, no extra deps, 0 tokens. Any failure here only warns; it never
+# aborts the bar install.
+install_claude_backend() {
+  local src="$1"                              # repo root (temp clone)
+  local bindst="$HOME/.local/bin"
+  local unitdst="$HOME/.config/systemd/user"
+
+  command -v python3 >/dev/null 2>&1 || { err "python3 missing — skipping Claude backend"; return 1; }
+  [[ -f "$HOME/.claude/.credentials.json" ]] || \
+    warn "No Claude Code OAuth credentials yet — run 'claude' and log in; the widget fills once a session has run."
+
+  # migrate away from any older split scripts/units (cookie/calc)
+  systemctl --user disable --now claude-usage-cookie.timer claude-usage-calc.timer >/dev/null 2>&1 || true
+  rm -f "$unitdst"/claude-usage-cookie.* "$unitdst"/claude-usage-calc.* \
+        "$bindst"/claude-usage-cookie "$bindst"/claude-usage-calc
+
+  mkdir -p "$bindst" "$unitdst"
+  install -m 755 "$src/scripts/claude-usage"          "$bindst/claude-usage"
+  install -m 644 "$src/systemd/claude-usage.service"   "$unitdst/claude-usage.service"
+  install -m 644 "$src/systemd/claude-usage.timer"     "$unitdst/claude-usage.timer"
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now claude-usage.timer >/dev/null 2>&1 || true
+  "$bindst/claude-usage" >/dev/null 2>&1 || true   # prime the cache now
+
+  info "Claude usage backend installed (exact 5h + 7d via Claude Code's own token, 0 tokens)"
+}
 
 # ── 1. dependencies ─────────────────────────────────────────────
 need=(quickshell git jq curl)
@@ -112,4 +150,21 @@ printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
   "\$HOME/.config/omarchy/hooks/post-boot.d"
 printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
   "\$HOME/.config/omarchy/hooks/post-boot.d"
+
+# ── 8. claude-usage backend (opt-in; never blocks the bar install) ──
+do_claude="$WANT_CLAUDE"
+if [[ -z "$do_claude" ]]; then
+  if [[ -t 0 || -e /dev/tty ]]; then
+    read -p "Install the Claude usage backend for the quota widget (exact 5h + 7d, 0 tokens)? [y/N] " ans </dev/tty || ans=""
+    case "${ans,,}" in y|yes) do_claude="yes" ;; *) do_claude="no" ;; esac
+  else
+    do_claude="no"
+  fi
+fi
+if [[ "$do_claude" == "yes" ]]; then
+  install_claude_backend "$tmp/repo" || warn "Claude backend setup incomplete — the bar is installed and fine; re-run with --claude-backend to retry."
+else
+  info "Skipped Claude usage backend (the quota widget stays hidden until it's installed)."
+fi
+
 info "${c_b}Done — enjoy!${c_0}"

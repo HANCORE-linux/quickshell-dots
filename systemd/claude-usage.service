@@ -1,0 +1,8 @@
+[Unit]
+Description=Claude Code usage (OAuth, feeds the Quickshell quota widget)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/claude-usage
+StandardOutput=journal
+StandardError=journal
