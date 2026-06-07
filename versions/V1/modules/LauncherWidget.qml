@@ -75,19 +75,14 @@ Item {
         property color tint: root.seal
         onTintChanged: requestPaint()
 
-        Image {
-            id: logoSrc
-            source: "../assets/bob2.png"
-            visible: false
-            sourceSize.height: 192
-            onStatusChanged: if (status === Image.Ready) logo.requestPaint()
-        }
+        Component.onCompleted: loadImage("../assets/bob2.png")
+        onImageLoaded: requestPaint()
 
         onPaint: {
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
-            if (logoSrc.status !== Image.Ready || width < 1 || height < 1) return
-            ctx.drawImage(logoSrc, 0, 0, width, height)
+            if (!isImageLoaded("../assets/bob2.png") || width < 1 || height < 1) return
+            ctx.drawImage("../assets/bob2.png", 0, 0, width, height)
             var img = ctx.getImageData(0, 0, width, height)
             var d   = img.data
             var r   = Math.round(tint.r * 255)
@@ -97,7 +92,6 @@ Item {
                 d[i]   = r
                 d[i+1] = g
                 d[i+2] = b
-                // d[i+3]: alpha unchanged — preserves the logo shape
             }
             ctx.putImageData(img, 0, 0)
         }
