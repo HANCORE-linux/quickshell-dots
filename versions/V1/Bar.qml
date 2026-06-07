@@ -65,7 +65,7 @@ PanelWindow {
         }
         function atomCR(i) {
             if (i === 0) return statusCluster.x + statusCluster.width
-            if (i === 1) return audioW.x + audioW.width
+            if (i === 1) return claudeW.x + claudeW.width
             if (i === 2) return centerRow.x + centerRow.width + 9
             return briW.x + briW.width
         }
@@ -222,7 +222,7 @@ PanelWindow {
         }
         Item { id: sepMon
             anchors { top: parent.top; bottom: parent.bottom }
-            x: audioW.x + audioW.width + 4
+            x: claudeW.x + claudeW.width + 4
             width: 12
         }
         Item { id: gMonL

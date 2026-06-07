@@ -9,26 +9,32 @@ Item {
     property bool claudeActive: false
     property int  pct5h:   0
     property bool blocked: false
+    property bool warning: false
     property string tooltipFull: ""
 
-    readonly property string tooltipText: tooltipFull || ("Claude · " + pct5h + "%")
+    readonly property string tooltipText: tooltipFull || ("Claude " + pct5h + "%")
 
     visible: claudeActive
     implicitWidth: claudeActive ? row.implicitWidth + 18 : 0
     implicitHeight: 28
+    clip: true
 
     Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
+    // ── process detection ──
     Process {
         id: detectProc
-        command: ["bash", "-c", "pgrep -x claude >/dev/null 2>&1 || pgrep -x opencode >/dev/null 2>&1"]
-        onExited: (code, status) => { rootMod.claudeActive = (code === 0) }
+        command: ["bash", "-c", "pgrep -x claude >/dev/null 2>&1 && echo 1 || pgrep -x opencode >/dev/null 2>&1 && echo 1 || echo 0"]
+        stdout: StdioCollector {
+            onStreamFinished: { rootMod.claudeActive = (this.text.trim() === "1") }
+        }
     }
     Timer {
         interval: 5000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { detectProc.running = false; detectProc.running = true }
     }
 
+    // ── background pill ──
     Rectangle {
         anchors.centerIn: row
         width: row.width + 18
@@ -45,16 +51,15 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "\uE65F"
+            text: String.fromCodePoint(0xF167A)
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
-            font.family: "Material Symbols Rounded"
+            font.family: root.mono
             font.pixelSize: 14
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: rootMod.blocked ? "BLK"
-                : String(rootMod.pct5h).padStart(2, "0") + "%"
+            text: rootMod.blocked ? "BLK" : String(rootMod.pct5h).padStart(2, "0") + "%"
             color: rootMod.pct5h >= 90 || rootMod.blocked ? root.seal
                  : rootMod.pct5h >= 80
                      ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.7)
@@ -65,6 +70,7 @@ Item {
         }
     }
 
+    // ── data polling ──
     Process {
         id: readProc
         command: ["cat", Quickshell.env("HOME") + "/.cache/claude-usage.json"]
@@ -72,11 +78,32 @@ Item {
             onStreamFinished: {
                 try {
                     var d = JSON.parse(this.text.trim())
-                    rootMod.pct5h   = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
+                    var util5h = parseFloat(d["5h-utilization"]) || 0
+                    var util7d = parseFloat(d["7d-utilization"]) || 0
+                    rootMod.pct5h   = Math.round(util5h * 100)
                     rootMod.blocked = d.status === "rejected" || d.status === "blocked"
-                    var pct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
+
+                    var resetTs = parseInt(d["5h-reset"]) || 0
+                    var now = Date.now() / 1000
+                    var resetStr = "free window"
+                    if (resetTs > now && resetTs <= now + 6 * 3600) {
+                        var mins = Math.round((resetTs - now) / 60)
+                        resetStr = mins >= 60
+                            ? Math.floor(mins / 60) + "h " + (mins % 60) + "m"
+                            : mins + "m"
+                    }
+
+                    var tokUsed  = ((d["_tokens_used"]  || 0) / 1e6).toFixed(2) + "M"
+                    var tokLimit = ((d["_window_limit"] || 0) / 1e6).toFixed(1) + "M"
+                    var rateH    = Math.round((d["_rate_per_hour"] || 0) / 1000)
+                    var pct7d    = Math.round(util7d * 100)
+
                     rootMod.tooltipFull =
-                        "Claude Code\n5h: " + rootMod.pct5h + "%\n7d: " + pct7d + "%"
+                        "Claude Code\n" +
+                        "5h: " + rootMod.pct5h + "%  (reset in " + resetStr + ")\n" +
+                        "7d: " + pct7d + "%\n" +
+                        tokUsed + " / " + tokLimit + " tokens" +
+                        (rateH > 0 ? "  · " + rateH + "k tok/h" : "")
                 } catch (e) {
                     rootMod.pct5h    = 0
                     rootMod.tooltipFull = ""
