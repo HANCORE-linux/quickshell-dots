@@ -74,8 +74,18 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 </details>
 
 ## V1
-<video src="https://github.com/user-attachments/assets/ac2c48a6-c6ef-4eb7-bee3-ed1a483d2f20" controls="controls" style="max-width: 100%;">
-</video>
+<table>
+  <tr>
+    <td>
+      <video src="https://github.com/user-attachments/assets/ac2c48a6-c6ef-4eb7-bee3-ed1a483d2f20" controls="controls" style="max-width: 100%;">
+      </video>
+    </td>
+    <td>
+      <video src="https://github.com/user-attachments/assets/1bd3123a-f474-4b91-838d-0c4c4cd3b3e3" controls="controls" style="max-width: 100%;">
+      </video>
+    </td>
+  </tr>
+</table>
 
 - workspaces · weather · clock · mpris · system monitors · control center · split-able module groups · per-widget panels
 ##### V1 Install-command (copy & paste in your terminal):
@@ -84,3 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/
 ```
 The bar launches immediately so you can try it.
 <!-- drag a screenshot here on GitHub to embed it -->
+
+
+
+
