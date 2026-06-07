@@ -379,6 +379,11 @@ PanelWindow {
             anchors { left: cpuW.right; leftMargin: 4; verticalCenter: sLeft.verticalCenter }
             root: bar.root
         }
+        ClaudeWidget {
+            id: claudeW
+            anchors { left: audioW.right; leftMargin: claudeW.claudeActive ? 4 : 0; verticalCenter: sLeft.verticalCenter }
+            root: bar.root
+        }
 
         // ── separator mon (split/merge monitors) ──
         Text {
