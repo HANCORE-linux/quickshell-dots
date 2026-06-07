@@ -41,5 +41,5 @@ QtObject {
     }
 
     readonly property bool active:  player !== null
-    readonly property bool playing: active && player.playbackState === MprisPlaybackState.Playing
+    readonly property bool playing: player !== null && player.playbackState === MprisPlaybackState.Playing
 }

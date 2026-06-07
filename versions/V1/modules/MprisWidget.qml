@@ -13,7 +13,7 @@ Item {
     readonly property bool playing: sel.playing
 
     readonly property string trackLabel: {
-        if (!active) return ""
+        if (!player) return ""
         var t = player.trackTitle  || ""
         var a = player.trackArtist || ""
         return a ? t + "  ·  " + a : t
@@ -106,7 +106,7 @@ Item {
             text: ""
             font.family: "Material Symbols Rounded"
             font.pixelSize: 13
-            color: (rootMod.active && rootMod.player.canGoPrevious)
+            color: (rootMod.player && rootMod.player.canGoPrevious)
                 ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.22)
             Behavior on color { ColorAnimation { duration: 150 } }
@@ -135,7 +135,7 @@ Item {
             text: ""
             font.family: "Material Symbols Rounded"
             font.pixelSize: 13
-            color: (rootMod.active && rootMod.player.canGoNext)
+            color: (rootMod.player && rootMod.player.canGoNext)
                 ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.22)
             Behavior on color { ColorAnimation { duration: 150 } }
@@ -250,7 +250,7 @@ Item {
         }
     }
 
-    readonly property string tooltipText: active
+    readonly property string tooltipText: player
         ? (player.trackArtist ? player.trackArtist + " — " + player.trackTitle : player.trackTitle)
         : ""
 

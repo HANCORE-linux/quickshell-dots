@@ -27,7 +27,7 @@ PanelWindow {
     readonly property bool playing: sel.playing
 
     readonly property string playerName: {
-        if (!active) return ""
+        if (!player) return ""
         var n = player.identity || player.dbusName || ""
         return n.replace(/^org\.mpris\.MediaPlayer2\./, "")
     }
@@ -222,14 +222,14 @@ PanelWindow {
                     clip: true
                     Image {
                         anchors.fill: parent
-                        source: mprisPanel.active ? (mprisPanel.player.trackArtUrl || "") : ""
+                        source: mprisPanel.player ? (mprisPanel.player.trackArtUrl || "") : ""
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         visible: status === Image.Ready
                     }
                     Text {
                         anchors.centerIn: parent
-                        visible: !mprisPanel.active || mprisPanel.player.trackArtUrl === ""
+                        visible: !mprisPanel.player || mprisPanel.player.trackArtUrl === ""
                         text: ""   // music_note
                         font.family: "Material Symbols Rounded"; font.pixelSize: 26
                         color: root.seal
@@ -242,20 +242,20 @@ PanelWindow {
                     spacing: 3
                     Text {
                         width: parent.width
-                        text: mprisPanel.active ? (mprisPanel.player.trackTitle || "Unknown") : ""
+                        text: mprisPanel.player ? (mprisPanel.player.trackTitle || "Unknown") : ""
                         color: root.ink; font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
                         elide: Text.ElideRight
                     }
                     Text {
                         width: parent.width
-                        text: mprisPanel.active ? (mprisPanel.player.trackArtist || "") : ""
+                        text: mprisPanel.player ? (mprisPanel.player.trackArtist || "") : ""
                         color: root.sumi; font.family: root.mono; font.pixelSize: 11
                         elide: Text.ElideRight
                         visible: text !== ""
                     }
                     Text {
                         width: parent.width
-                        text: mprisPanel.active ? (mprisPanel.player.trackAlbum || "") : ""
+                        text: mprisPanel.player ? (mprisPanel.player.trackAlbum || "") : ""
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
                         font.family: root.mono; font.pixelSize: 10
                         elide: Text.ElideRight
@@ -369,7 +369,7 @@ PanelWindow {
                 Text {
                     text: ""
                     font.family: "Material Symbols Rounded"; font.pixelSize: 20
-                    color: (mprisPanel.active && mprisPanel.player.canGoPrevious) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
+                    color: (mprisPanel.player && mprisPanel.player.canGoPrevious) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (mprisPanel.player) mprisPanel.player.previous() }
                 }
                 Text {
@@ -381,7 +381,7 @@ PanelWindow {
                 Text {
                     text: ""
                     font.family: "Material Symbols Rounded"; font.pixelSize: 20
-                    color: (mprisPanel.active && mprisPanel.player.canGoNext) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
+                    color: (mprisPanel.player && mprisPanel.player.canGoNext) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (mprisPanel.player) mprisPanel.player.next() }
                 }
             }
