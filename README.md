@@ -96,19 +96,19 @@ The bar launches immediately so you can try it.
 ##### V1 Click bindings
 <details>
 
-**Default:** left-click opens the widget panel.
+Default: left-click opens the widget panel. Exceptions:
 
-Exceptions:
-
-- **Audio** — right: mute · scroll: ±volume
-- **Brightness** — scroll: ±brightness
-- **Clock** — right only: timezone picker (no panel)
-- **Power Profile** — right: cycle profile
-- **Network / Bluetooth** — right: open system manager
-- **Weather** — right: force refresh
-- **Voxtype** — left: cycle model · right: config
-- **Workspace** — click dot: switch · right: overview
-- **Mpris** — ‹ play › buttons inline · right: toggle panel
+| Widget | Left | Right | Scroll |
+|---|---|---|---|
+| Audio | panel | mute toggle | ±volume |
+| Brightness | panel | — | ±brightness |
+| Clock | — | timezone picker | — |
+| Power Profile | panel | cycle profile | — |
+| Network / Bluetooth | panel | open system manager | — |
+| Weather | panel | force refresh | — |
+| Voxtype | cycle model | config | — |
+| Workspace | click dot: switch | overview | — |
+| Mpris | ‹ play › buttons inline | toggle panel | — |
 
 </details>
 <!-- drag a screenshot here on GitHub to embed it -->
