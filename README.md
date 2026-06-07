@@ -102,6 +102,7 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 | Per-widget panels | click widget → popup |
 
 </details>
+
 ##### V1 Install-command (copy & paste in your terminal):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh | bash -s V1
