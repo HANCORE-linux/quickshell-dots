@@ -44,6 +44,9 @@ Item {
             height: 16
             anchors.verticalCenter: parent.verticalCenter
 
+            property color tint: root.seal
+            onTintChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
@@ -64,7 +67,7 @@ Item {
                 if (ratio > 0) {
                     ctx.beginPath()
                     ctx.arc(cx, cy, r, start, end)
-                    ctx.strokeStyle = root.seal.toString()
+                    ctx.strokeStyle = tint
                     ctx.lineWidth = 2
                     ctx.lineCap = "round"
                     ctx.stroke()

@@ -304,6 +304,8 @@ PanelWindow {
                     id: viz
                     anchors.fill: parent
                     opacity: mprisPanel.active ? 1.0 : 0.5
+                    property color tint: root.seal
+                    onTintChanged: requestPaint()
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.clearRect(0, 0, width, height)
@@ -315,7 +317,7 @@ PanelWindow {
                         var gap = totalGap / (n + 1)
                         var maxH = height - 2
                         var r = bw / 2
-                        ctx.fillStyle = root.seal.toString()
+                        ctx.fillStyle = viz.tint
                         for (var i = 0; i < n; i++) {
                             var bh = Math.max(bw, lv[i] * maxH)
                             var x = gap + i * (bw + gap)

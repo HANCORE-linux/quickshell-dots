@@ -147,7 +147,7 @@ Item {
                         ctx.lineTo(width * 0.88, height * 0.45)
                         ctx.lineTo(width * 0.55, height * 0.45)
                         ctx.closePath()
-                        ctx.fillStyle = root.paper.toString()
+                        ctx.fillStyle = root.paper
                         ctx.fill()
                     }
                     Component.onCompleted: requestPaint()

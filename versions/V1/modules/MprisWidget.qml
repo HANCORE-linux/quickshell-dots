@@ -203,6 +203,9 @@ Item {
             height: 14
             anchors.verticalCenter: parent.verticalCenter
 
+            property color tint: root.seal
+            onTintChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
@@ -215,7 +218,7 @@ Item {
                 var maxH   = height - 1
                 var r      = bw / 2
 
-                ctx.fillStyle = root.seal.toString()
+                ctx.fillStyle = eqCanvas.tint
 
                 for (var i = 0; i < bars.length; i++) {
                     var bh = Math.max(r * 2, bars[i] * maxH)

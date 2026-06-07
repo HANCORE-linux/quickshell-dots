@@ -44,6 +44,9 @@ Item {
             height: 14
             anchors.verticalCenter: parent.verticalCenter
 
+            property color tint: root.seal
+            onTintChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
@@ -79,7 +82,7 @@ Item {
                 }
                 ctx.lineTo(pts[pts.length-1].x, height)
                 ctx.closePath()
-                ctx.fillStyle = Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
+                ctx.fillStyle = Qt.rgba(tint.r, tint.g, tint.b, 0.12)
                 ctx.fill()
 
                 // stroke
@@ -89,7 +92,7 @@ Item {
                     var mx = (pts[k-1].x + pts[k].x) / 2
                     ctx.bezierCurveTo(mx, pts[k-1].y, mx, pts[k].y, pts[k].x, pts[k].y)
                 }
-                ctx.strokeStyle = root.seal.toString()
+                ctx.strokeStyle = tint
                 ctx.lineWidth = 1.5
                 ctx.lineCap = "round"
                 ctx.lineJoin = "round"

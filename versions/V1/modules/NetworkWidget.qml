@@ -92,6 +92,9 @@ Item {
             width: 36; height: 14
             anchors.verticalCenter: parent.verticalCenter
 
+            property color tint: root.seal
+            onTintChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
@@ -134,7 +137,7 @@ Item {
                         var mx = (pts[k-1].x + pts[k].x) / 2
                         ctx.bezierCurveTo(mx, pts[k-1].y, mx, pts[k].y, pts[k].x, pts[k].y)
                     }
-                    ctx.strokeStyle = color.toString()
+                    ctx.strokeStyle = color
                     ctx.lineWidth = strokeW
                     ctx.lineCap = "round"; ctx.lineJoin = "round"
                     ctx.stroke()
