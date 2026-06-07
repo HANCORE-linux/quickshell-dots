@@ -4,8 +4,10 @@ import QtQuick
 Item {
     id: wsWidget
     required property var root
+    property bool shown: true
 
-    implicitWidth: wsRow.implicitWidth
+    visible: shown
+    implicitWidth: shown ? wsRow.implicitWidth : 0
     implicitHeight: 28
 
     Rectangle {

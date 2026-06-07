@@ -6,6 +6,7 @@ import "../IconMap.js" as IconMap
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     property string mode:   "none"  // "wifi" | "ethernet" | "none"
     property string ssid:   ""
@@ -55,7 +56,8 @@ Item {
         return "Offline"
     }
 
-    implicitWidth: row.implicitWidth + 18
+    visible: shown
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
 
     Rectangle {

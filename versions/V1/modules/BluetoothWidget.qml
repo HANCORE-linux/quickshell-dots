@@ -6,6 +6,7 @@ import "../IconMap.js" as IconMap
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     property bool btOn:       false
     property bool connected:  false
@@ -19,7 +20,8 @@ Item {
         ? "Bluetooth · " + numConnected + " connected"
         : (btOn ? "Bluetooth on" : "Bluetooth off")
 
-    implicitWidth: row.implicitWidth + 18
+    visible: shown
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
 
     Rectangle {

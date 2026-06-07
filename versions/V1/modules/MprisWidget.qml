@@ -5,6 +5,7 @@ import Quickshell.Services.Mpris
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     // shared player selection (ghost-filtering) — see MprisSelect.qml
     MprisSelect { id: sel }
@@ -59,7 +60,8 @@ Item {
     }
     onPlayingChanged: { if (!playing) dropAnim.restart() }
 
-    implicitWidth: active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)
+    visible: shown
+    implicitWidth: shown ? (active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)) : 0
     implicitHeight: 28
     clip: true
 

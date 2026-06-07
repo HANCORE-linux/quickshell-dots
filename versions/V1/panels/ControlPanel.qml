@@ -22,6 +22,23 @@ PanelWindow {
         { key: "splitMprisL", label: "Right" },
         { key: "splitNet",    label: "Network" }
     ]
+
+    // toggleable bar modules, ordered left → right as they sit on the bar
+    readonly property var widgets: [
+        { key: "modWorkspace",  label: "Workspaces" },
+        { key: "modStatus",     label: "Status" },
+        { key: "modMemory",     label: "Memory" },
+        { key: "modCpu",        label: "CPU" },
+        { key: "modVolume",     label: "Volume" },
+        { key: "modClaude",     label: "Claude" },
+        { key: "modWeather",    label: "Weather" },
+        { key: "modMedia",      label: "Media" },
+        { key: "modBattery",    label: "Battery" },
+        { key: "modBrightness", label: "Brightness" },
+        { key: "modNetwork",    label: "Network" },
+        { key: "modPower",      label: "Power" },
+        { key: "modBluetooth",  label: "Bluetooth" }
+    ]
     readonly property bool anySplit: root.splitArch || root.splitMon
                                   || root.splitNet || root.splitMprisL
 
@@ -211,6 +228,31 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
+            // ── WIDGETS: show / hide individual bar modules ──
+            Text {
+                text: "WIDGETS"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Grid {
+                width: parent.width
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 8
+                Repeater {
+                    model: ctrlPanel.widgets
+                    delegate: ToggleTile {
+                        required property var modelData
+                        width: (col.width - 8) / 2
+                        root: ctrlPanel.root
+                        label: modelData.label
+                        active: ctrlPanel.root[modelData.key] === true
+                        onToggled: ctrlPanel.root[modelData.key] = !ctrlPanel.root[modelData.key]
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
             // ── SPLITS ──
             Text {
                 text: "SPLITS"
@@ -224,35 +266,13 @@ PanelWindow {
 
                 Repeater {
                     model: ctrlPanel.splits
-                    delegate: Rectangle {
-                        id: splitTile
+                    delegate: ToggleTile {
                         required property var modelData
-                        readonly property bool active: root[modelData.key] === true
-                        readonly property bool hovered: splitMa.containsMouse
                         width: (col.width - 8) / 2
-                        height: 25
-                        radius: 4
-                        color: active ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                      : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                        border.color: (active || hovered) ? root.seal : root.sep
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: splitTile.modelData.label
-                            color: (splitTile.active || splitTile.hovered) ? root.seal : root.ink
-                            font.family: root.mono; font.pixelSize: 11
-                            font.weight: splitTile.active ? Font.Medium : Font.Normal
-                        }
-                        MouseArea {
-                            id: splitMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root[splitTile.modelData.key] = !root[splitTile.modelData.key]
-                        }
+                        root: ctrlPanel.root
+                        label: modelData.label
+                        active: ctrlPanel.root[modelData.key] === true
+                        onToggled: ctrlPanel.root[modelData.key] = !ctrlPanel.root[modelData.key]
                     }
                 }
             }

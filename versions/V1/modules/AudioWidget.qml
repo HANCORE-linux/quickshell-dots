@@ -5,6 +5,7 @@ import Quickshell.Io
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     property int volume: 50
     property bool muted: false
@@ -14,7 +15,8 @@ Item {
         ? "Muted · " + volume + "%"
         : "Audio " + volume + "%"
 
-    implicitWidth: row.implicitWidth + 18
+    visible: shown
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
 
     Rectangle {

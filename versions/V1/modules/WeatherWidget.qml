@@ -5,6 +5,7 @@ import Quickshell.Io
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     property string weatherIcon: "·"
     property string weatherPlace: ""
@@ -19,7 +20,8 @@ Item {
             ? (weatherPlace ? weatherPlace + " · " : "") + weatherTemp + "°C" + (weatherDesc ? " / " + weatherDesc : "")
             : "Weather…")
 
-    implicitWidth: ico.implicitWidth
+    visible: shown
+    implicitWidth: shown ? ico.implicitWidth : 0
     implicitHeight: 28
 
     Process {

@@ -6,6 +6,7 @@ Item {
     id: rootMod
     required property var root
 
+    property bool shown: true
     property bool claudeActive: false
     property int  pct5h:   0
     property bool blocked: false
@@ -13,8 +14,8 @@ Item {
 
     readonly property string tooltipText: tooltipFull || ("Claude " + pct5h + "%")
 
-    visible: claudeActive
-    implicitWidth: claudeActive ? row.implicitWidth + 18 : 0
+    visible: shown && claudeActive
+    implicitWidth: (shown && claudeActive) ? row.implicitWidth + 18 : 0
     implicitHeight: 28
     clip: true
 

@@ -153,6 +153,7 @@ Item {
     property bool modMemory:     true
     property bool modCpu:        true
     property bool modVolume:     true
+    property bool modClaude:     true
     property bool modWeather:    true
     property bool modNetwork:    true
     property bool modPower:      true

@@ -50,9 +50,12 @@ PanelWindow {
             }
             return runs
         }
-        // is atom non-empty? (only atom 3 = mpris/batt/bri can be empty)
+        // is atom non-empty? any group can empty out now that widgets are toggleable
         function atomVisible(i) {
+            if (i === 0) return launcherW.width > 1 || wsW.width > 1 || statusCluster.width > 1
+            if (i === 1) return memW.width > 1 || cpuW.width > 1 || audioW.width > 1 || claudeW.width > 1
             if (i === 3) return mprisW.width > 1 || battW.width > 1 || briW.width > 1
+            if (i === 4) return networkW.width > 1 || ppW.width > 1 || btW.width > 1
             return true
         }
         // content edges (used when an atom is the last/first VISIBLE in a run but
@@ -259,6 +262,7 @@ PanelWindow {
             WeatherWidget {
                 id: weather
                 root: bar.root
+                shown: bar.root.modWeather
             }
             ClockWidget {
                 id: clock
@@ -311,12 +315,14 @@ PanelWindow {
             id: wsW
             anchors { left: launcherW.right; leftMargin: 10; verticalCenter: sLeft.verticalCenter }
             root: bar.root
+            shown: bar.root.modWorkspace
         }
         // ── status cluster (arch · tray · notif) in one shared pill ──
         Item {
             id: statusCluster
             anchors { left: wsW.right; leftMargin: 8; verticalCenter: sLeft.verticalCenter }
-            implicitWidth: statusRow.implicitWidth + 18
+            visible: root.modStatus
+            implicitWidth: root.modStatus ? statusRow.implicitWidth + 18 : 0
             implicitHeight: 28
 
             Rectangle {
@@ -370,21 +376,25 @@ PanelWindow {
             id: memW
             anchors { left: parent.left; leftMargin: gArchL.x + gArchL.width + 4; verticalCenter: sLeft.verticalCenter }
             root: bar.root
+            shown: bar.root.modMemory
         }
         CpuWidget {
             id: cpuW
             anchors { left: memW.right; leftMargin: 4; verticalCenter: sLeft.verticalCenter }
             root: bar.root
+            shown: bar.root.modCpu
         }
         AudioWidget {
             id: audioW
             anchors { left: cpuW.right; leftMargin: 4; verticalCenter: sLeft.verticalCenter }
             root: bar.root
+            shown: bar.root.modVolume
         }
         ClaudeWidget {
             id: claudeW
             anchors { left: audioW.right; leftMargin: claudeW.claudeActive ? 4 : 0; verticalCenter: sLeft.verticalCenter }
             root: bar.root
+            shown: bar.root.modClaude
         }
 
         // ── separator mon (split/merge monitors) ──
@@ -414,16 +424,19 @@ PanelWindow {
             id: btW
             anchors { right: sRight.right; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modBluetooth
         }
         PowerProfileWidget {
             id: ppW
             anchors { right: btW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modPower
         }
         NetworkWidget {
             id: networkW
             anchors { right: ppW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modNetwork
         }
         // ── separator net (split/merge net) ──
         Text {
@@ -453,16 +466,19 @@ PanelWindow {
             id: briW
             anchors { right: gNetL.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modBrightness
         }
         BatteryWidget {
             id: battW
             anchors { right: briW.left; rightMargin: battW.hasBattery ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modBattery
         }
         MprisWidget {
             id: mprisW
             anchors { right: battW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
+            shown: bar.root.modMedia
         }
 
         // ── separator mpris-left (peel/merge right cluster) ──

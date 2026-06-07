@@ -5,6 +5,7 @@ import Quickshell.Io
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     property bool   hasBacklight: false
     property int    percent:      0
@@ -12,9 +13,9 @@ Item {
 
     readonly property string tooltipText: "Brightness · " + percent + "%"
 
-    implicitWidth:  hasBacklight ? (row.implicitWidth + 18) : 0
+    implicitWidth:  (shown && hasBacklight) ? (row.implicitWidth + 18) : 0
     implicitHeight: 28
-    visible: hasBacklight
+    visible: shown && hasBacklight
     clip: true
 
     Behavior on implicitWidth {

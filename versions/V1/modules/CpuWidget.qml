@@ -5,8 +5,10 @@ import Quickshell.Io
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
-    implicitWidth: row.implicitWidth + 18
+    visible: shown
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
 
     property int percent: 0

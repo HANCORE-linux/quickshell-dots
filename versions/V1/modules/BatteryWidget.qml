@@ -5,6 +5,7 @@ import Quickshell.Services.UPower
 Item {
     id: rootMod
     required property var root
+    property bool shown: true
 
     // event-driven UPower data — updates instantly on plug / unplug
     readonly property var dev: UPower.displayDevice
@@ -34,9 +35,9 @@ Item {
         : (low ? root.seal
         : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
 
-    implicitWidth:  hasBattery ? (row.implicitWidth + 18) : 0
+    implicitWidth:  (shown && hasBattery) ? (row.implicitWidth + 18) : 0
     implicitHeight: 28
-    visible: hasBattery
+    visible: shown && hasBattery
     clip: true
 
     Behavior on implicitWidth {
