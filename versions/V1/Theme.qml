@@ -221,13 +221,10 @@ Item {
     property bool weatherVisible:   false
     property bool workspaceVisible: false
 
-    // ── Launcher / Menu panel state ──
+    // ── Image picker state (theme/wallpaper carousel) ──
     property bool   imagePickerVisible:  false
     property string imagePickerMode:     "wallpaper"   // "theme" or "wallpaper"
     property real   quickActionsBarX:    0
-    property string launcherIconEffect: ""
-    property color  launcherIconTint:   seal
-
     // ── Notification state ──
     property bool notifVisible: false
     property int  notifCount:   0
@@ -322,25 +319,6 @@ Item {
         }
     }
 
-    Process {
-        id: qsJsonReader
-        command: ["cat", Quickshell.env("HOME") + "/.config/omarchy/current/theme/quickshell.json"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var j = JSON.parse(this.text)
-                    if (j.launcher) {
-                        theme.launcherIconEffect = j.launcher.iconEffect || ""
-                        if (j.launcher.iconTint) theme.launcherIconTint = j.launcher.iconTint
-                    } else {
-                        theme.launcherIconEffect = ""
-                    }
-                } catch(e) {}
-            }
-        }
-    }
-
     IpcHandler {
         target: "theme"
         function apply(payload: string): void {
@@ -354,15 +332,6 @@ Item {
         function reload(): void {
             paletteReader.running = false;
             paletteReader.running = true;
-        }
-        function applyLauncher(payload: string): void {
-            let p;
-            try { p = JSON.parse(payload); }
-            catch (e) { return; }
-            theme.launcherIconEffect = (p && p.launcher && p.launcher.iconEffect)
-                ? p.launcher.iconEffect : ""
-            if (p && p.launcher && p.launcher.iconTint)
-                theme.launcherIconTint = p.launcher.iconTint
         }
     }
 }
