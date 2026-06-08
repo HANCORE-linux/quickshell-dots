@@ -621,21 +621,6 @@ PanelWindow {
                 }
             }
 
-            // ── keyboard highlight (apps mode) ──
-            Rectangle {
-                id: keyHighlight
-                width: parent.width - 2; x: 1
-                height: 40
-                y: menuPanel.appMode && menuPanel.filteredApps.length > 0
-                    ? menuPanel.selectedIndex * 42 + 1 - listArea.scrollOffset : -50
-                radius: 4
-                color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
-                border.width: 1
-                visible: menuPanel.appMode
-                z: 0
-            }
-
             // ── item list ──
             Item {
                 id: listArea
@@ -647,6 +632,21 @@ PanelWindow {
                 clip: true
 
                 property real scrollOffset: 0
+
+                // keyboard highlight — must live here so y is relative to listArea
+                Rectangle {
+                    id: keyHighlight
+                    width: listArea.width - 2; x: 1
+                    height: 40
+                    y: menuPanel.appMode && menuPanel.filteredApps.length > 0
+                        ? menuPanel.selectedIndex * 42 + 1 - listArea.scrollOffset : -50
+                    radius: 4
+                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
+                    border.width: 1
+                    visible: menuPanel.appMode
+                    z: 1
+                }
 
                 MouseArea {
                     anchors.fill: parent; z: 5
@@ -670,7 +670,7 @@ PanelWindow {
                     y: -listArea.scrollOffset
                     spacing: 0
                     visible: menuPanel.appMode
-                    z: 1
+                    z: 2
 
                     Repeater {
                         model: menuPanel.filteredApps
