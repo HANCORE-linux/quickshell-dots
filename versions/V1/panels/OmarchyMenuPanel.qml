@@ -36,48 +36,49 @@ PanelWindow {
     property string query:    ""
     readonly property string currentMenu: navStack.length > 0 ? navStack[navStack.length - 1] : ""
 
+    property int selectedMenuIndex: 0   // menu mode keyboard selection
+    property int selectedIndex:     0   // app mode keyboard selection
+
+    function _resetScroll() { selectedMenuIndex = 0; selectedIndex = 0; listArea.scrollOffset = 0 }
+
     function navigate(key) {
         navStack = navStack.concat([key])
-        query = ""
-        searchInput.text = ""
+        query = ""; searchInput.text = ""; settingsMode = false; _resetScroll()
     }
     function goBack() {
-        if (navStack.length > 1) { navStack = navStack.slice(0, navStack.length - 1) }
-        else                     { navStack = [] }
-        query = ""
-        searchInput.text = ""
-        selectedIndex = 0
-        listArea.scrollOffset = 0
+        if (navStack.length > 1) navStack = navStack.slice(0, navStack.length - 1)
+        else                     navStack = []
+        query = ""; searchInput.text = ""; settingsMode = false; _resetScroll()
     }
     function hasSubmenu(key) { return key === "apps" || submenus.hasOwnProperty(key) }
 
     function closePanel() {
         root.omarchyMenuVisible = false
-        query = ""; navStack = []; selectedIndex = 0; listArea.scrollOffset = 0
-        searchInput.text = ""
+        query = ""; navStack = []; searchInput.text = ""; settingsMode = false; _resetScroll()
     }
     function launchLeaf(key) {
-        root.omarchyMenuVisible = false
-        root.controlVisible = false
-        query = ""; navStack = []; selectedIndex = 0; listArea.scrollOffset = 0
-        searchInput.text = ""
+        root.omarchyMenuVisible = false; root.controlVisible = false
+        query = ""; navStack = []; searchInput.text = ""; settingsMode = false; _resetScroll()
         Qt.callLater(function() { Quickshell.execDetached(["omarchy-menu", key]) })
     }
     function launchApp(app) {
         if (!app) return
-        root.omarchyMenuVisible = false
-        root.controlVisible = false
-        query = ""; navStack = []; selectedIndex = 0; listArea.scrollOffset = 0
-        searchInput.text = ""
+        root.omarchyMenuVisible = false; root.controlVisible = false
+        query = ""; navStack = []; searchInput.text = ""; settingsMode = false; _resetScroll()
         launchProc.command = ["bash", "-c", "nohup " + app.exec + " &>/dev/null &"]
         launchProc.running = true
     }
     Process { id: launchProc; command: [] }
 
-    // ── app data ──
-    property var allApps:      []
-    property var filteredApps: []
-    property int selectedIndex: 0
+    // ── app data + favorites ──
+    property var  allApps:      []
+    property var  filteredApps: []
+    property var  favorites:    []
+    property var  hiddenApps:   []
+    property bool settingsMode: false
+
+    readonly property string favFile: Quickshell.env("HOME") + "/.cache/quickshell-launcher-favorites"
+    readonly property string hidFile: Quickshell.env("HOME") + "/.cache/quickshell-launcher-hidden"
 
     Process {
         id: appLoader
@@ -85,26 +86,81 @@ PanelWindow {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
-                var lines = this.text.trim().split("\n")
-                var apps = []
+                var lines = this.text.trim().split("\n"); var apps = []
                 for (var i = 0; i < lines.length; i++) {
                     var parts = lines[i].split("||")
                     if (parts.length >= 3 && parts[0].trim())
                         apps.push({ name: parts[0], icon: parts[1], exec: parts[2] })
                 }
-                menuPanel.allApps = apps
+                menuPanel.allApps = apps; menuPanel.filterApps()
+            }
+        }
+    }
+    Process {
+        id: favLoader
+        command: ["sh", "-c", "cat '" + menuPanel.favFile + "' 2>/dev/null || true"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                menuPanel.favorites = this.text.trim().split("\n").filter(function(x){ return x.trim() !== "" })
                 menuPanel.filterApps()
             }
         }
     }
+    Process {
+        id: hidLoader
+        command: ["sh", "-c", "cat '" + menuPanel.hidFile + "' 2>/dev/null || true"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                menuPanel.hiddenApps = this.text.trim().split("\n").filter(function(x){ return x.trim() !== "" })
+                menuPanel.filterApps()
+            }
+        }
+    }
+    Process { id: saveFavProc; command: [] }
+    Process { id: saveHidProc; command: [] }
 
-    Component.onCompleted: appLoader.running = true
+    Component.onCompleted: { favLoader.running = true; hidLoader.running = true; appLoader.running = true }
 
     function filterApps() {
         var q = query.toLowerCase().trim()
-        if (!q) { filteredApps = allApps.slice(); return }
-        filteredApps = allApps.filter(function(a) { return a.name.toLowerCase().indexOf(q) >= 0 })
+        var all = q ? allApps.filter(function(a){ return a.name.toLowerCase().indexOf(q) >= 0 })
+                    : allApps.slice()
+        if (settingsMode) {
+            filteredApps = all
+        } else {
+            var vis = all.filter(function(a){ return hiddenApps.indexOf(a.name) < 0 })
+            var favs = vis.filter(function(a){ return favorites.indexOf(a.name) >= 0 })
+            var rest = vis.filter(function(a){ return favorites.indexOf(a.name) < 0 })
+            filteredApps = favs.concat(rest)
+        }
         selectedIndex = 0
+    }
+
+    function toggleFavorite(appName) {
+        var idx = favorites.indexOf(appName); var nf = favorites.slice()
+        if (idx >= 0) nf.splice(idx, 1); else nf.push(appName)
+        favorites = nf; saveFavorites(); filterApps()
+    }
+    function toggleHidden(appName) {
+        var idx = hiddenApps.indexOf(appName); var nh = hiddenApps.slice()
+        if (idx >= 0) nh.splice(idx, 1); else nh.push(appName)
+        hiddenApps = nh; saveHidden(); filterApps()
+    }
+    function saveFavorites() {
+        var args = ["python3", "-c",
+            "import sys; f=open(sys.argv[1],'w'); f.write('\\n'.join(sys.argv[2:])); f.close()",
+            favFile]
+        for (var i = 0; i < favorites.length; i++) args.push(favorites[i])
+        saveFavProc.command = args; saveFavProc.running = true
+    }
+    function saveHidden() {
+        var args = ["python3", "-c",
+            "import sys; f=open(sys.argv[1],'w'); f.write('\\n'.join(sys.argv[2:])); f.close()",
+            hidFile]
+        for (var i = 0; i < hiddenApps.length; i++) args.push(hiddenApps[i])
+        saveHidProc.command = args; saveHidProc.running = true
     }
 
     // ── display items (menu mode) ──
@@ -569,12 +625,43 @@ PanelWindow {
                     color: root.sumi; font.family: root.mono; font.pixelSize: 12
                     visible: searchInput.text.length === 0
                 }
+                // gear button (apps mode only)
+                Item {
+                    id: gearBtn
+                    anchors.right: parent.right; anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: menuPanel.appMode ? 28 : 0; height: 28
+                    visible: menuPanel.appMode
+                    Rectangle {
+                        anchors.fill: parent; radius: 4
+                        color: menuPanel.settingsMode
+                            ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.2)
+                            : (gearMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.1) : "transparent")
+                        Behavior on color { ColorAnimation { duration: 80 } }
+                    }
+                    Text {
+                        anchors.centerIn: parent; text: "⚙"
+                        color: menuPanel.settingsMode ? root.seal : root.sumi; font.pixelSize: 14
+                        Behavior on color { ColorAnimation { duration: 80 } }
+                    }
+                    MouseArea {
+                        id: gearMa; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            menuPanel.settingsMode = !menuPanel.settingsMode
+                            menuPanel.filterApps()
+                            searchInput.forceActiveFocus()
+                        }
+                    }
+                }
+
                 TextInput {
                     id: searchInput
                     anchors {
-                        left: parent.left; right: parent.right
+                        left: parent.left
+                        right: menuPanel.appMode ? gearBtn.left : parent.right
                         verticalCenter: parent.verticalCenter
-                        leftMargin: 10; rightMargin: 10
+                        leftMargin: 10; rightMargin: menuPanel.appMode ? 4 : 10
                     }
                     color: root.ink; font.family: root.mono; font.pixelSize: 12
                     selectByMouse: true
@@ -586,10 +673,18 @@ PanelWindow {
                     }
 
                     Keys.onUpPressed: {
-                        if (menuPanel.appMode && menuPanel.selectedIndex > 0) {
-                            menuPanel.selectedIndex--
-                            var top = menuPanel.selectedIndex * 42
-                            if (top < listArea.scrollOffset) listArea.scrollOffset = top
+                        if (menuPanel.appMode) {
+                            if (menuPanel.selectedIndex > 0) {
+                                menuPanel.selectedIndex--
+                                var top = menuPanel.selectedIndex * 42
+                                if (top < listArea.scrollOffset) listArea.scrollOffset = top
+                            }
+                        } else {
+                            if (menuPanel.selectedMenuIndex > 0) {
+                                menuPanel.selectedMenuIndex--
+                                var top2 = menuPanel.selectedMenuIndex * 38
+                                if (top2 < listArea.scrollOffset) listArea.scrollOffset = top2
+                            }
                         }
                     }
                     Keys.onDownPressed: {
@@ -601,17 +696,37 @@ PanelWindow {
                                 if (bottom > listArea.scrollOffset + listArea.height)
                                     listArea.scrollOffset = bottom - listArea.height
                             }
+                        } else {
+                            var mcount = menuPanel.displayItems.length
+                            if (menuPanel.selectedMenuIndex < mcount - 1) {
+                                menuPanel.selectedMenuIndex++
+                                var mbottom = (menuPanel.selectedMenuIndex + 1) * 38
+                                if (mbottom > listArea.scrollOffset + listArea.height)
+                                    listArea.scrollOffset = mbottom - listArea.height
+                            }
                         }
                     }
                     Keys.onReturnPressed: {
-                        if (menuPanel.appMode && menuPanel.filteredApps.length > 0)
-                            menuPanel.launchApp(menuPanel.filteredApps[menuPanel.selectedIndex])
+                        if (menuPanel.appMode) {
+                            if (!menuPanel.settingsMode && menuPanel.filteredApps.length > 0)
+                                menuPanel.launchApp(menuPanel.filteredApps[menuPanel.selectedIndex])
+                        } else {
+                            var items = menuPanel.displayItems
+                            if (items.length > 0) {
+                                var item = items[menuPanel.selectedMenuIndex]
+                                if (menuPanel.hasSubmenu(item.key)) menuPanel.navigate(item.key)
+                                else menuPanel.launchLeaf(item.key)
+                            }
+                        }
                     }
                     Keys.onEscapePressed: {
                         if (text.length > 0) {
                             text = ""; menuPanel.query = ""
                             if (menuPanel.appMode) menuPanel.filterApps()
-                            menuPanel.selectedIndex = 0; listArea.scrollOffset = 0
+                            menuPanel.selectedIndex = 0; menuPanel.selectedMenuIndex = 0
+                            listArea.scrollOffset = 0
+                        } else if (menuPanel.settingsMode) {
+                            menuPanel.settingsMode = false; menuPanel.filterApps()
                         } else if (menuPanel.currentMenu !== "") {
                             menuPanel.goBack()
                         } else {
@@ -633,19 +748,27 @@ PanelWindow {
 
                 property real scrollOffset: 0
 
-                // keyboard highlight — must live here so y is relative to listArea
+                // app-mode keyboard highlight
                 Rectangle {
                     id: keyHighlight
-                    width: listArea.width - 2; x: 1
-                    height: 40
+                    width: listArea.width - 2; x: 1; height: 40
                     y: menuPanel.appMode && menuPanel.filteredApps.length > 0
                         ? menuPanel.selectedIndex * 42 + 1 - listArea.scrollOffset : -50
                     radius: 4
                     color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
                     border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
-                    border.width: 1
-                    visible: menuPanel.appMode
-                    z: 1
+                    border.width: 1; visible: menuPanel.appMode; z: 1
+                }
+                // menu-mode keyboard highlight
+                Rectangle {
+                    id: menuKeyHighlight
+                    width: listArea.width - 2; x: 1; height: 36
+                    y: !menuPanel.appMode && menuPanel.displayItems.length > 0
+                        ? menuPanel.selectedMenuIndex * 38 + 1 - listArea.scrollOffset : -50
+                    radius: 4
+                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
+                    border.width: 1; visible: !menuPanel.appMode; z: 1
                 }
 
                 MouseArea {
@@ -679,6 +802,9 @@ PanelWindow {
                             required property int index
                             width: appListCol.width; height: 42
 
+                            property bool isFav: menuPanel.favorites.indexOf(modelData.name) >= 0
+                            property bool isHid: menuPanel.hiddenApps.indexOf(modelData.name) >= 0
+
                             Rectangle {
                                 anchors { fill: parent; topMargin: 1; bottomMargin: 1 }
                                 radius: 4
@@ -689,6 +815,7 @@ PanelWindow {
                                 MouseArea {
                                     id: appRowMa; anchors.fill: parent
                                     hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    enabled: !menuPanel.settingsMode
                                     onClicked: menuPanel.launchApp(modelData)
                                 }
 
@@ -704,6 +831,8 @@ PanelWindow {
                                         sourceSize: Qt.size(22, 22)
                                         fillMode: Image.PreserveAspectFit
                                         smooth: true; mipmap: true; asynchronous: true
+                                        opacity: (menuPanel.settingsMode && isHid) ? 0.3 : 1.0
+                                        Behavior on opacity { NumberAnimation { duration: 120 } }
                                         layer.enabled: root.launcherIconEffect === "gradient-tint"
                                         layer.effect: ShaderEffect {
                                             property color tintColor: root.launcherIconTint
@@ -712,8 +841,68 @@ PanelWindow {
                                     }
                                     Text {
                                         text: modelData.name
-                                        color: root.ink; font.family: root.mono; font.pixelSize: 12
+                                        color: (menuPanel.settingsMode && isHid) ? root.sumi : root.ink
+                                        font.family: root.mono; font.pixelSize: 12
                                         anchors.verticalCenter: parent.verticalCenter
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                    }
+                                }
+
+                                // normal mode: ★ for favorites
+                                Text {
+                                    anchors.right: parent.right; anchors.rightMargin: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "★"; font.pixelSize: 10
+                                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.55)
+                                    visible: !menuPanel.settingsMode && isFav
+                                }
+
+                                // settings mode: ★/☆ and ●/✕ buttons
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4; visible: menuPanel.settingsMode
+
+                                    Item {
+                                        width: 28; height: 28
+                                        Rectangle {
+                                            anchors.fill: parent; radius: 4
+                                            color: favMa.containsMouse
+                                                ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : "transparent"
+                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                        }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: isFav ? "★" : "☆"
+                                            color: isFav ? root.seal : root.sumi; font.pixelSize: 15
+                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                        }
+                                        MouseArea {
+                                            id: favMa; anchors.fill: parent; hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: menuPanel.toggleFavorite(modelData.name)
+                                        }
+                                    }
+                                    Item {
+                                        width: 28; height: 28
+                                        Rectangle {
+                                            anchors.fill: parent; radius: 4
+                                            color: hidMa.containsMouse
+                                                ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.1) : "transparent"
+                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                        }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: isHid ? "✕" : "●"
+                                            color: isHid ? Qt.rgba(1.0, 0.38, 0.38, 0.9) : root.sumi
+                                            font.pixelSize: isHid ? 12 : 8
+                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                        }
+                                        MouseArea {
+                                            id: hidMa; anchors.fill: parent; hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: menuPanel.toggleHidden(modelData.name)
+                                        }
                                     }
                                 }
                             }
@@ -787,11 +976,23 @@ PanelWindow {
                     }
                 }
             }
+
+            // settings mode footer
+            Item {
+                width: parent.width
+                height: menuPanel.settingsMode ? 24 : 0
+                clip: true; visible: height > 0
+                Text {
+                    anchors.centerIn: parent
+                    text: "★ favorite   ● visible / ✕ hidden"
+                    color: root.sumi; font.family: root.mono; font.pixelSize: 10; opacity: 0.6
+                }
+            }
         }
     }
 
-    onNavStackChanged:   listArea.scrollOffset = 0
-    onQueryChanged:      if (!appMode) listArea.scrollOffset = 0
+    onNavStackChanged:   { listArea.scrollOffset = 0; selectedMenuIndex = 0 }
+    onQueryChanged:      { if (!appMode) { listArea.scrollOffset = 0; selectedMenuIndex = 0 } }
 
     IpcHandler {
         target: "omarchy-menu"
