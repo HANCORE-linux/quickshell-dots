@@ -43,18 +43,18 @@ PanelWindow {
 
     function navigate(key) {
         navStack = navStack.concat([key])
-        query = ""; searchInput.text = ""; settingsMode = false; _resetScroll()
+        query = ""; searchInput.text = ""; settingsMode = false; keyboardActive = false; _resetScroll()
     }
     function goBack() {
         if (navStack.length > 1) navStack = navStack.slice(0, navStack.length - 1)
         else                     navStack = []
-        query = ""; searchInput.text = ""; settingsMode = false; _resetScroll()
+        query = ""; searchInput.text = ""; settingsMode = false; keyboardActive = false; _resetScroll()
     }
     function hasSubmenu(key) { return key === "apps" || submenus.hasOwnProperty(key) }
 
     function closePanel() {
         root.omarchyMenuVisible = false
-        query = ""; navStack = []; searchInput.text = ""; settingsMode = false; _resetScroll()
+        query = ""; navStack = []; searchInput.text = ""; settingsMode = false; keyboardActive = false; _resetScroll()
     }
     function launchLeaf(key) {
         root.omarchyMenuVisible = false; root.controlVisible = false
@@ -75,7 +75,8 @@ PanelWindow {
     property var  filteredApps: []
     property var  favorites:    []
     property var  hiddenApps:   []
-    property bool settingsMode: false
+    property bool settingsMode:   false
+    property bool keyboardActive: false   // true only after first arrow key press
 
     readonly property string favFile: Quickshell.env("HOME") + "/.cache/quickshell-launcher-favorites"
     readonly property string hidFile: Quickshell.env("HOME") + "/.cache/quickshell-launcher-hidden"
@@ -679,6 +680,8 @@ PanelWindow {
                     Keys.onPressed: function(event) {
                         var itemH = menuPanel.appMode ? 42 : 38
                         var pageItems = Math.max(1, Math.floor(listArea.height / itemH))
+                        if (event.key === Qt.Key_PageDown || event.key === Qt.Key_PageUp)
+                            menuPanel.keyboardActive = true
                         if (event.key === Qt.Key_PageDown) {
                             if (menuPanel.appMode) {
                                 menuPanel.selectedIndex = Math.min(
@@ -708,6 +711,7 @@ PanelWindow {
                         }
                     }
                     Keys.onUpPressed: {
+                        menuPanel.keyboardActive = true
                         if (menuPanel.appMode) {
                             if (menuPanel.selectedIndex > 0) {
                                 menuPanel.selectedIndex--
@@ -723,6 +727,7 @@ PanelWindow {
                         }
                     }
                     Keys.onDownPressed: {
+                        menuPanel.keyboardActive = true
                         if (menuPanel.appMode) {
                             var count = menuPanel.filteredApps.length
                             if (menuPanel.selectedIndex < count - 1) {
@@ -783,27 +788,27 @@ PanelWindow {
 
                 property real scrollOffset: 0
 
-                // app-mode keyboard highlight
+                // app-mode keyboard highlight — only after first arrow key press
                 Rectangle {
                     id: keyHighlight
                     width: listArea.width - 2; x: 1; height: 40
-                    y: menuPanel.appMode && menuPanel.filteredApps.length > 0
+                    y: menuPanel.appMode && menuPanel.keyboardActive && menuPanel.filteredApps.length > 0
                         ? menuPanel.selectedIndex * 42 + 1 - listArea.scrollOffset : -50
                     radius: 4
                     color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
                     border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
-                    border.width: 1; visible: menuPanel.appMode; z: 1
+                    border.width: 1; visible: menuPanel.appMode && menuPanel.keyboardActive; z: 1
                 }
-                // menu-mode keyboard highlight
+                // menu-mode keyboard highlight — only after first arrow key press
                 Rectangle {
                     id: menuKeyHighlight
                     width: listArea.width - 2; x: 1; height: 36
-                    y: !menuPanel.appMode && menuPanel.displayItems.length > 0
+                    y: !menuPanel.appMode && menuPanel.keyboardActive && menuPanel.displayItems.length > 0
                         ? menuPanel.selectedMenuIndex * 38 + 1 - listArea.scrollOffset : -50
                     radius: 4
                     color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
                     border.color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
-                    border.width: 1; visible: !menuPanel.appMode; z: 1
+                    border.width: 1; visible: !menuPanel.appMode && menuPanel.keyboardActive; z: 1
                 }
 
                 MouseArea {
