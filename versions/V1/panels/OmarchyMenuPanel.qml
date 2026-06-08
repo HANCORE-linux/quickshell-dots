@@ -672,6 +672,41 @@ PanelWindow {
                         listArea.scrollOffset = 0
                     }
 
+                    Keys.onLeftPressed: {
+                        if (menuPanel.currentMenu !== "" && (text.length === 0 || !menuPanel.appMode))
+                            menuPanel.goBack()
+                    }
+                    Keys.onPressed: function(event) {
+                        var itemH = menuPanel.appMode ? 42 : 38
+                        var pageItems = Math.max(1, Math.floor(listArea.height / itemH))
+                        if (event.key === Qt.Key_PageDown) {
+                            if (menuPanel.appMode) {
+                                menuPanel.selectedIndex = Math.min(
+                                    menuPanel.filteredApps.length - 1,
+                                    menuPanel.selectedIndex + pageItems)
+                                listArea.scrollOffset = Math.min(
+                                    Math.max(0, menuPanel.filteredApps.length * itemH - listArea.height),
+                                    menuPanel.selectedIndex * itemH)
+                            } else {
+                                menuPanel.selectedMenuIndex = Math.min(
+                                    menuPanel.displayItems.length - 1,
+                                    menuPanel.selectedMenuIndex + pageItems)
+                                listArea.scrollOffset = Math.min(
+                                    Math.max(0, menuPanel.displayItems.length * itemH - listArea.height),
+                                    menuPanel.selectedMenuIndex * itemH)
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_PageUp) {
+                            if (menuPanel.appMode) {
+                                menuPanel.selectedIndex = Math.max(0, menuPanel.selectedIndex - pageItems)
+                                listArea.scrollOffset = menuPanel.selectedIndex * itemH
+                            } else {
+                                menuPanel.selectedMenuIndex = Math.max(0, menuPanel.selectedMenuIndex - pageItems)
+                                listArea.scrollOffset = menuPanel.selectedMenuIndex * itemH
+                            }
+                            event.accepted = true
+                        }
+                    }
                     Keys.onUpPressed: {
                         if (menuPanel.appMode) {
                             if (menuPanel.selectedIndex > 0) {
