@@ -81,7 +81,6 @@ Item {
         layer.enabled: true
         layer.effect: ShaderEffect {
             property color tintColor: root.seal
-            property var source: logo
             fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
         }
     }
