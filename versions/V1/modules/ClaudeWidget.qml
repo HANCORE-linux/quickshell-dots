@@ -8,6 +8,8 @@ Item {
 
     property bool claudeActive: false
     property int  pct5h:   0
+    // fill snaps to 5% steps, consistent with the 5% increments used elsewhere
+    readonly property int pct5hStep: Math.round(pct5h / 5) * 5
     property bool blocked: false
     property string tooltipFull: ""
 
@@ -69,8 +71,8 @@ Item {
                 anchors.bottom: parent.bottom
                 // floor the fill so low percentages still render over the glyph's
                 // ink (a 3px fill at the very bottom lands in empty glyph space)
-                height: rootMod.pct5h > 0
-                    ? Math.min(parent.height, Math.max(parent.height * rootMod.pct5h / 100, parent.height * 0.25))
+                height: rootMod.pct5hStep > 0
+                    ? Math.min(parent.height, Math.max(parent.height * rootMod.pct5hStep / 100, parent.height * 0.25))
                     : 0
                 Behavior on height { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
 
