@@ -27,4 +27,5 @@ ShellRoot {
     WorkspacePanel { root: theme }
     ControlPanel { root: theme }
     TrayMenu { root: theme }
+    LauncherPanel { root: theme }
 }
