@@ -67,7 +67,7 @@ PanelWindow {
             if (i === 0) return statusCluster.x + statusCluster.width
             if (i === 1) return claudeW.x + claudeW.width
             if (i === 2) return centerRow.x + centerRow.width + 9
-            return briW.x + briW.width
+            return quickCluster.x + quickCluster.width
         }
         // run edges aligned to the split gaps / island edges (clean borders).
         // the center (atom 2) sits in the middle of the centering whitespace, far
@@ -415,9 +415,19 @@ PanelWindow {
             anchors { right: sRight.right; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
+        BatteryWidget {
+            id: battW
+            anchors { right: btW.left; rightMargin: battW.hasBattery ? 4 : 0; verticalCenter: sRight.verticalCenter }
+            root: bar.root
+        }
+        BrightnessWidget {
+            id: briW
+            anchors { right: battW.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
+            root: bar.root
+        }
         PowerProfileWidget {
             id: ppW
-            anchors { right: btW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            anchors { right: briW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         NetworkWidget {
@@ -449,19 +459,31 @@ PanelWindow {
             onClicked: root.splitNet = !root.splitNet
         }
 
-        BrightnessWidget {
-            id: briW
-            anchors { right: gNetL.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
-            root: bar.root
+        // ── quick actions cluster (idle inhibitor + theme/wallpaper) ──
+        Item {
+            id: quickCluster
+            anchors { right: gNetL.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            implicitWidth: qcRow.implicitWidth + 16
+            implicitHeight: 28
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.implicitWidth; height: 24; radius: 12
+                color: root.pill; border.color: root.sep; border.width: 1
+            }
+            Row {
+                id: qcRow
+                anchors.centerIn: parent
+                spacing: 4
+                IdleInhibitorWidget { root: bar.root; anchors.verticalCenter: parent.verticalCenter }
+                ThemeDisplayWidget  { root: bar.root; anchors.verticalCenter: parent.verticalCenter }
+            }
         }
-        BatteryWidget {
-            id: battW
-            anchors { right: briW.left; rightMargin: battW.hasBattery ? 4 : 0; verticalCenter: sRight.verticalCenter }
-            root: bar.root
-        }
+        Binding { target: root; property: "quickActionsBarX"; value: island.x + quickCluster.x + quickCluster.implicitWidth / 2 }
+
         MprisWidget {
             id: mprisW
-            anchors { right: battW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            anchors { right: quickCluster.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
 
