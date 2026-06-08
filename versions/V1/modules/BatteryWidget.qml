@@ -20,12 +20,24 @@ Item {
     readonly property bool full:     devState === UPowerDeviceState.FullyCharged
     readonly property bool low:      !charging && !full && percent <= 20
 
+    // live time estimates from UPower (seconds); 0 when unknown / not applicable
+    readonly property real timeToEmpty: dev ? dev.timeToEmpty : 0
+    readonly property real timeToFull:  dev ? dev.timeToFull  : 0
+    readonly property string timeText:  charging ? fmtDuration(timeToFull) : fmtDuration(timeToEmpty)
+    function fmtDuration(s) {
+        if (!s || s <= 0) return ""
+        var h = Math.floor(s / 3600)
+        var m = Math.floor((s % 3600) / 60)
+        return h > 0 ? (h + "h " + m + "m") : (m + "m")
+    }
+
     readonly property string statusText:
         full ? "Full"
         : charging ? "Charging"
         : devState === UPowerDeviceState.Discharging ? "Discharging"
         : "On battery"
     readonly property string tooltipText: statusText + " · " + percent + "%"
+                                          + (timeText ? " · " + timeText : "")
 
     // colour shared by the drawn battery body, fill and nub
     readonly property color battColor:
@@ -75,6 +87,16 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
 
             readonly property real ratio: Math.max(0, Math.min(1, rootMod.percent / 100))
+
+            // low-battery warning: the icon slowly pulses below 20% (not while charging)
+            property real pulse: 1.0
+            opacity: rootMod.low ? pulse : 1.0
+            SequentialAnimation {
+                running: rootMod.low
+                loops: Animation.Infinite
+                NumberAnimation { target: batt; property: "pulse"; from: 1.0; to: 0.3; duration: 1100; easing.type: Easing.InOutSine }
+                NumberAnimation { target: batt; property: "pulse"; from: 0.3; to: 1.0; duration: 1100; easing.type: Easing.InOutSine }
+            }
 
             Rectangle {
                 id: body

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Services.UPower
 
 PanelWindow {
     id: batPanel
@@ -20,6 +21,19 @@ PanelWindow {
     property string status:  "Unknown"
     property string capacity: ""
     readonly property bool charging: status === "Charging"
+
+    // live time estimates from UPower (seconds); 0 when unknown / not applicable
+    readonly property var  dev:         UPower.displayDevice
+    readonly property real timeToEmpty: dev ? dev.timeToEmpty : 0
+    readonly property real timeToFull:  dev ? dev.timeToFull  : 0
+    readonly property string timeLabel: charging ? "Time to full" : "Time left"
+    readonly property string timeText:  charging ? fmtDuration(timeToFull) : fmtDuration(timeToEmpty)
+    function fmtDuration(s) {
+        if (!s || s <= 0) return ""
+        var h = Math.floor(s / 3600)
+        var m = Math.floor((s % 3600) / 60)
+        return h > 0 ? (h + "h " + m + "m") : (m + "m")
+    }
 
     property real reveal: root.batteryVisible ? 1 : 0
     Behavior on reveal {
@@ -112,6 +126,12 @@ PanelWindow {
                         color: batPanel.charging ? root.indigo : root.ink
                         font.family: root.mono; font.pixelSize: 11
                     }
+                }
+                Row {
+                    width: parent.width
+                    visible: batPanel.timeText !== ""
+                    Text { text: batPanel.timeLabel; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    Text { text: batPanel.timeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
