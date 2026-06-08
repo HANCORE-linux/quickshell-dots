@@ -221,10 +221,11 @@ Item {
     property bool weatherVisible:   false
     property bool workspaceVisible: false
 
-    // ── Launcher state ──
-    property bool   launcherVisible:    false
+    // ── Launcher / Menu panel state ──
+    property bool   omarchyMenuVisible: false
     property string launcherIconEffect: ""
     property color  launcherIconTint:   seal
+    onControlVisibleChanged: if (!controlVisible) omarchyMenuVisible = false
 
     // ── Notification state ──
     property bool notifVisible: false

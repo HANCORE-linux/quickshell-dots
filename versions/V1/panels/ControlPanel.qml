@@ -37,24 +37,26 @@ PanelWindow {
     }
     visible: reveal > 0.001
     onRevealChanged: if (reveal < 0.01) powerOpen = false   // reset when closed
-    WlrLayershell.keyboardFocus: root.controlVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: root.controlVisible && !root.omarchyMenuVisible
+                                 ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // ── reusable tile: neutral by default, highlights only on hover ──
     component Tile: Rectangle {
         property string label
         property color accent: root.seal
+        property bool active: false
         signal activated()
         height: 25
         radius: 4
-        color: _ma.containsMouse ? Qt.rgba(accent.r, accent.g, accent.b, 0.18)
-                                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-        border.color: _ma.containsMouse ? accent : root.sep
+        color: (active || _ma.containsMouse) ? Qt.rgba(accent.r, accent.g, accent.b, 0.18)
+                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+        border.color: (active || _ma.containsMouse) ? accent : root.sep
         border.width: 1
         Behavior on color { ColorAnimation { duration: 120 } }
         Text {
             anchors.centerIn: parent
             text: parent.label
-            color: _ma.containsMouse ? parent.accent : root.ink
+            color: (parent.active || _ma.containsMouse) ? parent.accent : root.ink
             font.family: root.mono; font.pixelSize: 11
         }
         MouseArea {
@@ -126,8 +128,9 @@ PanelWindow {
             }
             Tile {
                 width: parent.width
-                label: "Open Omarchy Menu"
-                onActivated: { root.controlVisible = false; Quickshell.execDetached(["omarchy-menu"]) }
+                label: "Omarchy Menu"
+                active: root.omarchyMenuVisible
+                onActivated: { root.omarchyMenuVisible = !root.omarchyMenuVisible }
             }
 
             // ── POWER (collapsed sub-menu; nothing destructive pre-shown) ──
