@@ -152,10 +152,10 @@ PanelWindow {
     readonly property int skew:       28
 
     // ── Colors ──
-    readonly property color scrimColor:       Qt.rgba(0, 0, 0, 0.68)
-    readonly property color selBorder:        root.seal
-    readonly property color unselBorder:      Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.22)
-    readonly property color dimColor:         root.paper
+    readonly property color scrimColor:   Qt.rgba(root.paper.r, root.paper.g, root.paper.b, 0.92)
+    readonly property color selBorder:    root.seal
+    readonly property color unselBorder:  Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.18)
+    readonly property color dimColor:     root.paper
 
     // ── Scrim ──
     Rectangle {
@@ -179,7 +179,7 @@ PanelWindow {
         visible: root.imagePickerVisible && !panel.ready
         anchors.centerIn: parent
         text: "Loading…"
-        color: Qt.rgba(1, 1, 1, 0.5)
+        color: root.sumi
         font.family: root.mono; font.pixelSize: 18
     }
 
@@ -339,8 +339,8 @@ PanelWindow {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "← → navigate   Enter apply   Esc cancel   type to filter"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4)
+            text: "← → scroll navigate   Enter apply   Esc cancel   type to filter"
+            color: root.sumi
             font.family: root.mono; font.pixelSize: 11
             horizontalAlignment: Text.AlignHCenter
         }
