@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 
 Item {
@@ -69,39 +70,19 @@ Item {
         }
     }
 
-    // ── bob2 logo: transparent PNG colorized with theme seal ──
-    Canvas {
+    // ── bob2 logo: colorized via MultiEffect so binding reacts immediately ──
+    Image {
         id: logo
         anchors.centerIn: parent
         height: 20
-        width: Math.round(height * 656 / 192)   // native aspect ratio
-
-        property color tint: root.seal
-
-        Component.onCompleted: loadImage("../assets/bob2.png")
-        onImageLoaded: requestPaint()
-
-        Connections {
-            target: root
-            function onSealChanged() { logo.tint = root.seal; logo.requestPaint() }
-        }
-
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            if (!isImageLoaded("../assets/bob2.png") || width < 1 || height < 1) return
-            ctx.drawImage("../assets/bob2.png", 0, 0, width, height)
-            var img = ctx.getImageData(0, 0, width, height)
-            var d   = img.data
-            var r   = Math.round(tint.r * 255)
-            var g   = Math.round(tint.g * 255)
-            var b   = Math.round(tint.b * 255)
-            for (var i = 0; i < d.length; i += 4) {
-                d[i]   = r
-                d[i+1] = g
-                d[i+2] = b
-            }
-            ctx.putImageData(img, 0, 0)
+        width: Math.round(height * 656 / 192)
+        source: "../assets/bob2.png"
+        fillMode: Image.PreserveAspectFit
+        smooth: true; mipmap: true
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            colorization: 1.0
+            colorizationColor: root.seal
         }
     }
 
