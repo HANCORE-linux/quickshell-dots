@@ -415,19 +415,19 @@ PanelWindow {
             anchors { right: sRight.right; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
-        BatteryWidget {
-            id: battW
-            anchors { right: btW.left; rightMargin: battW.hasBattery ? 4 : 0; verticalCenter: sRight.verticalCenter }
-            root: bar.root
-        }
         BrightnessWidget {
             id: briW
-            anchors { right: battW.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
+            anchors { right: btW.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
+            root: bar.root
+        }
+        BatteryWidget {
+            id: battW
+            anchors { right: briW.left; rightMargin: battW.hasBattery ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         PowerProfileWidget {
             id: ppW
-            anchors { right: briW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            anchors { right: battW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         NetworkWidget {
