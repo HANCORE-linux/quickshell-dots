@@ -5,6 +5,10 @@ Item {
     id: rootMod
     required property var root
 
+    readonly property string tooltipText: root.notifCount > 0
+        ? (root.notifCount + (root.notifCount === 1 ? " notification" : " notifications"))
+        : "No notifications"
+
     implicitWidth: 26
     implicitHeight: 28
 
@@ -42,9 +46,14 @@ Item {
         }
     }
 
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
+
     MouseArea {
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.notifVisible = !root.notifVisible
+        onEntered: tip.show()
+        onExited: { tip.hide() }
+        onClicked: { tip.hide(); root.notifVisible = !root.notifVisible }
     }
 }

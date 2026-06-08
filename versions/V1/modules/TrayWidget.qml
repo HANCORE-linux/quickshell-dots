@@ -72,6 +72,10 @@ Item {
 
             readonly property int hiddenCount: Math.max(0, totalCount - root.trayPinned.length)
             readonly property int totalCount:  SystemTray.items.values.length
+            readonly property string tooltipText: totalCount + (totalCount === 1 ? " app" : " apps")
+                                                  + (hiddenCount > 0 ? " · " + hiddenCount + " hidden" : "")
+
+            TooltipMixin { id: tip; root: rootMod.root; owner: toggleBtn; text: toggleBtn.tooltipText }
 
             Text {
                 id: moreIcon
@@ -113,7 +117,9 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.trayVisible = !root.trayVisible
+                onEntered: tip.show()
+                onExited: { tip.hide() }
+                onClicked: { tip.hide(); root.trayVisible = !root.trayVisible }
             }
         }
     }
