@@ -10,11 +10,9 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        // 󰖔  U+F0194  monitor / display icon (Nerd Font)
         text: String.fromCodePoint(0xF0194)
-        font.family: root.mono
-        font.pixelSize: 14
-        color: (root.themePickerVisible || root.wallpaperPickerVisible)
+        font.family: root.mono; font.pixelSize: 14
+        color: root.imagePickerVisible
             ? root.seal
             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.65)
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -34,13 +32,12 @@ Item {
         onExited:  tip.hide()
         onClicked: function(mouse) {
             tip.hide()
-            if (mouse.button === Qt.RightButton) {
-                root.themePickerVisible    = false
-                root.wallpaperPickerVisible = !root.wallpaperPickerVisible
-            } else {
-                root.wallpaperPickerVisible = false
-                root.themePickerVisible     = !root.themePickerVisible
+            if (root.imagePickerVisible) {
+                root.imagePickerVisible = false
+                return
             }
+            root.imagePickerMode    = (mouse.button === Qt.RightButton) ? "wallpaper" : "theme"
+            root.imagePickerVisible = true
         }
     }
 }

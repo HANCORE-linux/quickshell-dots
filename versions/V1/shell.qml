@@ -28,6 +28,5 @@ ShellRoot {
     ControlPanel { root: theme }
     TrayMenu { root: theme }
     OmarchyMenuPanel     { root: theme }
-    ThemePickerPanel     { root: theme }
-    WallpaperPickerPanel { root: theme }
+    ImageCarouselPanel   { root: theme }
 }
