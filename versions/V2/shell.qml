@@ -27,5 +27,6 @@ ShellRoot {
     WorkspacePanel { root: theme }
     ControlPanel { root: theme }
     TrayMenu { root: theme }
+    OmarchyMenuPanel     { root: theme }
     ImageCarouselPanel   { root: theme }
 }

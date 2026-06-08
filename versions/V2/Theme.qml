@@ -222,11 +222,13 @@ Item {
     property bool workspaceVisible: false
 
     // ── Launcher / Menu panel state ──
+    property bool   omarchyMenuVisible:  false
     property bool   imagePickerVisible:  false
     property string imagePickerMode:     "wallpaper"   // "theme" or "wallpaper"
     property real   quickActionsBarX:    0
     property string launcherIconEffect: ""
     property color  launcherIconTint:   seal
+    onControlVisibleChanged: if (!controlVisible) omarchyMenuVisible = false
 
     // ── Notification state ──
     property bool notifVisible: false

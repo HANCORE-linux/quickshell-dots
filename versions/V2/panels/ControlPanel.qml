@@ -37,7 +37,8 @@ PanelWindow {
     }
     visible: reveal > 0.001
     onRevealChanged: if (reveal < 0.01) powerOpen = false   // reset when closed
-    WlrLayershell.keyboardFocus: root.controlVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: root.controlVisible && !root.omarchyMenuVisible
+                                 ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // ── reusable tile: neutral by default, highlights only on hover ──
     component Tile: Rectangle {
@@ -124,6 +125,12 @@ PanelWindow {
                 width: parent.width
                 label: "Reload QS-Config"
                 onActivated: { root.controlVisible = false; Quickshell.reload(false) }
+            }
+            Tile {
+                width: parent.width
+                label: "Omarchy Menu"
+                active: root.omarchyMenuVisible
+                onActivated: { root.omarchyMenuVisible = !root.omarchyMenuVisible }
             }
 
             // ── POWER (collapsed sub-menu; nothing destructive pre-shown) ──
