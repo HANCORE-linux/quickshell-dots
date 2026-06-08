@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 
 Item {
@@ -70,7 +69,7 @@ Item {
         }
     }
 
-    // ── bob2 logo: colorized via MultiEffect so binding reacts immediately ──
+    // ── bob2 logo: flat-color tint shader — exact seal color, keeps alpha ──
     Image {
         id: logo
         anchors.centerIn: parent
@@ -80,9 +79,10 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true; mipmap: true
         layer.enabled: true
-        layer.effect: MultiEffect {
-            colorization: 1.0
-            colorizationColor: root.seal
+        layer.effect: ShaderEffect {
+            property color tintColor: root.seal
+            property var source: logo
+            fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
         }
     }
 
