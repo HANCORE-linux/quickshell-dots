@@ -7,7 +7,7 @@ Item {
     required property var root
 
     property string state: "idle"   // idle | recording | transcribing
-    property string tip:   ""
+    property string hint:  ""
     property bool   hasVoxtype: true   // turns off polling entirely when absent
 
     readonly property string displayIcon: {
@@ -22,7 +22,7 @@ Item {
 
     Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
-    readonly property string tooltipText: tip !== "" ? tip : (state === "recording" ? "Voxtype recording" : "Voxtype transcribing")
+    readonly property string tooltipText: hint !== "" ? hint : (state === "recording" ? "Voxtype recording" : "Voxtype transcribing")
 
     Text {
         id: ico
@@ -55,11 +55,11 @@ Item {
                 var parts = this.text.trim().split("\t")
                 if (parts[0] === "MISSING") {
                     rootMod.hasVoxtype = false   // stops the timer → no more polling
-                    rootMod.state = "idle"; rootMod.tip = ""
+                    rootMod.state = "idle"; rootMod.hint = ""
                     return
                 }
                 rootMod.state = parts[0] || "idle"
-                rootMod.tip   = parts[1] || ""
+                rootMod.hint  = parts[1] || ""
             }
         }
     }
