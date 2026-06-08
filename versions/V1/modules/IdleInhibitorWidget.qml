@@ -51,8 +51,8 @@ Item {
         onExited:  tip.hide()
         onClicked: {
             tip.hide()
+            rootMod.awake = !rootMod.awake   // optimistic — poll corrects if needed
             toggleProc.running = false; toggleProc.running = true
-            Qt.callLater(function() { stateProc.running = false; stateProc.running = true })
         }
     }
 }
