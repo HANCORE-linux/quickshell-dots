@@ -67,7 +67,11 @@ Item {
                 clip: true
                 width: parent.width
                 anchors.bottom: parent.bottom
-                height: parent.height * Math.min(rootMod.pct5h / 100, 1.0)
+                // floor the fill so low percentages still render over the glyph's
+                // ink (a 3px fill at the very bottom lands in empty glyph space)
+                height: rootMod.pct5h > 0
+                    ? Math.min(parent.height, Math.max(parent.height * rootMod.pct5h / 100, parent.height * 0.25))
+                    : 0
                 Behavior on height { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
 
                 Text {
