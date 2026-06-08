@@ -61,6 +61,10 @@ Item {
                 target: rootMod
                 function onPhaseChanged() { wave.requestPaint() }
             }
+            Connections {
+                target: root
+                function onSealChanged() { wave.requestPaint() }
+            }
             Component.onCompleted: requestPaint()
         }
     }
@@ -73,10 +77,14 @@ Item {
         width: Math.round(height * 656 / 192)   // native aspect ratio
 
         property color tint: root.seal
-        onTintChanged: requestPaint()
 
         Component.onCompleted: loadImage("../assets/bob2.png")
         onImageLoaded: requestPaint()
+
+        Connections {
+            target: root
+            function onSealChanged() { logo.tint = root.seal; logo.requestPaint() }
+        }
 
         onPaint: {
             var ctx = getContext("2d")
