@@ -72,23 +72,16 @@ Item {
     Process { id: modelProc;  command: ["bash", "-c", "omarchy-voxtype-model"] }
     Process { id: configProc; command: ["bash", "-c", "omarchy-voxtype-config"] }
 
-    Timer {
-        id: tipDelay; interval: 320
-        onTriggered: {
-            if (!rootMod.tooltipText) return
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onEntered: tipDelay.restart()
-        onExited:  { tipDelay.stop(); root.hideTooltip(rootMod) }
+        onEntered: tip.show()
+        onExited:  { tip.hide() }
         onClicked: (e) => {
-            tipDelay.stop(); root.hideTooltip(rootMod)
+            tip.hide()
             if (e.button === Qt.RightButton) { configProc.running = false; configProc.running = true }
             else                             { modelProc.running = false;  modelProc.running = true }
         }

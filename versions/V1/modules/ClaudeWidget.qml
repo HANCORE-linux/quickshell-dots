@@ -141,18 +141,12 @@ Item {
         onTriggered: { readProc.running = false; readProc.running = true }
     }
 
-    Timer {
-        id: tipDelay; interval: 320
-        onTriggered: {
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        onEntered: if (claudeActive) tipDelay.restart()
-        onExited: { tipDelay.stop(); root.hideTooltip(rootMod) }
+        onEntered: if (claudeActive) tip.show()
+        onExited: { tip.hide() }
     }
 }

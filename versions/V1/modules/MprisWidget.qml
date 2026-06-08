@@ -254,21 +254,14 @@ Item {
         ? (player.trackArtist ? player.trackArtist + " — " + player.trackTitle : player.trackTitle)
         : ""
 
-    Timer {
-        id: tipDelay; interval: 320
-        onTriggered: {
-            if (!rootMod.tooltipText) return
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.RightButton
-        onEntered: { if (rootMod.tooltipText) tipDelay.restart() }
-        onExited:  { tipDelay.stop(); root.hideTooltip(rootMod) }
-        onClicked: { tipDelay.stop(); root.hideTooltip(rootMod); root.mprisVisible = !root.mprisVisible }
+        onEntered: { if (rootMod.tooltipText) tip.show() }
+        onExited:  { tip.hide() }
+        onClicked: { tip.hide(); root.mprisVisible = !root.mprisVisible }
     }
 }

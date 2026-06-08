@@ -40,21 +40,15 @@ Item {
 
     Process { id: toggleProc; command: ["bash", "-c", "omarchy-toggle-notification-silencing"] }
 
-    Timer {
-        id: tipDelay; interval: 320
-        onTriggered: {
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        onEntered: tipDelay.restart()
-        onExited:  { tipDelay.stop(); root.hideTooltip(rootMod) }
+        onEntered: tip.show()
+        onExited:  { tip.hide() }
         onClicked: {
-            tipDelay.stop(); root.hideTooltip(rootMod)
+            tip.hide()
             toggleProc.running = false; toggleProc.running = true
             Qt.callLater(function() { dndProc.running = false; dndProc.running = true })
         }

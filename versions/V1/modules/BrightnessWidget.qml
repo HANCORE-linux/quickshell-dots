@@ -144,20 +144,14 @@ Item {
     Process { id: briUp;   command: ["bash", "-c", "brightnessctl set +5% -q"] }
     Process { id: briDown; command: ["bash", "-c", "brightnessctl set 5%- -q"] }
 
-    Timer {
-        id: tipDelay; interval: 320
-        onTriggered: {
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        onEntered: { if (rootMod.hasBacklight) tipDelay.restart() }
-        onExited:  { tipDelay.stop(); root.hideTooltip(rootMod) }
-        onClicked: { tipDelay.stop(); root.hideTooltip(rootMod); root.brightnessVisible = !root.brightnessVisible }
+        onEntered: { if (rootMod.hasBacklight) tip.show() }
+        onExited:  { tip.hide() }
+        onClicked: { tip.hide(); root.brightnessVisible = !root.brightnessVisible }
         onWheel: (e) => {
             if (e.angleDelta.y > 0) { briUp.running = false;   briUp.running = true }
             else                    { briDown.running = false; briDown.running = true }

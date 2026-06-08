@@ -38,14 +38,7 @@ Item {
         font.letterSpacing: 1
     }
 
-    Timer {
-        id: tipDelay
-        interval: 320
-        onTriggered: {
-            var p = rootMod.mapToItem(null, width / 2, height / 2);
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod);
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     Process {
         id: tzRunner
@@ -57,11 +50,10 @@ Item {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.RightButton
-        onEntered: { tipDelay.restart(); }
-        onExited: { tipDelay.stop(); root.hideTooltip(rootMod); }
+        onEntered: { tip.show(); }
+        onExited: { tip.hide(); }
         onClicked: (e) => {
-            tipDelay.stop();
-            root.hideTooltip(rootMod);
+            tip.hide();
             tzRunner.running = false;
             tzRunner.running = true;
         }

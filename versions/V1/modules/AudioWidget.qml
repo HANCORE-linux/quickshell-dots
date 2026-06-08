@@ -85,15 +85,7 @@ Item {
         }
     }
 
-    Timer {
-        id: tipDelay
-        interval: 320
-        onTriggered: {
-            if (!rootMod.tooltipText) return
-            var p = rootMod.mapToItem(null, width / 2, height / 2)
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod)
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     Process { id: muteRunner;    command: ["bash", "-c", "pamixer -t"] }
     Process { id: volUpRunner;   command: ["bash", "-c", "pamixer --increase 5"] }
@@ -104,15 +96,15 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onEntered: tipDelay.restart()
-        onExited: { tipDelay.stop(); root.hideTooltip(rootMod) }
+        onEntered: tip.show()
+        onExited: { tip.hide() }
         onWheel: (e) => {
             if (e.angleDelta.y > 0) { volUpRunner.running = false; volUpRunner.running = true }
             else                    { volDownRunner.running = false; volDownRunner.running = true }
             audio.refresh()
         }
         onClicked: (e) => {
-            tipDelay.stop(); root.hideTooltip(rootMod)
+            tip.hide()
             if (e.button === Qt.RightButton) { muteRunner.running = false; muteRunner.running = true }
             else                             { root.volVisible = !root.volVisible }
         }

@@ -94,15 +94,7 @@ Item {
         command: ["bash", "-c", "notify-send -u low \"$(omarchy-weather-status)\""]
     }
 
-    Timer {
-        id: tipDelay
-        interval: 320
-        onTriggered: {
-            if (!rootMod.tooltipText) return;
-            var p = rootMod.mapToItem(null, width / 2, height / 2);
-            root.showTooltip(rootMod.tooltipText, p.x, p.y, rootMod);
-        }
-    }
+    TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
     MouseArea {
         id: mouse
@@ -110,11 +102,10 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onEntered: { if (rootMod.tooltipText) tipDelay.restart(); }
-        onExited: { tipDelay.stop(); root.hideTooltip(rootMod); }
+        onEntered: { if (rootMod.tooltipText) tip.show(); }
+        onExited: { tip.hide(); }
         onClicked: (e) => {
-            tipDelay.stop();
-            root.hideTooltip(rootMod);
+            tip.hide();
             if (e.button === Qt.RightButton) {
                 weatherProc.running = false;
                 weatherProc.running = true;
