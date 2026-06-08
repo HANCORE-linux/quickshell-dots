@@ -147,6 +147,56 @@ Item {
         splitMon = false; splitNet = false; splitMprisL = false;
     }
 
+    // ── Control-panel state persistence (splits / anim / accent) ──
+    // Survives bar restarts via a tiny cache file; no extra deps (same Process+cat
+    // pattern used elsewhere). _splitsLoaded gates saving so the initial restore
+    // doesn't immediately write back over itself.
+    readonly property string splitsCachePath: Quickshell.env("HOME") + "/.cache/quickshell_splits"
+    property bool _splitsLoaded: false
+
+    onSplitArchChanged:      if (_splitsLoaded) saveSplits()
+    onSplitMonChanged:       if (_splitsLoaded) saveSplits()
+    onSplitNetChanged:       if (_splitsLoaded) saveSplits()
+    onSplitMprisLChanged:    if (_splitsLoaded) saveSplits()
+    onBarAnimChanged:        if (_splitsLoaded) saveSplits()
+    onUseThemeAccentChanged: if (_splitsLoaded) saveSplits()
+
+    // Build the command imperatively (not as a binding): a bound `command` can
+    // still hold the pre-toggle value when the Process runs, saving stale state.
+    function saveSplits() {
+        var line = (splitArch   ? "1" : "0") + " "
+                 + (splitMon     ? "1" : "0") + " "
+                 + (splitMprisL  ? "1" : "0") + " "
+                 + (splitNet     ? "1" : "0") + " "
+                 + barAnim + " "
+                 + (useThemeAccent ? "1" : "0")
+        splitSaveProc.command = ["bash", "-c", "echo '" + line + "' > '" + splitsCachePath + "'"]
+        splitSaveProc.running = false
+        splitSaveProc.running = true
+    }
+
+    Process {
+        id: splitLoadProc
+        command: ["cat", theme.splitsCachePath]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var parts = this.text.trim().split(" ")
+                if (parts.length >= 5) {
+                    theme.splitArch      = parts[0] === "1"
+                    theme.splitMon       = parts[1] === "1"
+                    theme.splitMprisL    = parts[2] === "1"
+                    theme.splitNet       = parts[3] === "1"
+                    theme.barAnim        = parseInt(parts[4]) || 0
+                    theme.useThemeAccent = parts.length >= 6 && parts[5] === "1"
+                }
+                theme._splitsLoaded = true
+            }
+        }
+    }
+
+    Process { id: splitSaveProc }   // command is set imperatively in saveSplits()
+
     // ── module enable flags (controlled by ControlPanel) ──
     property bool modWorkspace:  true
     property bool modStatus:     true
