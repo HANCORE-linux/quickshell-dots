@@ -170,7 +170,8 @@ Item {
                  + (splitNet     ? "1" : "0") + " "
                  + barAnim + " "
                  + (useThemeAccent ? "1" : "0")
-        splitSaveProc.command = ["bash", "-c", "echo '" + line + "' > '" + splitsCachePath + "'"]
+        splitSaveProc.command = ["bash", "-c",
+            "mkdir -p \"$(dirname '" + splitsCachePath + "')\" && echo '" + line + "' > '" + splitsCachePath + "'"]
         splitSaveProc.running = false
         splitSaveProc.running = true
     }
@@ -187,7 +188,7 @@ Item {
                     theme.splitMon       = parts[1] === "1"
                     theme.splitMprisL    = parts[2] === "1"
                     theme.splitNet       = parts[3] === "1"
-                    theme.barAnim        = parseInt(parts[4]) || 0
+                    var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 3) ? ba : 0
                     theme.useThemeAccent = parts.length >= 6 && parts[5] === "1"
                 }
                 theme._splitsLoaded = true
