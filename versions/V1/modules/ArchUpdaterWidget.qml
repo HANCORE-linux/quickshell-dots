@@ -18,6 +18,11 @@ Item {
     implicitWidth: 26
     implicitHeight: 28
 
+    IpcHandler {
+        target: "omarchy.system-update"
+        function refresh(): void { rootMod.doRefresh() }
+    }
+
     Process {
         id: checkProc
         running: false
