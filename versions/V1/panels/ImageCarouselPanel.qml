@@ -168,6 +168,10 @@ PanelWindow {
         anchors.fill: parent
         enabled: panel.ready
         onClicked: root.imagePickerVisible = false
+        onWheel: function(wheel) {
+            if (!panel.ready) return
+            panel.selectAdjacent(wheel.angleDelta.y < 0 ? 1 : -1)
+        }
     }
 
     // ── Loading indicator ──
