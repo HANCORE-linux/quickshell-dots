@@ -86,14 +86,18 @@ https://github.com/user-attachments/assets/e99e49f0-4760-4433-bdb6-e014cac55fe4
 
 | Module | Function |
 |---|---|
-| Workspaces | switch · overview |
-| Weather | current · forecast |
-| Clock | time · calendar |
+| Image pickers ✨ | theme · wallpaper · screenshots · videos — 3 selectable styles: Tanzaku · Hearthstone · Carousel (cached thumbnails + instant reopen) |
+| Workspaces | switch · overview · persist 10 / 5 / active-only ✨ |
+| Weather | current conditions · °C / °F (imperial/metric) toggle ✨ |
+| Clock | time · calendar · 24h / 12h toggle ✨ |
 | Mpris | media controls |
 | System monitors | CPU · RAM · battery · net · bt |
-| Control center | quick toggles · power |
+| Control center | quick toggles · power · widget toggles ✨ · workspace mode ✨ · picker style ✨ |
+| Keybind IPC ✨ | `qs -c bar ipc call picker theme\|wallpaper\|screenshots\|videos` |
 | Split groups | splittable module pills |
 | Per-widget panels | click widget → popup |
+
+> ✨ = new in v2.0.0 / v2.0.1
 
 </details>
 
