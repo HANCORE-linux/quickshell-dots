@@ -222,6 +222,8 @@ Item {
 
     // ── picker visual style (theme/wallpaper/screenshot/video pickers) ──
     property string pickerStyle: "tanzaku"   // "tanzaku", "hearthstone", "carousel"
+    property bool   weatherImperial: false   // false = °C / km·h, true = °F / mph
+    property bool   clock12h:        false   // false = 24h, true = 12h (AM/PM)
 
     // ── widget/workspace state persistence ──
     readonly property string widgetsCachePath: Quickshell.env("HOME") + "/.cache/quickshell_widgets"
@@ -234,6 +236,8 @@ Item {
     onModBluetoothChanged:  if (_widgetsLoaded) saveWidgets()
     onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
     onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
+    onWeatherImperialChanged: if (_widgetsLoaded) saveWidgets()
+    onClock12hChanged:        if (_widgetsLoaded) saveWidgets()
 
     function saveWidgets() {
         var line = (modMemory    ? "1" : "0") + " "
@@ -242,7 +246,9 @@ Item {
                  + (modPower     ? "1" : "0") + " "
                  + (modBluetooth ? "1" : "0") + " "
                  + workspaceMode + " "
-                 + pickerStyle
+                 + pickerStyle + " "
+                 + (weatherImperial ? "1" : "0") + " "
+                 + (clock12h        ? "1" : "0")
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -282,6 +288,9 @@ Item {
                         if (ps === "hearthstone" || ps === "carousel" || ps === "tanzaku")
                             theme.pickerStyle = ps
                     }
+                    // weatherImperial / clock12h follow pickerStyle
+                    if (parts.length > wsField + 2) theme.weatherImperial = parts[wsField + 2] === "1"
+                    if (parts.length > wsField + 3) theme.clock12h        = parts[wsField + 3] === "1"
                 }
                 theme._widgetsLoaded = true
             }
@@ -416,5 +425,16 @@ Item {
             paletteReader.running = false;
             paletteReader.running = true;
         }
+    }
+
+    // entry point for keybinds: `qs -c bar ipc call picker theme|wallpaper|...`
+    // (unqualified access → resolves to the Theme root's properties; avoids the
+    //  function name `theme` shadowing the `id: theme`)
+    IpcHandler {
+        target: "picker"
+        function theme(): void       { mediaBrowserVisible = false; imagePickerMode = "theme";     imagePickerVisible = true }
+        function wallpaper(): void   { mediaBrowserVisible = false; imagePickerMode = "wallpaper"; imagePickerVisible = true }
+        function screenshots(): void { imagePickerVisible = false;  mediaBrowserMode = "screenshots"; mediaBrowserVisible = true }
+        function videos(): void      { imagePickerVisible = false;  mediaBrowserMode = "videos";      mediaBrowserVisible = true }
     }
 }

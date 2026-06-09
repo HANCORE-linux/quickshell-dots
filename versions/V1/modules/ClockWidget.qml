@@ -10,7 +10,13 @@ Item {
 
     function pad(n) { return n < 10 ? "0" + n : String(n) }
 
-    readonly property string timeStr: pad(now.getHours()) + ":" + pad(now.getMinutes())
+    readonly property string timeStr: {
+        if (root.clock12h) {
+            var h = now.getHours() % 12; if (h === 0) h = 12
+            return h + ":" + pad(now.getMinutes()) + " " + (now.getHours() < 12 ? "AM" : "PM")
+        }
+        return pad(now.getHours()) + ":" + pad(now.getMinutes())
+    }
 
     readonly property var months: ["January","February","March","April","May","June",
                                     "July","August","September","October","November","December"]
@@ -49,13 +55,17 @@ Item {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        acceptedButtons: Qt.RightButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         onEntered: { tip.show(); }
         onExited: { tip.hide(); }
         onClicked: (e) => {
-            tip.hide();
-            tzRunner.running = false;
-            tzRunner.running = true;
+            if (e.button === Qt.LeftButton) {
+                root.clock12h = !root.clock12h;          // toggle 24h / 12h
+            } else if (e.button === Qt.RightButton) {
+                tip.hide();
+                tzRunner.running = false;                // timezone picker (unchanged)
+                tzRunner.running = true;
+            }
         }
     }
 }

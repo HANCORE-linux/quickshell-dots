@@ -26,6 +26,16 @@ PanelWindow {
 
     function refresh() { refreshing = true; wxData.running = false; wxData.running = true }
 
+    // data is fetched in °C / km·h; convert on display per root.weatherImperial
+    function tConv(c) {
+        var n = parseFloat(c); if (isNaN(n)) return c
+        return root.weatherImperial ? String(Math.round(n * 9 / 5 + 32)) : String(Math.round(n))
+    }
+    function wConv(kmh) {
+        var n = parseFloat(kmh); if (isNaN(n)) return kmh
+        return root.weatherImperial ? (Math.round(n * 0.621371) + " mph") : (kmh + " km/h")
+    }
+
     property real reveal: root.weatherVisible ? 1 : 0
     Behavior on reveal {
         NumberAnimation {
@@ -88,7 +98,7 @@ PanelWindow {
                 height: 36
                 Text {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                    text: wxPanel.temp !== "" ? wxPanel.temp + "°" : "—"
+                    text: wxPanel.temp !== "" ? wxPanel.tConv(wxPanel.temp) + "°" + (root.weatherImperial ? "F" : "C") : "—"
                     color: root.seal; font.family: root.mono; font.pixelSize: 26; font.weight: Font.Medium
                 }
                 Text {
@@ -113,7 +123,7 @@ PanelWindow {
                     width: parent.width
                     visible: wxPanel.feels !== ""
                     Text { text: "Feels like"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.feels + "°"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    Text { text: wxPanel.tConv(wxPanel.feels) + "°" + (root.weatherImperial ? "F" : "C"); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
@@ -125,28 +135,55 @@ PanelWindow {
                     width: parent.width
                     visible: wxPanel.wind !== ""
                     Text { text: "Wind"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.wind + " km/h"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    Text { text: wxPanel.wConv(wxPanel.wind); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            Rectangle {
+            Row {
                 width: parent.width
-                height: 28; radius: 4
-                color: wxPanel.refreshing ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.45)
-                       : wxBtnMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
-                Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
-                    anchors.centerIn: parent
-                    text: wxPanel.refreshing ? "Refreshing…" : "Refresh"
-                    color: root.paper; font.family: root.mono; font.pixelSize: 11
+                height: 28
+                spacing: 6
+                // Refresh (primary)
+                Rectangle {
+                    width: (parent.width - parent.spacing) / 2
+                    height: 28; radius: 4
+                    color: wxPanel.refreshing ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.45)
+                           : wxBtnMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: wxPanel.refreshing ? "Refreshing…" : "Refresh"
+                        color: root.paper; font.family: root.mono; font.pixelSize: 11
+                    }
+                    MouseArea {
+                        id: wxBtnMa
+                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        enabled: !wxPanel.refreshing
+                        onClicked: wxPanel.refresh()
+                    }
                 }
-                MouseArea {
-                    id: wxBtnMa
-                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    enabled: !wxPanel.refreshing
-                    onClicked: wxPanel.refresh()
+                // Unit toggle (secondary): shows the unit you'd switch TO
+                Rectangle {
+                    width: (parent.width - parent.spacing) / 2
+                    height: 28; radius: 4
+                    color: "transparent"
+                    border.color: unitMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.weatherImperial ? "metric" : "imperial"
+                        color: unitMa.containsMouse ? root.seal : root.ink
+                        font.family: root.mono; font.pixelSize: 11
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                    MouseArea {
+                        id: unitMa
+                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: root.weatherImperial = !root.weatherImperial
+                    }
                 }
             }
         }

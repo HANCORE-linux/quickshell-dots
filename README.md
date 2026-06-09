@@ -110,15 +110,43 @@ Default: left-click opens the widget panel. Exceptions:
 |---|---|---|---|
 | Audio | panel | mute toggle | ±volume |
 | Brightness | panel | — | ±brightness |
-| Clock | — | timezone picker | — |
+| Clock | toggle 24h / 12h | timezone picker | — |
 | Power Profile | panel | cycle profile | — |
 | Network / Bluetooth | panel | open system manager | — |
-| Weather | panel | force refresh | — |
+| Weather | panel (Refresh ⁄ °C↔°F) | force refresh | — |
 | Voxtype | cycle model | config | — |
 | Workspace | click dot: switch | overview | — |
 | Mpris | ‹ play › buttons inline | toggle panel | — |
 | Tray (bar) | toggle tray panel | — | — |
 | Tray icon | activate | hide icon | context menu |
+
+</details>
+
+##### V1 Keybindings — theme / wallpaper picker on the Omarchy hotkeys (optional)
+<details>
+
+Omarchy binds its theme/wallpaper menus (shown via walker) to:
+
+| Action | Key | Omarchy default |
+|---|---|---|
+| Theme | `Super`+`Shift`+`Ctrl`+`Space` | `omarchy-menu theme` |
+| Wallpaper | `Super`+`Ctrl`+`Space` | `omarchy-menu background` |
+
+To make those keys open the bar's own pickers instead (and unbind walker for them), add this to **your own** `~/.config/hypr/bindings.conf` — Omarchy sources it *after* its defaults, so it survives `omarchy update`:
+
+```conf
+# quickshell-dots: route the theme/wallpaper hotkeys to the bar's pickers
+unbind = SUPER SHIFT CTRL, SPACE
+unbind = SUPER CTRL, SPACE
+bindd  = SUPER SHIFT CTRL, SPACE, Theme picker,     exec, qs -c bar ipc call picker theme
+bindd  = SUPER CTRL, SPACE,       Wallpaper picker, exec, qs -c bar ipc call picker wallpaper
+```
+
+Then `hyprctl reload`. The `unbind` lines stop walker's menu from *also* firing on those keys; delete the block to restore the Omarchy default. Walker stays your launcher everywhere else — only these two keys change.
+
+> Different Omarchy version? Check `~/.local/share/omarchy/default/hypr/bindings/utilities.conf` for the `omarchy-menu theme` / `omarchy-menu background` lines and match whatever keys are bound there.
+
+(Also available: `qs -c bar ipc call picker screenshots` and `… videos`.)
 
 </details>
 <!-- drag a screenshot here on GitHub to embed it -->
