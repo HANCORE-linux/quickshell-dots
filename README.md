@@ -74,8 +74,9 @@ Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 </details>
 
 ## V1
-<video src="https://github.com/HANCORE-linux/quickshell-dots/raw/main/assets/screenrecording-2026-06-09_19-15-16-small.mp4" controls="controls" style="max-width: 100%;">
-</video>
+<a href="https://github.com/HANCORE-linux/quickshell-dots/raw/main/assets/screenrecording-2026-06-09_19-15-16-small.mp4">
+  <img src="https://github.com/HANCORE-linux/quickshell-dots/raw/main/assets/screenrecording-2026-06-09_19-15-16-poster.jpg" alt="quickshell-dots demo — click to play" style="max-width: 100%;">
+</a>
 
 ##### V1 Features
 <details>
