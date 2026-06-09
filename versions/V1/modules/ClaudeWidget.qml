@@ -7,6 +7,7 @@ Item {
     required property var root
 
     property bool claudeActive: false
+    property bool dataFresh:    false   // cache updated recently (backend alive, not stale)
     property int  pct5h:   0
     // fill snaps to 5% steps, consistent with the 5% increments used elsewhere
     readonly property int pct5hStep: Math.round(pct5h / 5) * 5
@@ -15,7 +16,10 @@ Item {
 
     readonly property string tooltipText: tooltipFull || ("Claude " + pct5h + "%")
 
-    readonly property bool shown: claudeActive && root.modClaude
+    // show when Claude Code is running OR there's live account-wide usage in the
+    // current window (the 5h % is account-wide, so it also reflects browser use) —
+    // the freshness gate keeps a dead/stale backend from showing an old % forever
+    readonly property bool shown: (claudeActive || (pct5h > 0 && dataFresh)) && root.modClaude
 
     // keep rendered until the collapse animation finishes, so the pill fades out
     // cleanly instead of being hard-clipped mid-shrink
@@ -109,11 +113,19 @@ Item {
     // ── data polling ──
     Process {
         id: readProc
-        command: ["cat", Quickshell.env("HOME") + "/.cache/claude-usage.json"]
+        // first line = file mtime (epoch), rest = the JSON payload
+        command: ["bash", "-c",
+            "f=\"$HOME/.cache/claude-usage.json\"; stat -c %Y \"$f\" 2>/dev/null; cat \"$f\" 2>/dev/null"]
         stdout: StdioCollector {
             onStreamFinished: {
+                var raw = this.text
+                var nl  = raw.indexOf("\n")
+                var mtime = nl > 0 ? (parseInt(raw.substring(0, nl)) || 0) : 0
+                var jsonStr = nl > 0 ? raw.substring(nl + 1) : ""
+                var ageOk = mtime > 0 && (Date.now() / 1000 - mtime) < 900   // < 15 min (timer = 5 min)
                 try {
-                    var d = JSON.parse(this.text.trim())
+                    var d = JSON.parse(jsonStr.trim())
+                    rootMod.dataFresh = ageOk && d._source !== "stale"
                     var util5h = parseFloat(d["5h-utilization"]) || 0
                     var util7d = parseFloat(d["7d-utilization"]) || 0
                     rootMod.pct5h   = Math.round(util5h * 100)
@@ -143,6 +155,7 @@ Item {
                 } catch (e) {
                     rootMod.pct5h    = 0
                     rootMod.tooltipFull = ""
+                    rootMod.dataFresh = false
                 }
             }
         }
@@ -158,7 +171,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        onEntered: if (claudeActive) tip.show()
+        onEntered: if (shown) tip.show()
         onExited: { tip.hide() }
     }
 }
