@@ -15,6 +15,7 @@
 
 - **Omarchy-based.** Integrates the `omarchy-*` helpers (wifi/bluetooth/audio launchers, update, screen recorder, voxtype) and reads the active Omarchy theme.
 - Built for Omarchy / Hyprland — not for plain setups without Omarchy.
+- **Omarchy version:** built for classic Omarchy (Waybar-based, ~3.8.x), where the menu keybinds call `omarchy-menu`. On Omarchy 4.0.0 (the Quickshell-based *omarchy-shell*) you'd disable the built-in shell bar to avoid running two bars, and the theme/wallpaper/menu/launcher are invoked differently — adjust the keybinds you pull from here accordingly.
 
 </details>
 
