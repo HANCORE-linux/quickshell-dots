@@ -19,7 +19,7 @@ PanelWindow {
     WlrLayershell.namespace: "omarchy-media-browser"
     WlrLayershell.keyboardFocus: panel.ready ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    readonly property bool active: root.pickerStyle !== "hearthstone"   // tanzaku default
+    readonly property bool active: root.pickerStyle === "tanzaku" || root.pickerStyle === ""   // default
     readonly property bool isVideos: root.mediaBrowserMode === "videos"
     readonly property bool ready: root.mediaBrowserVisible && active && loaded && layoutSettled
 

@@ -32,4 +32,5 @@ ShellRoot {
     ImageCarouselCarousel    { root: theme }
     MediaBrowserPanel        { root: theme }
     MediaBrowserHearthstone  { root: theme }
+    MediaBrowserCarousel     { root: theme }
 }
