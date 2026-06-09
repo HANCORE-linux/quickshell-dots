@@ -18,6 +18,10 @@ PanelWindow {
     readonly property int gap: 6
     readonly property int rad: 18
 
+    // real Wayland idle inhibitor — Hyprland suppresses idle while enabled
+    // (no hypridle killing). Toggled by IdleInhibitorWidget via root.idleInhibited.
+    IdleInhibitor { window: bar; enabled: bar.root.idleInhibited }
+
     Item {
         id: island
         anchors {
@@ -373,7 +377,7 @@ PanelWindow {
         }
         CpuWidget {
             id: cpuW
-            anchors { left: memW.right; leftMargin: 4; verticalCenter: sLeft.verticalCenter }
+            anchors { left: memW.right; leftMargin: root.modMemory ? 4 : 0; verticalCenter: sLeft.verticalCenter }
             root: bar.root
         }
         AudioWidget {
@@ -383,7 +387,7 @@ PanelWindow {
         }
         ClaudeWidget {
             id: claudeW
-            anchors { left: audioW.right; leftMargin: claudeW.claudeActive ? 4 : 0; verticalCenter: sLeft.verticalCenter }
+            anchors { left: audioW.right; leftMargin: claudeW.shown ? 4 : 0; verticalCenter: sLeft.verticalCenter }
             root: bar.root
         }
 
@@ -412,12 +416,12 @@ PanelWindow {
         }
         BluetoothWidget {
             id: btW
-            anchors { right: sRight.right; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            anchors { right: sRight.right; rightMargin: btW.shown ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         BrightnessWidget {
             id: briW
-            anchors { right: btW.left; rightMargin: briW.hasBacklight ? 4 : 0; verticalCenter: sRight.verticalCenter }
+            anchors { right: btW.left; rightMargin: briW.shown ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         BatteryWidget {
@@ -432,7 +436,7 @@ PanelWindow {
         }
         NetworkWidget {
             id: networkW
-            anchors { right: ppW.left; rightMargin: 4; verticalCenter: sRight.verticalCenter }
+            anchors { right: ppW.left; rightMargin: root.modPower ? 4 : 0; verticalCenter: sRight.verticalCenter }
             root: bar.root
         }
         // ── separator net (split/merge net) ──
@@ -476,6 +480,7 @@ PanelWindow {
                 anchors.centerIn: parent
                 spacing: 4
                 IdleInhibitorWidget { root: bar.root; anchors.verticalCenter: parent.verticalCenter }
+                MediaBrowserWidget  { root: bar.root; anchors.verticalCenter: parent.verticalCenter }
                 ThemeDisplayWidget  { root: bar.root; anchors.verticalCenter: parent.verticalCenter }
             }
         }

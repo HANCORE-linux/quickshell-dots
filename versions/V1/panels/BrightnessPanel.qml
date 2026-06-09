@@ -86,7 +86,7 @@ PanelWindow {
                     anchors.top: parent.top
                     text: briPanel.percent + "%"
                     color: root.seal
-                    font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
                 }
                 Rectangle {
                     id: track

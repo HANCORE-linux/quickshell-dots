@@ -19,8 +19,15 @@ Item {
         ? "Bluetooth · " + numConnected + " connected"
         : (btOn ? "Bluetooth on" : "Bluetooth off")
 
-    implicitWidth: row.implicitWidth + 18
+    readonly property bool shown: root.modBluetooth
+    visible: implicitWidth > 0.5
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
+    clip: true
+    opacity: shown ? 1 : 0
+
+    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
         anchors.centerIn: row

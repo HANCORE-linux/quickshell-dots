@@ -27,5 +27,9 @@ ShellRoot {
     WorkspacePanel { root: theme }
     ControlPanel { root: theme }
     TrayMenu { root: theme }
-    ImageCarouselPanel   { root: theme }
+    ImageCarouselPanel       { root: theme }
+    ImageCarouselHearthstone { root: theme }
+    ImageCarouselCarousel    { root: theme }
+    MediaBrowserPanel        { root: theme }
+    MediaBrowserHearthstone  { root: theme }
 }

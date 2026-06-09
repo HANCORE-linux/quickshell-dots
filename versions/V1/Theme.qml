@@ -211,6 +211,84 @@ Item {
     property bool modBattery:    true
     property bool modBrightness: true
     property bool modMedia:      true
+    property bool modClaude:     true
+
+    // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
+    // ControlPanel uses this to hide the Brightness toggle on desktops without one.
+    property bool hasBacklight:  false
+
+    // ── workspace display mode ──
+    property string workspaceMode: "10"   // "10", "5", "active"
+
+    // ── picker visual style (theme/wallpaper/screenshot/video pickers) ──
+    property string pickerStyle: "tanzaku"   // "tanzaku", "hearthstone", "carousel"
+
+    // ── widget/workspace state persistence ──
+    readonly property string widgetsCachePath: Quickshell.env("HOME") + "/.cache/quickshell_widgets"
+    property bool _widgetsLoaded: false
+
+    onModMemoryChanged:     if (_widgetsLoaded) saveWidgets()
+    onModBrightnessChanged: if (_widgetsLoaded) saveWidgets()
+    onModClaudeChanged:     if (_widgetsLoaded) saveWidgets()
+    onModPowerChanged:      if (_widgetsLoaded) saveWidgets()
+    onModBluetoothChanged:  if (_widgetsLoaded) saveWidgets()
+    onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
+    onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
+
+    function saveWidgets() {
+        var line = (modMemory    ? "1" : "0") + " "
+                 + (modBrightness ? "1" : "0") + " "
+                 + (modClaude    ? "1" : "0") + " "
+                 + (modPower     ? "1" : "0") + " "
+                 + (modBluetooth ? "1" : "0") + " "
+                 + workspaceMode + " "
+                 + pickerStyle
+        widgetSaveProc.command = ["bash", "-c",
+            "echo '" + line + "' > '" + widgetsCachePath + "'"]
+        widgetSaveProc.running = false
+        widgetSaveProc.running = true
+    }
+
+    Process {
+        id: widgetLoadProc
+        command: ["cat", theme.widgetsCachePath]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var parts = this.text.trim().split(" ")
+                if (parts.length >= 4) {
+                    theme.modMemory    = parts[0] !== "0"
+                    theme.modBrightness = parts[1] !== "0"
+                    theme.modClaude    = parts[2] !== "0"
+                    theme.modPower     = parts[3] !== "0"
+                }
+                // parts[4] is the bluetooth flag in the new format, but in the OLD
+                // format it was the workspace mode ("10"/"5"/"active") — detect which.
+                var wsField = -1
+                if (parts.length >= 5) {
+                    if (parts[4] === "5" || parts[4] === "active" || parts[4] === "10") {
+                        wsField = 4                         // old format: no bluetooth field
+                    } else {
+                        theme.modBluetooth = parts[4] !== "0"
+                        wsField = 5
+                    }
+                }
+                if (wsField >= 0 && parts.length > wsField) {
+                    var m = parts[wsField]
+                    theme.workspaceMode = (m === "5" || m === "active") ? m : "10"
+                    // pickerStyle is the field right after the workspace mode
+                    if (parts.length > wsField + 1) {
+                        var ps = parts[wsField + 1]
+                        if (ps === "hearthstone" || ps === "carousel" || ps === "tanzaku")
+                            theme.pickerStyle = ps
+                    }
+                }
+                theme._widgetsLoaded = true
+            }
+        }
+    }
+
+    Process { id: widgetSaveProc }
 
     // ── New widget panel states ──
     property bool networkVisible:   false
@@ -225,6 +303,11 @@ Item {
     property bool   imagePickerVisible:  false
     property string imagePickerMode:     "wallpaper"   // "theme" or "wallpaper"
     property real   quickActionsBarX:    0
+    // ── Media browser state (screenshots/videos carousel) ──
+    property bool   mediaBrowserVisible: false
+    property string mediaBrowserMode:    "screenshots"  // "screenshots" or "videos"
+    // ── Idle inhibitor (Wayland idle-inhibit protocol) ──
+    property bool   idleInhibited:       false
     // ── Notification state ──
     property bool notifVisible: false
     property int  notifCount:   0

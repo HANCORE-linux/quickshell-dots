@@ -1,13 +1,14 @@
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import "ImagePickerModel.js" as Model
 
-// Tanzaku filmstrip picker for theme & wallpaper.
-// sumi-e language: lots of empty space (ma), the focused image centred & full,
-// the rest as thin desaturated paper strips (tanzaku), and ONE seal brush-stroke
-// gliding under the focus as the single confident accent line.
+// Hearthstone (card-deck) variant — original felt look (dark table, dark card
+// frame, fanned cards dealt via GPU transforms) on top of the SAME fast data
+// layer as the Tanzaku picker: fast glob scan, cached 480px thumbnails, niced
+// pre-warm, lazy author/palette meta. Active only while pickerStyle=="hearthstone".
 PanelWindow {
     id: panel
     required property var root
@@ -16,10 +17,10 @@ PanelWindow {
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "omarchy-image-carousel"
+    WlrLayershell.namespace: "omarchy-image-carousel-hs"
     WlrLayershell.keyboardFocus: panel.ready ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    readonly property bool active: root.pickerStyle === "tanzaku" || root.pickerStyle === ""   // default
+    readonly property bool active: root.pickerStyle === "hearthstone"
     readonly property bool isThemeMode: root.imagePickerMode === "theme"
     readonly property bool ready: root.imagePickerVisible && active && imagesLoaded && layoutSettled
 
@@ -32,12 +33,14 @@ PanelWindow {
 
     visible: root.imagePickerVisible && active
 
-    // ── reveal (fade + subtle rise) ──
+    // ── reveal + deal ──
     property real reveal: 0
     Behavior on reveal { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-    onReadyChanged: reveal = ready ? 1 : 0
+    property real dealT: 0
+    Behavior on dealT { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+    onReadyChanged: { reveal = ready ? 1 : 0; if (ready) dealT = 1 }
 
-    // ── filtered list (each entry keeps its original index) ──
+    // ── filtered list ──
     readonly property var filtered: {
         var out = []
         for (var i = 0; i < imageArray.length; i++) {
@@ -69,12 +72,14 @@ PanelWindow {
                 panel.imageArray    = []
                 panel.selFilt       = 0
                 panel.reveal        = 0
+                panel.dealT         = 0
                 currentProc.running = false; currentProc.running = true
             }
         } else {
             panel.imagesLoaded  = false
             panel.layoutSettled = false
             panel.reveal        = 0
+            panel.dealT         = 0
         }
     }
     Connections {
@@ -115,7 +120,7 @@ PanelWindow {
         }
     }
 
-    // scan-result cache → instant (re)open
+    // scan-result cache → instant (re)open (shared cache file with the other theme styles)
     readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isThemeMode ? "theme" : "wallpaper")
     property string _lastScan: ""
     Process {
@@ -136,7 +141,7 @@ PanelWindow {
         Qt.callLater(function() {
             if (root.imagePickerVisible && panel.active) {
                 panel.layoutSettled = true
-                stage.forceActiveFocus()
+                hand.forceActiveFocus()
                 panel.fetchMeta()
                 if (!fromCache) { panel.warmMeta(); warmTimer.restart() }
             }
@@ -192,15 +197,12 @@ PanelWindow {
         selFilt = Math.max(0, Math.min(filtered.length - 1, selFilt + delta))
     }
 
-    // the currently focused entry (or null)
     readonly property var sel: (filtered.length > 0 && selFilt >= 0 && selFilt < filtered.length)
                                ? filtered[selFilt] : null
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
 
-    // ── background pre-warm: after the open settles, generate every missing
-    // thumbnail at LOW priority (nice) so fast scrubbing finds cached thumbs
-    // without the warm burst ever competing with the open animation / GUI ──
+    // ── background pre-warm (shared cache; nice; after open settles) ──
     Process { id: warmProc; command: [] }
     Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
     function warmAll() {
@@ -211,14 +213,13 @@ PanelWindow {
         warmProc.command = ["bash", "-c",
             "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
             "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); " +
-            "o=\"$D/$k-$m.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
-            "nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 480x270^ -quality 82 \"$1\" >/dev/null 2>&1'",
+            "o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
+            "nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1'",
             "warm"].concat(srcs)
         warmProc.running = false; warmProc.running = true
     }
 
-    // ── lazy meta (author/repo/palette) for the FOCUSED theme only, cached by
-    // dir — keeps the scan instant; enrichment lands ~110ms after the focus settles
+    // ── lazy meta (author/repo/palette) for the focused theme, cached by dir ──
     property var metaCache: ({})
     property string _metaDir: ""
     readonly property var selMeta: (sel && sel.dir && metaCache[sel.dir]) ? metaCache[sel.dir] : null
@@ -247,7 +248,7 @@ PanelWindow {
                 var parts = String(this.text || "").replace(/\n+$/, "").split("\t")
                 var m = panel.metaCache
                 m[panel._metaDir] = { author: parts[0] || "", repo: parts[1] || "", palette: parts[2] || "" }
-                panel.metaCache = m   // reassign → bindings refresh
+                panel.metaCache = m
             }
         }
     }
@@ -260,8 +261,8 @@ PanelWindow {
         Quickshell.execDetached(["xdg-open", url])
     }
 
-    // ── bulk meta pre-warm: author/repo/palette for ALL themes in one background
-    // pass → info is instant for every theme (no lazy timing fragility) ──
+    // ── bulk meta pre-warm: read author/repo/palette for ALL themes in one
+    // background pass so the info is instant for every card (no lazy timing) ──
     Process {
         id: metaWarmProc
         command: []
@@ -294,30 +295,25 @@ PanelWindow {
         metaWarmProc.running = false; metaWarmProc.running = true
     }
 
-    // ── geometry ──
-    readonly property int  focusedW:   460
-    readonly property int  focusedH:   259      // 16:9
-    readonly property int  peekW:      104      // ONLY the immediate neighbour — preview peek
-    readonly property int  stripW:     24       // every other strip — thin tanzaku (unchanged)
-    readonly property int  gap:        8
+    // ── card-hand geometry ──
+    readonly property int  cardW:      232
+    readonly property int  cardH:      330
+    readonly property real focusScale: 1.24
+    readonly property real spreadDeg:  6.0
+    readonly property real stepX:      128
+    readonly property real focusLift:  54
     readonly property int  maxVisible: 5
 
-    // only the first neighbour on each side widens for a preview; the rest stay thin
-    function stripWidthFor(d) {
-        if (d <= 0) return focusedW
-        if (d === 1) return peekW
-        return stripW
-    }
+    // ── felt look (original) ──
+    readonly property color feltColor: Qt.rgba(0.035, 0.035, 0.05, 0.975)
+    readonly property color frameDark: "#16161c"
+    readonly property color textLight: "#ECECEE"
+    readonly property color textDim:   Qt.rgba(0.92, 0.92, 0.94, 0.55)
 
-    // ── colors (bar materials) ──
-    readonly property color scrim:   Qt.rgba(root.paper.r, root.paper.g, root.paper.b, 0.8)
-    readonly property color frameBg: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
-    readonly property color uiDim:   Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
-
-    // ── scrim ──
+    // ── felt scrim ──
     Rectangle {
         anchors.fill: parent
-        color: panel.scrim
+        color: panel.feltColor
         opacity: panel.reveal
     }
     MouseArea {
@@ -335,63 +331,30 @@ PanelWindow {
         visible: root.imagePickerVisible && panel.active && !panel.ready
         anchors.centerIn: parent
         text: "Loading…"
-        color: root.ink
+        color: panel.textLight
         font.family: root.mono; font.pixelSize: 16; font.letterSpacing: 1
     }
 
-    // ── header / filter (over the stage) ──
-    Text {
-        visible: panel.ready
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: stage.top
-        anchors.bottomMargin: 22
-        opacity: panel.reveal
-        text: panel.isThemeMode ? "THEME" : "WALLPAPER"
-        color: root.sumi
-        font.family: root.mono; font.pixelSize: 12; font.letterSpacing: 3; font.weight: Font.Medium
-        horizontalAlignment: Text.AlignHCenter
-    }
-
-    // ── position indicator (aligned to the right edge of the focused image) ──
+    // ── position indicator (top) ──
     Text {
         visible: panel.ready && panel.filtered.length > 0
-        anchors.bottom: stage.top
-        anchors.bottomMargin: 23
-        x: stage.cx + panel.focusedW / 2 - width
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top; anchors.topMargin: 40
         opacity: panel.reveal
-        text: (panel.selFilt + 1) + " / " + panel.filtered.length
-        color: panel.uiDim
-        font.family: root.mono; font.pixelSize: 11
+        text: (panel.isThemeMode ? "THEME" : "WALLPAPER") + "      " + (panel.selFilt + 1) + " / " + panel.filtered.length
+        color: panel.textDim
+        font.family: root.mono; font.pixelSize: 12; font.letterSpacing: 2
     }
 
-    // ── the stage (filmstrip) ──
+    // ── the hand ──
     Item {
-        id: stage
+        id: hand
         visible: panel.ready && panel.filtered.length > 0
         focus: true
-        opacity: panel.reveal
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: -10 + (1 - panel.reveal) * 14
+        anchors.verticalCenterOffset: -16
         width: parent.width
-        height: panel.focusedH
-
-        readonly property real cx:     width / 2
-        readonly property real fLeft:  cx - panel.focusedW / 2
-        readonly property real fRight: cx + panel.focusedW / 2
-
-        // left edge x for an item at relIdx r, summing intervening (variable) widths
-        function xForRel(r) {
-            if (r === 0) return fLeft
-            var x
-            if (r < 0) {
-                x = fLeft
-                for (var k = -1; k >= r; k--) x = x - panel.gap - panel.stripWidthFor(-k)
-                return x
-            }
-            x = fRight + panel.gap
-            for (var j = 1; j < r; j++) x = x + panel.stripWidthFor(j) + panel.gap
-            return x
-        }
+        height: panel.cardH + panel.focusLift + 40
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -420,130 +383,174 @@ PanelWindow {
             model: panel.filtered.length
 
             delegate: Item {
-                id: item
+                id: card
                 required property int index
                 readonly property var  entry:   panel.filtered[index] || null
                 readonly property int  relIdx:  index - panel.selFilt
                 readonly property bool focused: relIdx === 0
-                readonly property bool near:    Math.abs(relIdx) <= panel.maxVisible
+                readonly property bool nearby:  Math.abs(relIdx) <= panel.maxVisible
+                readonly property real dim: focused ? 0.0 : Math.min(0.62, 0.30 + Math.abs(relIdx) * 0.05)
 
-                // ── cached 480px thumbnails for ALL items (theme + wallpaper) ──
-                // never decode the full source live → instant load, smooth scrubbing.
+                // lazy cached thumbnail (shared cache with the Tanzaku picker)
                 property string thumbPath: ""
                 Process {
                     id: thumbProc
                     command: []
                     stdout: StdioCollector {
-                        onStreamFinished: { var p = this.text.trim(); if (p) item.thumbPath = "file://" + p }
+                        onStreamFinished: { var p = this.text.trim(); if (p) card.thumbPath = "file://" + p }
                     }
                 }
                 function ensureThumb() {
-                    if (thumbPath || !panel.ready || !near || !entry) return
+                    if (thumbPath || !panel.ready || !nearby || !entry) return
                     thumbProc.command = ["bash", "-c",
                         "s=" + panel.shq(entry.filePath) + "; D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; " +
-                        "k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m.jpg\"; " +
-                        "if command -v magick >/dev/null 2>&1; then [ -f \"$o\" ] || nice -n 10 magick \"$s\" -auto-orient -strip -thumbnail 480x270^ -quality 82 \"$o\" >/dev/null 2>&1; fi; " +
+                        "k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; " +
+                        "if command -v magick >/dev/null 2>&1; then [ -f \"$o\" ] || nice -n 10 magick \"$s\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$o\" >/dev/null 2>&1; fi; " +
                         "[ -f \"$o\" ] && echo \"$o\" || echo \"$s\""]
                     thumbProc.running = false; thumbProc.running = true
                 }
-                onNearChanged: if (near) ensureThumb()
+                onNearbyChanged: if (nearby) ensureThumb()
                 Component.onCompleted: ensureThumb()
-                Connections { target: panel; function onReadyChanged() { if (panel.ready) item.ensureThumb() } }
+                Connections { target: panel; function onReadyChanged() { if (panel.ready) card.ensureThumb() } }
 
-                width:  panel.stripWidthFor(Math.abs(relIdx))
-                height: panel.focusedH
-                y: 0
-                x: stage.xForRel(relIdx)
-                z: focused ? 100 : 50 - Math.abs(relIdx)
-                visible: near
-                opacity: near ? 1 : 0
+                width: panel.cardW; height: panel.cardH
+                visible: nearby
+                transformOrigin: Item.Bottom
 
-                Behavior on x       { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                Behavior on width   { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 200 } }
+                x: (hand.width  - panel.cardW) / 2 + relIdx * panel.stepX * panel.dealT
+                y: (hand.height - panel.cardH)     - (focused ? panel.focusLift * panel.dealT : 0)
+                rotation: relIdx * panel.spreadDeg * panel.dealT
+                scale: focused ? 1 + (panel.focusScale - 1) * panel.dealT : 1
+                z: focused ? 1000 : 500 - Math.min(Math.abs(relIdx), 40)
+                opacity: panel.dealT
 
-                // hairline frame (rounded; the image sits inset so corners read round)
-                Rectangle {
-                    id: frame
+                Behavior on x        { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                Behavior on y        { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                Behavior on rotation { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                Behavior on scale    { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+
+                // photo (raster) — its edges are hidden behind the passepartout's
+                // crisp Shape inner edge, so no rotated raster edge ever shows
+                Item {
                     anchors.fill: parent
-                    radius: 8
-                    color: panel.frameBg
-                    border.width: 1
-                    border.color: item.focused ? root.seal : root.sep
-                    clip: true
-                    Behavior on border.color { ColorAnimation { duration: 180 } }
-
-                    // image — no per-item layer effect (kept cheap so the strip
-                    // width animation stays smooth); inset gives the rounded look
+                    anchors.margins: 6
                     Image {
                         anchors.fill: parent
-                        anchors.margins: 3
-                        // cached 480px thumb (theme + wallpaper); current-visibility
-                        // bound so off-screen refs drop → bounded memory
-                        source: (panel.ready && item.near && item.entry) ? item.thumbPath : ""
+                        source: (panel.ready && card.nearby && card.entry) ? card.thumbPath : ""
                         fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
-                        sourceSize.width:  panel.focusedW
-                        sourceSize.height: panel.focusedH
+                        sourceSize.width:  panel.cardW * 2
+                        sourceSize.height: panel.cardH * 2
                     }
-                    // dim the unfocused strips (paper wash); the preview peek lighter
                     Rectangle {
-                        anchors.fill: parent; anchors.margins: 3
-                        color: root.paper
-                        opacity: item.focused ? 0 : (Math.abs(item.relIdx) === 1 ? 0.28 : 0.5)
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                        height: 70
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: "transparent" }
+                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.72) }
+                        }
+                    }
+                    Text {
+                        anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 12 }
+                        text: card.entry ? card.entry.label : ""
+                        color: panel.textLight
+                        font.family: root.mono; font.pixelSize: 13; font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        anchors.fill: parent; color: "black"
+                        opacity: card.dim
+                        Behavior on opacity { NumberAnimation { duration: 180 } }
                     }
                 }
-
-                // "current" marker — seal dot on the active theme/wallpaper
+                // passepartout — rounded outer + rounded inner hole (OddEven), drawn
+                // OVER the photo; only its CurveRenderer edges are visible → crisp
+                // rounded card AND crisp rounded photo cut-out, even when rotated
+                Shape {
+                    id: frameShape
+                    anchors.fill: parent
+                    preferredRendererType: Shape.CurveRenderer
+                    readonly property real w:  panel.cardW
+                    readonly property real h:  panel.cardH
+                    readonly property real ro: 18    // outer radius
+                    readonly property real m:  8     // mat width
+                    readonly property real ri: 10    // inner (photo) radius
+                    ShapePath {
+                        fillRule: ShapePath.OddEvenFill
+                        fillColor: panel.frameDark
+                        strokeColor: "transparent"
+                        strokeWidth: 0
+                        // outer rounded rect
+                        startX: frameShape.ro; startY: 0
+                        PathLine { x: frameShape.w - frameShape.ro; y: 0 }
+                        PathArc  { x: frameShape.w; y: frameShape.ro; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: frameShape.w; y: frameShape.h - frameShape.ro }
+                        PathArc  { x: frameShape.w - frameShape.ro; y: frameShape.h; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: frameShape.ro; y: frameShape.h }
+                        PathArc  { x: 0; y: frameShape.h - frameShape.ro; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: 0; y: frameShape.ro }
+                        PathArc  { x: frameShape.ro; y: 0; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        // inner rounded hole (photo cut-out)
+                        PathMove { x: frameShape.m + frameShape.ri; y: frameShape.m }
+                        PathLine { x: frameShape.w - frameShape.m - frameShape.ri; y: frameShape.m }
+                        PathArc  { x: frameShape.w - frameShape.m; y: frameShape.m + frameShape.ri; radiusX: frameShape.ri; radiusY: frameShape.ri }
+                        PathLine { x: frameShape.w - frameShape.m; y: frameShape.h - frameShape.m - frameShape.ri }
+                        PathArc  { x: frameShape.w - frameShape.m - frameShape.ri; y: frameShape.h - frameShape.m; radiusX: frameShape.ri; radiusY: frameShape.ri }
+                        PathLine { x: frameShape.m + frameShape.ri; y: frameShape.h - frameShape.m }
+                        PathArc  { x: frameShape.m; y: frameShape.h - frameShape.m - frameShape.ri; radiusX: frameShape.ri; radiusY: frameShape.ri }
+                        PathLine { x: frameShape.m; y: frameShape.m + frameShape.ri }
+                        PathArc  { x: frameShape.m + frameShape.ri; y: frameShape.m; radiusX: frameShape.ri; radiusY: frameShape.ri }
+                    }
+                    // focus accent — OUTER outline only (one border, not two)
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: card.focused ? root.seal : "transparent"
+                        strokeWidth: card.focused ? 2 : 0
+                        Behavior on strokeColor { ColorAnimation { duration: 160 } }
+                        startX: frameShape.ro; startY: 0
+                        PathLine { x: frameShape.w - frameShape.ro; y: 0 }
+                        PathArc  { x: frameShape.w; y: frameShape.ro; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: frameShape.w; y: frameShape.h - frameShape.ro }
+                        PathArc  { x: frameShape.w - frameShape.ro; y: frameShape.h; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: frameShape.ro; y: frameShape.h }
+                        PathArc  { x: 0; y: frameShape.h - frameShape.ro; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                        PathLine { x: 0; y: frameShape.ro }
+                        PathArc  { x: frameShape.ro; y: 0; radiusX: frameShape.ro; radiusY: frameShape.ro }
+                    }
+                }
+                // "current" marker
                 Rectangle {
-                    visible: item.entry && item.entry.current === true
-                    width: 8; height: 8; radius: 4
-                    x: 9; y: 9; z: 5
+                    visible: card.entry && card.entry.current === true
+                    width: 9; height: 9; radius: 4.5
+                    x: 14; y: 14; z: 5
                     color: root.seal
                     border.color: Qt.rgba(0, 0, 0, 0.35); border.width: 1
                 }
 
                 MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: item.focused ? panel.applySelected() : (panel.selFilt = index)
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: card.focused ? panel.applySelected() : (panel.selFilt = index)
                 }
             }
         }
     }
 
-    // ── seal brush-stroke + label + hint (under the focused image, centred) ──
+    // ── label + palette + meta + hint (bottom) ──
     Column {
         visible: panel.ready && panel.filtered.length > 0
         opacity: panel.reveal
-        anchors.top: stage.bottom
-        anchors.topMargin: 16
-        anchors.horizontalCenter: stage.horizontalCenter
-        spacing: 12
-
-        // the single confident accent line — tapered like a brush stroke
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: panel.focusedW * 0.42
-            height: 3; radius: 1.5
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0;  color: "transparent" }
-                GradientStop { position: 0.5;  color: root.seal }
-                GradientStop { position: 1.0;  color: "transparent" }
-            }
-        }
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 28
+        spacing: 8
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: panel.focusedW + 120
-            text: panel.currentLabel
-            color: root.ink
-            font.family: root.mono; font.pixelSize: 22; font.weight: Font.DemiBold
+            width: 820; text: panel.currentLabel
+            color: panel.textLight
+            font.family: root.mono; font.pixelSize: 26; font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
         }
 
-        // palette swatch — the focused theme's vivid colours (lazy, theme mode)
+        // palette swatch (lazy, theme mode)
         Row {
             visible: panel.isThemeMode && panel.selMeta && panel.selMeta.palette.length > 0
             anchors.horizontalCenter: parent.horizontalCenter
@@ -555,12 +562,12 @@ PanelWindow {
                     required property var modelData
                     width: 13; height: 13; radius: 6.5
                     color: modelData
-                    border.color: Qt.rgba(1, 1, 1, 0.15); border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.18); border.width: 1
                 }
             }
         }
 
-        // meta — current badge · author (click → open repo)
+        // current badge · author
         Row {
             visible: (panel.sel && panel.sel.current)
                      || (panel.isThemeMode && panel.selMeta && panel.selMeta.author.length > 0)
@@ -577,13 +584,12 @@ PanelWindow {
                 visible: panel.isThemeMode && panel.selMeta && panel.selMeta.author.length > 0
                 anchors.verticalCenter: parent.verticalCenter
                 text: "by " + (panel.selMeta ? panel.selMeta.author : "") + "  ↗"
-                color: authorMa.containsMouse ? root.seal : panel.uiDim
+                color: authorMa.containsMouse ? root.seal : panel.textDim
                 font.family: root.mono; font.pixelSize: 11
                 Behavior on color { ColorAnimation { duration: 120 } }
                 MouseArea {
                     id: authorMa
-                    anchors.fill: parent
-                    hoverEnabled: true
+                    anchors.fill: parent; hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: panel.openRepo()
                 }
@@ -602,7 +608,7 @@ PanelWindow {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "← →  scroll navigate     Enter apply     Esc cancel     type to filter"
-            color: panel.uiDim
+            color: panel.textDim
             font.family: root.mono; font.pixelSize: 11
             horizontalAlignment: Text.AlignHCenter
         }

@@ -23,6 +23,24 @@ PanelWindow {
     readonly property string portType: audio.portType
     property bool   micMuted: false
 
+    // ── per-app mixer + device switcher state ──
+    property var    apps:        []   // [{idx, name, vol, muted}]
+    property var    sinks:       []   // [{name, desc}]
+    property string defaultSink: ""
+    property string _appsRaw:    ""
+    property string _sinksRaw:   ""
+
+    function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+    function run(cmd) { actProc.command = ["bash", "-c", cmd]; actProc.running = false; actProc.running = true }
+
+    function refreshAll() {
+        audio.refresh()
+        appsProc.running   = false; appsProc.running   = true
+        sinksProc.running  = false; sinksProc.running  = true
+        defSinkProc.running = false; defSinkProc.running = true
+        micData.running    = false; micData.running    = true
+    }
+
     property real reveal: root.volVisible ? 1 : 0
     Behavior on reveal {
         NumberAnimation {
@@ -117,7 +135,7 @@ PanelWindow {
                     color: volPanel.muted
                         ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
                         : root.seal
-                    font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
                 }
                 Rectangle {
                     anchors.bottom: parent.bottom
@@ -132,23 +150,61 @@ PanelWindow {
                 }
             }
 
-            // ── port info ──
-            Row {
+            // ── output device switcher ──
+            Text {
+                text: "OUTPUT DEVICE"
+                color: root.sumi
+                font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Column {
                 width: parent.width
-                Text {
-                    text: "Device"
-                    color: root.sumi
-                    font.family: root.mono; font.pixelSize: 11
-                    width: parent.width * 0.4
-                }
-                Text {
-                    text: {
-                        if (volPanel.portType === "headphone") return "Headphones"
-                        if (volPanel.portType === "headset")   return "Headset"
-                        return "Speakers"
+                spacing: 4
+                Repeater {
+                    model: volPanel.sinks
+                    delegate: Rectangle {
+                        id: devTile
+                        required property var modelData
+                        readonly property bool isDef:   devTile.modelData.name === volPanel.defaultSink
+                        readonly property bool hovered: devMa.containsMouse
+                        width: parent.width
+                        height: 26; radius: 4
+                        color: isDef     ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                             : hovered    ? Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.12)
+                                          : Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.06)
+                        border.color: (isDef || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Row {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8; anchors.rightMargin: 8
+                            spacing: 6
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: devTile.isDef ? "●" : "○"
+                                color: devTile.isDef ? root.seal : root.sumi
+                                font.family: root.mono; font.pixelSize: 10
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 22
+                                text: devTile.modelData.desc
+                                color: (devTile.isDef || devTile.hovered) ? root.seal : root.ink
+                                font.family: root.mono; font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                        }
+                        MouseArea {
+                            id: devMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                volPanel.run("pactl set-default-sink " + volPanel.shq(devTile.modelData.name))
+                                volPanel.defaultSink = devTile.modelData.name
+                                Qt.callLater(function() { volPanel.refreshAll() })
+                            }
+                        }
                     }
-                    color: root.ink
-                    font.family: root.mono; font.pixelSize: 11
                 }
             }
 
@@ -180,6 +236,90 @@ PanelWindow {
                         muteRunner.running = false
                         muteRunner.running = true
                         Qt.callLater(function() { audio.refresh() })
+                    }
+                }
+            }
+
+            // ── per-app mixer ──
+            Rectangle { width: parent.width; height: 1; color: root.sep; visible: volPanel.apps.length > 0 }
+            Text {
+                visible: volPanel.apps.length > 0
+                text: "APPS"
+                color: root.sumi
+                font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Column {
+                width: parent.width
+                spacing: 8
+                Repeater {
+                    model: volPanel.apps
+                    delegate: Item {
+                        id: appRow
+                        required property var modelData
+                        width: parent.width
+                        height: 32
+                        property int liveVol: modelData.vol
+
+                        // mute glyph
+                        Text {
+                            id: appMute
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            text: appRow.modelData.muted ? String.fromCodePoint(0xE04F) : String.fromCodePoint(0xE050)
+                            font.family: "Material Symbols Rounded"; font.pixelSize: 15
+                            color: appRow.modelData.muted ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4) : root.seal
+                            MouseArea {
+                                anchors.fill: parent; anchors.margins: -3
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    volPanel.run("pactl set-sink-input-mute " + appRow.modelData.idx + " toggle")
+                                    Qt.callLater(function() { volPanel.refreshAll() })
+                                }
+                            }
+                        }
+                        Text {
+                            anchors.left: appMute.right; anchors.leftMargin: 6
+                            anchors.top: parent.top
+                            anchors.right: appPct.left; anchors.rightMargin: 6
+                            text: appRow.modelData.name
+                            color: appRow.modelData.muted ? root.sumi : root.ink
+                            font.family: root.mono; font.pixelSize: 11
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            id: appPct
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            text: appRow.liveVol + "%"
+                            color: root.seal
+                            font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
+                        }
+
+                        // draggable volume bar
+                        Rectangle {
+                            id: appTrack
+                            anchors.left: parent.left; anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 8; radius: 4
+                            color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                            Rectangle {
+                                width: parent.width * Math.min(appRow.liveVol / 100, 1)
+                                height: parent.height; radius: 4
+                                color: appRow.modelData.muted ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4) : root.seal
+                            }
+                            MouseArea {
+                                anchors.fill: parent; anchors.topMargin: -8; anchors.bottomMargin: -4
+                                cursorShape: Qt.PointingHandCursor
+                                function setFromX(x) {
+                                    appRow.liveVol = Math.max(0, Math.min(100, Math.round(x / appTrack.width * 100)))
+                                }
+                                onPressed:          function(m) { setFromX(m.x) }
+                                onPositionChanged:  function(m) { if (pressed) setFromX(m.x) }
+                                onReleased: {
+                                    volPanel.run("pactl set-sink-input-volume " + appRow.modelData.idx + " " + appRow.liveVol + "%")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -274,6 +414,7 @@ PanelWindow {
     Process { id: muteRunner;    command: ["bash", "-c", "pamixer -t"] }
     Process { id: micMuteRunner; command: ["bash", "-c", "pamixer --default-source -t"] }
     Process { id: audioRunner;   command: ["bash", "-c", "omarchy-launch-audio"] }
+    Process { id: actProc;       command: [] }
 
     Process {
         id: micData
@@ -286,11 +427,75 @@ PanelWindow {
         }
     }
 
-    onVisibleChanged: {
-        if (visible) {
-            audio.refresh()
-            micData.running = false
-            micData.running = true
+    // per-app streams
+    Process {
+        id: appsProc
+        command: ["bash", "-c", "pactl -f json list sink-inputs 2>/dev/null"]
+        running: false
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var raw = String(text || "[]")
+                if (raw === volPanel._appsRaw) return   // unchanged → no rebuild/flicker
+                volPanel._appsRaw = raw
+                var out = []
+                try {
+                    var j = JSON.parse(raw)
+                    for (var i = 0; i < j.length; i++) {
+                        var s = j[i], p = s.properties || {}
+                        var nm = p["application.name"] || p["media.name"] || p["application.process.binary"] || "App"
+                        var vk = Object.keys(s.volume || {})
+                        var vp = vk.length ? String(s.volume[vk[0]].value_percent) : "0%"
+                        out.push({ idx: s.index, name: nm, vol: (parseInt(vp.replace("%", "")) || 0), muted: !!s.mute })
+                    }
+                } catch (e) {}
+                volPanel.apps = out
+            }
         }
+    }
+
+    // output devices
+    Process {
+        id: sinksProc
+        command: ["bash", "-c", "pactl -f json list sinks 2>/dev/null"]
+        running: false
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var raw = String(text || "[]")
+                if (raw === volPanel._sinksRaw) return
+                volPanel._sinksRaw = raw
+                var out = []
+                try {
+                    var j = JSON.parse(raw)
+                    for (var i = 0; i < j.length; i++)
+                        out.push({ name: j[i].name, desc: j[i].description || j[i].name })
+                } catch (e) {}
+                volPanel.sinks = out
+            }
+        }
+    }
+
+    Process {
+        id: defSinkProc
+        command: ["bash", "-c", "pactl get-default-sink 2>/dev/null"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: { volPanel.defaultSink = this.text.trim() }
+        }
+    }
+
+    // light refresh while open so new apps / external changes show up
+    Timer {
+        interval: 2000; repeat: true
+        running: volPanel.visible
+        onTriggered: {
+            appsProc.running   = false; appsProc.running   = true
+            defSinkProc.running = false; defSinkProc.running = true
+        }
+    }
+
+    onVisibleChanged: {
+        if (visible) volPanel.refreshAll()
     }
 }

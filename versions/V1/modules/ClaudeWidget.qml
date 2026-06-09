@@ -15,12 +15,18 @@ Item {
 
     readonly property string tooltipText: tooltipFull || ("Claude " + pct5h + "%")
 
-    visible: claudeActive
-    implicitWidth: claudeActive ? row.implicitWidth + 18 : 0
+    readonly property bool shown: claudeActive && root.modClaude
+
+    // keep rendered until the collapse animation finishes, so the pill fades out
+    // cleanly instead of being hard-clipped mid-shrink
+    visible: implicitWidth > 0.5
+    implicitWidth: shown ? row.implicitWidth + 18 : 0
     implicitHeight: 28
     clip: true
+    opacity: shown ? 1 : 0
 
     Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     // ── process detection ──
     Process {

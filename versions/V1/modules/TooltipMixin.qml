@@ -16,7 +16,7 @@ Item {
 
     // live-update the visible tooltip while THIS widget owns it (e.g. volume %
     // changing under the cursor) — showTooltip() only captures a snapshot.
-    onTextChanged: if (root.tooltipOwner === owner) root.tooltipText = text
+    onTextChanged: if (root && root.tooltipOwner === owner) root.tooltipText = text
 
     Timer {
         id: delayTimer

@@ -9,8 +9,9 @@ Item {
     property bool recording: false
     property int  elapsed:   0   // seconds
 
-    visible: recording
-    implicitWidth: recording ? row.implicitWidth + 14 : 0
+    visible: implicitWidth > 0.5
+    implicitWidth: recording ? row.implicitWidth + 6 : 0
+    clip: true
     implicitHeight: 28
 
     Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }

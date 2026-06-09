@@ -109,13 +109,13 @@ PanelWindow {
                     id: cpuLbl
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "CPU"; color: root.sumi
-                    font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    font.family: root.mono; font.pixelSize: 11; font.letterSpacing: 1
                 }
                 Text {
                     id: cpuVal
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: cpuPanel.cpuPct + "%"; color: root.seal
-                    font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
                 }
                 Rectangle {
                     anchors.left: cpuLbl.right; anchors.leftMargin: 8
@@ -141,13 +141,13 @@ PanelWindow {
                     id: gpuLbl
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "GPU"; color: root.sumi
-                    font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    font.family: root.mono; font.pixelSize: 11; font.letterSpacing: 1
                 }
                 Text {
                     id: gpuVal
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: cpuPanel.gpuUtil + "%"; color: root.seal
-                    font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
                 }
                 Rectangle {
                     anchors.left: gpuLbl.right; anchors.leftMargin: 8

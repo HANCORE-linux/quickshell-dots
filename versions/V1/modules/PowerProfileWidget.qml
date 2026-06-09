@@ -24,8 +24,14 @@ Item {
         return "Balanced"
     }
 
-    implicitWidth: row.implicitWidth + 18
+    visible: implicitWidth > 0.5
+    implicitWidth: root.modPower ? row.implicitWidth + 18 : 0
     implicitHeight: 28
+    clip: true
+    opacity: root.modPower ? 1 : 0
+
+    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
         anchors.centerIn: row

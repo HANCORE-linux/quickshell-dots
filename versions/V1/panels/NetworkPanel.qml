@@ -29,8 +29,26 @@ PanelWindow {
     property var    networks: []    // [{conn, ssid, sec, sig}]
     property var    known:   []     // known ssids
 
+    // ── wifi radio ──
+    property bool   wifiBlocked: false
+
+    // ── link speed (negotiated connection rate) ──
+    property string linkSpeed:   ""
+
+    function toggleWifi() {
+        var wasBlocked = netPanel.wifiBlocked
+        rfkillToggle.command = ["bash", "-c", wasBlocked ? "rfkill unblock wifi" : "rfkill block wifi"]
+        rfkillToggle.running = false; rfkillToggle.running = true
+        netPanel.wifiBlocked = !wasBlocked      // optimistic; rfkillState corrects
+        Qt.callLater(function() {
+            rfkillState.running = false; rfkillState.running = true
+            netData.running = false; netData.running = true
+            if (wasBlocked) netPanel.scan()     // just turned ON → look for networks
+        })
+    }
+
     function scan() {
-        if (scanning) return
+        if (scanning || wifiBlocked) return
         scanning = true
         scanProc.running = false
         scanProc.running = true
@@ -126,7 +144,7 @@ PanelWindow {
                         return "Offline"
                     }
                     color: netPanel.mode === "none" ? root.sumi : root.seal
-                    font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
                 }
                 Rectangle {
                     anchors.bottom: parent.bottom
@@ -176,15 +194,54 @@ PanelWindow {
                     Text { text: "Frequency"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
                     Text { text: netPanel.freq; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
+                Row {
+                    width: parent.width
+                    visible: netPanel.linkSpeed !== ""
+                    Text { text: "Link speed"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    Text { text: netPanel.linkSpeed; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep; visible: netPanel.hasWifi }
+
+            // ── wifi radio toggle ──
+            Item {
+                width: parent.width
+                height: 24
+                visible: netPanel.hasWifi
+                Text {
+                    anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                    text: "Wi-Fi"
+                    color: root.ink; font.family: root.mono; font.pixelSize: 11
+                }
+                Rectangle {
+                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    width: 50; height: 22; radius: 11
+                    color: !netPanel.wifiBlocked ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    border.color: (wifiToggleMa.containsMouse || !netPanel.wifiBlocked) ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: netPanel.wifiBlocked ? "OFF" : "ON"
+                        color: !netPanel.wifiBlocked ? root.seal : root.sumi
+                        font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                    }
+                    MouseArea {
+                        id: wifiToggleMa
+                        anchors.fill: parent; hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: netPanel.toggleWifi()
+                    }
+                }
+            }
 
             // ── available networks ──
             Item {
                 width: parent.width
                 height: 16
-                visible: netPanel.hasWifi
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked
                 Text {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "AVAILABLE NETWORKS"
@@ -206,7 +263,7 @@ PanelWindow {
                 height: Math.min(netList.implicitHeight, 180)
                 contentHeight: netList.implicitHeight
                 clip: true
-                visible: netPanel.hasWifi
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked
                 boundsBehavior: Flickable.StopAtBounds
 
                 Column {
@@ -338,7 +395,7 @@ PanelWindow {
     // detect wifi device presence
     Process {
         id: devProbe
-        command: ["bash", "-c", "for d in /sys/class/net/*/wireless; do basename \"$(dirname \"$d\")\"; break; done 2>/dev/null"]
+        command: ["bash", "-c", "for d in /sys/class/net/*/wireless; do [ -e \"$d\" ] || continue; basename \"$(dirname \"$d\")\"; break; done 2>/dev/null"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -354,9 +411,8 @@ PanelWindow {
     Process {
         id: scanProc
         command: ["bash", "-c",
-            "DEV=$(for d in /sys/class/net/*/wireless; do basename \"$(dirname \"$d\")\"; break; done); " +
+            "DEV=$(for d in /sys/class/net/*/wireless; do [ -e \"$d\" ] || continue; basename \"$(dirname \"$d\")\"; break; done); " +
             "[ -z \"$DEV\" ] && exit; " +
-            "rfkill unblock wifi 2>/dev/null; " +
             "iwctl station \"$DEV\" scan >/dev/null 2>&1; sleep 1.5; " +
             "iwctl known-networks list 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g; s/\\r//g' | " +
             "  awk '/^[[:space:]]*-+[[:space:]]*$/ {s++; next} s>=2 && NF>0 { sub(/^[[:space:]]+/,\"\"); sub(/[[:space:]][[:space:]]+.*$/,\"\"); if(length) print \"KNOWN\\t\" $0 }'; " +
@@ -405,10 +461,53 @@ PanelWindow {
     // safety: if a scan hangs, don't block future rescans forever
     Timer { id: scanWatchdog; interval: 8000; onTriggered: netPanel.scanning = false }
 
+    // ── wifi radio (rfkill) ──
+    Process {
+        id: rfkillState
+        command: ["bash", "-c", "rfkill list wifi 2>/dev/null | grep -qi 'Soft blocked: yes' && echo BLOCKED || echo OK"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: { netPanel.wifiBlocked = this.text.trim() === "BLOCKED" }
+        }
+    }
+    Process { id: rfkillToggle; command: ["bash", "-c", "true"] }
+
+    // negotiated link speed: ethernet from /sys, wifi from iw bitrate
+    Process {
+        id: speedProc
+        command: ["bash", "-c",
+            "IFACE=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}'); " +
+            "[ -z \"$IFACE\" ] && exit; " +
+            "if [ -d /sys/class/net/$IFACE/wireless ]; then " +
+            "  R=$(iw dev \"$IFACE\" link 2>/dev/null | sed -n 's/.*tx bitrate: //p' | awk '{print $1\" \"$2; exit}'); " +
+            "  [ -n \"$R\" ] && echo \"W:$R\"; " +
+            "else " +
+            "  S=$(cat /sys/class/net/$IFACE/speed 2>/dev/null); " +
+            "  [ -n \"$S\" ] && echo \"E:$S\"; " +
+            "fi"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var t = this.text.trim()
+                if (t.indexOf("E:") === 0) {
+                    var mb = parseInt(t.slice(2)) || 0
+                    netPanel.linkSpeed = mb >= 1000 ? (mb / 1000).toFixed(1).replace(/\.0$/, "") + " Gbit/s"
+                                       : (mb > 0 ? mb + " Mbit/s" : "")
+                } else if (t.indexOf("W:") === 0) {
+                    netPanel.linkSpeed = t.slice(2)   // already e.g. "866.7 MBit/s"
+                } else {
+                    netPanel.linkSpeed = ""
+                }
+            }
+        }
+    }
+
     onVisibleChanged: {
         if (visible) {
+            rfkillState.running = false; rfkillState.running = true
             netData.running = false; netData.running = true
             devProbe.running = false; devProbe.running = true
+            speedProc.running = false; speedProc.running = true
         }
     }
 }

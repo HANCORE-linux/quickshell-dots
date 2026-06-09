@@ -12,14 +12,17 @@ Item {
 
     readonly property string tooltipText: "Brightness · " + percent + "%"
 
-    implicitWidth:  hasBacklight ? (row.implicitWidth + 18) : 0
+    readonly property bool shown: hasBacklight && root.modBrightness
+    implicitWidth:  shown ? (row.implicitWidth + 18) : 0
     implicitHeight: 28
-    visible: hasBacklight
+    visible: implicitWidth > 0.5
     clip: true
+    opacity: shown ? 1 : 0
 
     Behavior on implicitWidth {
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
     }
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
         anchors.centerIn: row
@@ -113,6 +116,7 @@ Item {
                 if (bl !== "NONE" && bl !== "") {
                     rootMod.blDevice = bl
                     rootMod.hasBacklight = true
+                    root.hasBacklight = true
                 }
             }
         }

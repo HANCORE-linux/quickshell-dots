@@ -8,6 +8,19 @@ Item {
     implicitWidth: wsRow.implicitWidth
     implicitHeight: 28
 
+    readonly property var workspaceList: {
+        if (root.workspaceMode === "active") {
+            var ids = {}
+            var ws = Hyprland.workspaces.values
+            for (var i = 0; i < ws.length; i++) ids[ws[i].id] = true
+            if (Hyprland.focusedWorkspace) ids[Hyprland.focusedWorkspace.id] = true
+            return Object.keys(ids).map(Number).sort(function(a, b) { return a - b })
+        }
+        var n = root.workspaceMode === "5" ? 5 : 10
+        var list = []; for (var j = 1; j <= n; j++) list.push(j)
+        return list
+    }
+
     Rectangle {
         anchors.centerIn: wsRow
         width: wsRow.width + 8
@@ -32,11 +45,11 @@ Item {
         spacing: 5
 
         Repeater {
-            model: 10
+            model: wsWidget.workspaceList
 
             delegate: Item {
                 required property int modelData
-                readonly property int wsId: modelData + 1
+                readonly property int wsId: modelData
 
                 readonly property bool isFocused: Hyprland.focusedWorkspace !== null
                                                && Hyprland.focusedWorkspace.id === wsId

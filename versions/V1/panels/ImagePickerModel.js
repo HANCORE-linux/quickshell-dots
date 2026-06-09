@@ -11,7 +11,14 @@ function loadRows(rows) {
     var columns = row.split("\t"), path = columns[0]; if (!path) continue
     var fileName = path.split("/").pop(); if (seen[fileName]) continue
     seen[fileName] = true
-    images.push({ filePath: path, fileName: fileName, thumbnailPath: columns[1] || path })
+    images.push({
+      filePath: path,
+      fileName: fileName,
+      thumbnailPath: columns[1] || path,
+      // optional 3rd column (theme scan only): the theme directory, used to
+      // lazily fetch author/palette for the focused theme without slowing the scan
+      dir: columns[2] || ""
+    })
   }
   return images
 }

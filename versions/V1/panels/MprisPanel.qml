@@ -122,10 +122,10 @@ PanelWindow {
         }
     }
 
-    // ── idle wave: only when NOT playing (cava drives the bars while playing) ─
+    // ── idle wave: only when active+paused (cava drives the bars while playing) ─
     Timer {
         interval: 33; repeat: true
-        running: mprisPanel.visible && !mprisPanel.playing
+        running: mprisPanel.visible && mprisPanel.active && !mprisPanel.playing
         onTriggered: {
             mprisPanel.phase += 0.12
             var out = []
@@ -303,7 +303,8 @@ PanelWindow {
                 Canvas {
                     id: viz
                     anchors.fill: parent
-                    opacity: mprisPanel.active ? 1.0 : 0.5
+                    visible: mprisPanel.active
+                    opacity: mprisPanel.playing ? 1.0 : 0.5
                     property color tint: root.seal
                     onTintChanged: requestPaint()
                     onPaint: {

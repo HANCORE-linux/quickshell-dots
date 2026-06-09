@@ -27,6 +27,7 @@ PanelWindow {
 
     // power sub-menu starts CLOSED — no destructive tile is ever pre-shown
     property bool powerOpen: false
+    property bool widgetsOpen: false
 
     property real reveal: root.controlVisible ? 1 : 0
     Behavior on reveal {
@@ -36,7 +37,7 @@ PanelWindow {
         }
     }
     visible: reveal > 0.001
-    onRevealChanged: if (reveal < 0.01) powerOpen = false   // reset when closed
+    onRevealChanged: if (reveal < 0.01) { powerOpen = false; widgetsOpen = false }  // reset when closed
     WlrLayershell.keyboardFocus: root.controlVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // ── reusable tile: neutral by default, highlights only on hover ──
@@ -325,6 +326,155 @@ PanelWindow {
                     onClicked: root.mergeAllSplits()
                 }
             }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
+            // ── WIDGETS (collapsed toggle group) ──
+            Text {
+                text: "WIDGETS"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Tile {
+                width: parent.width
+                label: ctrlPanel.widgetsOpen ? "Widgets  ▾" : "Widgets  ▸"
+                onActivated: ctrlPanel.widgetsOpen = !ctrlPanel.widgetsOpen
+            }
+            Grid {
+                width: parent.width
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 8
+                visible: ctrlPanel.widgetsOpen
+
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Memory"
+                    active: root.modMemory
+                    onActivated: root.modMemory = !root.modMemory
+                }
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Brightness"
+                    visible: root.hasBacklight
+                    active: root.modBrightness
+                    onActivated: root.modBrightness = !root.modBrightness
+                }
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Claude"
+                    active: root.modClaude
+                    onActivated: root.modClaude = !root.modClaude
+                }
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Power Prof."
+                    active: root.modPower
+                    onActivated: root.modPower = !root.modPower
+                }
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Bluetooth"
+                    active: root.modBluetooth
+                    onActivated: root.modBluetooth = !root.modBluetooth
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
+            // ── WORKSPACE display mode ──
+            Text {
+                text: "WORKSPACE"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Row {
+                id: wsRow
+                width: parent.width
+                spacing: 4
+                readonly property var opts: [
+                    { label: "Persist 10", mode: "10"     },
+                    { label: "Persist 5",  mode: "5"      },
+                    { label: "Active",     mode: "active" }
+                ]
+                Repeater {
+                    model: wsRow.opts
+                    delegate: Rectangle {
+                        id: wsTile
+                        required property var modelData
+                        readonly property bool on:      root.workspaceMode === modelData.mode
+                        readonly property bool hovered: wsMa.containsMouse
+                        width: (wsRow.width - wsRow.spacing * (wsRow.opts.length - 1)) / wsRow.opts.length
+                        height: 25; radius: 4
+                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                  : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        border.color: (on || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: wsTile.modelData.label
+                            color: (wsTile.on || wsTile.hovered) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 10
+                            font.weight: wsTile.on ? Font.Medium : Font.Normal
+                        }
+                        MouseArea {
+                            id: wsMa
+                            anchors.fill: parent; hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.workspaceMode = wsTile.modelData.mode
+                        }
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
+            // ── PICKER style (theme/wallpaper/screenshot/video picker visual) ──
+            Text {
+                text: "PICKER-STIL"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Row {
+                id: pickerRow
+                width: parent.width
+                spacing: 4
+                readonly property var opts: [
+                    { label: "Tanzaku",     mode: "tanzaku"     },
+                    { label: "Hearthstone", mode: "hearthstone" },
+                    { label: "Carousel",    mode: "carousel"    }
+                ]
+                Repeater {
+                    model: pickerRow.opts
+                    delegate: Rectangle {
+                        id: pickTile
+                        required property var modelData
+                        readonly property bool on:      root.pickerStyle === modelData.mode
+                        readonly property bool hovered: pickMa.containsMouse
+                        width: (pickerRow.width - pickerRow.spacing * (pickerRow.opts.length - 1)) / pickerRow.opts.length
+                        height: 25; radius: 4
+                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                  : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        border.color: (on || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: pickTile.modelData.label
+                            color: (pickTile.on || pickTile.hovered) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 10
+                            font.weight: pickTile.on ? Font.Medium : Font.Normal
+                        }
+                        MouseArea {
+                            id: pickMa
+                            anchors.fill: parent; hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.pickerStyle = pickTile.modelData.mode
+                        }
+                    }
+                }
+            }
+
         }
     }
 }
