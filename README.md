@@ -111,19 +111,19 @@ The bar launches immediately so you can try it.
 
 Default: left-click opens the widget panel. Exceptions:
 
-| Widget | Left | Right | Scroll |
-|---|---|---|---|
-| Audio | panel | mute toggle | ±volume |
-| Brightness | panel | — | ±brightness |
-| Clock | toggle 24h / 12h | timezone picker | — |
-| Power Profile | panel | cycle profile | — |
-| Network / Bluetooth | panel | open system manager | — |
-| Weather | panel (Refresh ⁄ °C↔°F) | force refresh | — |
-| Voxtype | cycle model | config | — |
-| Workspace | click dot: switch | overview | — |
-| Mpris | ‹ play › buttons inline | toggle panel | — |
-| Tray (bar) | toggle tray panel | — | — |
-| Tray icon | activate | hide icon | context menu |
+| Widget | Left | Mid | Right | Scroll |
+|---|---|---|---|---|
+| Audio | panel | — | mute toggle | ±volume |
+| Brightness | panel | — | — | ±brightness |
+| Clock | toggle 24h / 12h | — | timezone picker | — |
+| Power Profile | panel | — | cycle profile | — |
+| Network / Bluetooth | panel | — | open system manager | — |
+| Weather | panel (Refresh ⁄ °C↔°F) | — | force refresh | — |
+| Voxtype | cycle model | — | config | — |
+| Workspace | click dot: switch | — | overview | — |
+| Mpris | ‹ play › buttons inline | — | toggle panel | — |
+| Tray (bar) | toggle tray panel | — | — | — |
+| Tray icon | activate | context menu | hide icon | — |
 
 </details>
 
