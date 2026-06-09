@@ -74,14 +74,14 @@ chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 Remove: `rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise`
 </details>
 
-## V1
+## Quickshell setup for Omarchy (Waybar-based, ~3.8.x)
 
 
 https://github.com/user-attachments/assets/e99e49f0-4760-4433-bdb6-e014cac55fe4
 
 
 
-##### V1 Features
+##### Features
 <details>
 
 | Module | Function |
@@ -101,12 +101,12 @@ https://github.com/user-attachments/assets/e99e49f0-4760-4433-bdb6-e014cac55fe4
 
 </details>
 
-##### V1 Install-command (copy & paste in your terminal):
+##### Install command (copy & paste in your terminal):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh | bash -s V1
 ```
 The bar launches immediately so you can try it.
-##### V1 Click bindings
+##### Click bindings
 <details>
 
 Default: left-click opens the widget panel. Exceptions:
@@ -127,7 +127,7 @@ Default: left-click opens the widget panel. Exceptions:
 
 </details>
 
-##### V1 Keybindings — theme / wallpaper picker on the Omarchy hotkeys (optional)
+##### Keybindings — theme / wallpaper picker on the Omarchy hotkeys (optional)
 <details>
 
 Omarchy binds its theme/wallpaper menus (shown via walker) to:
