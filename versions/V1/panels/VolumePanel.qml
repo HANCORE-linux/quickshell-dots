@@ -468,8 +468,14 @@ PanelWindow {
                 var out = []
                 try {
                     var j = JSON.parse(raw)
-                    for (var i = 0; i < j.length; i++)
-                        out.push({ name: j[i].name, desc: j[i].description || j[i].name })
+                    for (var i = 0; i < j.length; i++) {
+                        var d = j[i].description
+                        if (!d || d === "(null)") {
+                            var p = j[i].properties || {}
+                            d = p["device.description"] || p["alsa.card_name"] || j[i].name
+                        }
+                        out.push({ name: j[i].name, desc: d })
+                    }
                 } catch (e) {}
                 volPanel.sinks = out
             }
