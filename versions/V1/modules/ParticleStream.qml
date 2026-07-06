@@ -1450,17 +1450,17 @@ Item {
                         var sdT = p.t % 86400000
                         var Ptot = G.pts.length
                         var af7 = root.ambientField7
-                        // with the field on, the SAME pool particles form the text
-                        // (subsampled if the message has more dots than the pool);
-                        // with it off, the original fly-in from the edge is used
-                        var step7 = (af7 && Ptot > N9) ? Math.ceil(Ptot / N9) : 1
-                        var jj7 = 0
-                        for (var ti = 0; ti < Ptot; ti += step7) {
+                        // with the field on, each glyph dot starts from a pool drift
+                        // position (driftPos(ti)); the first N9 ARE the visible pool,
+                        // the extra (long text) emerge to complete the word — no
+                        // subsampling, so the message always reads in full. Field off
+                        // keeps the original fly-in from the edge.
+                        for (var ti = 0; ti < Ptot; ti++) {
                             var ptT = G.pts[ti]
                             var gT = geoT[ptT[2]]
                             var pxT, pyT, rgT, rcT
                             if (af7) {
-                                var d07 = driftPos(jj7)          // start = pool drift
+                                var d07 = driftPos(ti)           // start = pool drift
                                 pxT = d07.x; pyT = d07.y; rgT = 1.3; rcT = 0.5
                             } else {
                                 pxT = fx1 + hash(sdT + ti * 7 + 5) * (fx2 - fx1) + shift7
@@ -1475,16 +1475,15 @@ Item {
                                 pxT += (gT.ox + ptT[0] * gT.cell - pxT) * qT
                                 pyT += (gT.oy + ptT[1] * gT.cell - pyT) * qT
                                 if (qT > 0.98) {         // the held text breathes
-                                    pxT += 0.4 * Math.sin(now / 240 + jj7)
-                                    pyT += 0.4 * Math.cos(now / 300 + jj7 * 1.7)
+                                    pxT += 0.4 * Math.sin(now / 240 + ti)
+                                    pyT += 0.4 * Math.cos(now / 300 + ti * 1.7)
                                 }
                                 rgT += (gT.cell * 0.62 - rgT) * qT
                                 rcT += (gT.cell * 0.30 - rcT) * qT
                             }
                             dot7(pxT, pyT, rgT * wS, rcT * wS, alT * wA)
-                            jj7++
                         }
-                        canvas.recruited = af7 ? jj7 : 0
+                        canvas.recruited = af7 ? Math.min(Ptot, N9) : 0
                     }
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
