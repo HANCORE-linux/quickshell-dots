@@ -28,6 +28,36 @@ Item {
     property string pendingUrgentAddr7: ""
     property string pendingUrgentCls7: ""
     property var recentOpen7: ({})
+    // Persistent ambient particle field for the reactor (mode 7): the very
+    // particles that condense into event text stay visible drifting at rest and
+    // reorganise to form the text on events, then disperse. Set false to keep the
+    // pure zero-idle reactor (empty at rest, ~0% CPU).
+    property bool ambientField7: true
+
+    // External-event feed: any tool can push a message to the reactor by writing
+    // one line "<epoch_ms>\tLEFT\tRIGHT" to ~/.cache/qs-reactor-event (truncate).
+    // First load only baselines, so pre-existing content is not replayed on start.
+    property double lastReactorTs: -1
+    property bool reactorBaselined: false
+    FileView {
+        id: reactorEventFile
+        path: Quickshell.env("HOME") + "/.cache/qs-reactor-event"
+        watchChanges: true
+        onFileChanged: reactorEventFile.reload()
+        onLoaded: {
+            if (!root.reactorBaselined) { root.reactorBaselined = true; root.lastReactorTs = Date.now(); return }
+            var raw = (reactorEventFile.text() || "").trim()
+            if (raw === "") return
+            var nl = raw.lastIndexOf("\n")
+            if (nl >= 0) raw = raw.slice(nl + 1)
+            var parts = raw.split("\t")
+            var ts = parseFloat(parts[0])
+            if (!isFinite(ts) || ts <= root.lastReactorTs) return
+            root.lastReactorTs = ts
+            if (root.armed7 && root.active && root.mode === 7)
+                root.pushText(parts[1] || "", parts[2] || "", 1, "long")
+        }
+    }
 
     onModeChanged: {
         warnQueue7 = []
@@ -44,7 +74,7 @@ Item {
             urgentProbe7.stop()
         } else {
             pulses = []
-            animating7 = false
+            animating7 = root.ambientField7   // field needs a running paint loop
             var ws7 = Hyprland.focusedWorkspace
             lastWsId = ws7 && ws7.id > 0 ? ws7.id : -1
             canvas.tick7 = 16
@@ -769,6 +799,8 @@ Item {
         // mode 8 quotes cache, separate from the mode-7 event cache
         property var quoteData: null
         property var quoteSwarm: null
+        property real fieldFade: 1.0   // ambient-field dim while text is forming
+        property int  recruited: 0     // pool particles currently spelling the text
 
         onPaint: {
             var ctx  = getContext("2d")
@@ -1158,14 +1190,6 @@ Item {
                         "<": [[2,0],[1,1],[0,2],[1,3],[2,4]]
                     } }
                 }
-                var ps7 = root.pulses
-                if (ps7.length === 0) {
-                    root.animating7 = false
-                    canvas.tick7 = 250
-                    ctx.globalAlpha = 1.0
-                    return
-                }
-
                 var gaps7 = []
                 for (var gi = 0; gi + 1 < runs.length; gi++) {
                     var gx1 = root.layout.runRightEdge(runs[gi].e)
@@ -1246,6 +1270,51 @@ Item {
                         dot7(xi, yi, sz, sz * 0.45,
                              gain * fade * tw * Math.min(1, a2 / 350))
                     }
+                }
+
+                // ── ambient pool: one set of particles drifting through the gaps;
+                //    on an event these same particles reorganise into the text ──
+                var ps7 = root.pulses
+                var N9 = 110
+                var driftPos = function(i) {
+                    var r1 = hash(i * 3 + 1), r2 = hash(i * 3 + 2), r3 = hash(i * 3 + 3)
+                    var bf = hash(i * 5 + 7)
+                    return { x: fx1 + bf * (fx2 - fx1)
+                                + 16 * Math.sin(now / (1700 + 900 * r1) + 6.283 * r2),
+                             y: cy + (height / 2 - 5) * 0.78 * Math.sin(now / (1300 + 800 * r3) + 6.283 * r1) }
+                }
+                var paintField = function(fromIdx, alpha) {
+                    if (alpha <= 0.01) return
+                    for (var fi = fromIdx; fi < N9; fi++) {
+                        var d = driftPos(fi)
+                        var tw = 0.55 + 0.30 * Math.sin(now / 640 + fi * 1.3)
+                        dot7(d.x, d.y, 1.3, 0.5, alpha * tw)
+                    }
+                }
+                var hasText7 = false
+                for (var ht = 0; ht < ps7.length; ht++)
+                    if (ps7[ht].k === "text" && now - ps7[ht].t < root.pulseLife7(ps7[ht])) hasText7 = true
+                if (!hasText7) canvas.recruited = 0
+                if (ps7.length === 0) {
+                    if (root.ambientField7) {
+                        canvas.fieldFade += (1.0 - canvas.fieldFade) * 0.06
+                        canvas.recruited = 0
+                        paintField(0, 0.5 * canvas.fieldFade)
+                        root.animating7 = true
+                        canvas.tick7 = 64            // slow drift, ~15 fps
+                        ctx.globalAlpha = 1.0
+                        return
+                    }
+                    root.animating7 = false
+                    canvas.tick7 = 250
+                    ctx.globalAlpha = 1.0
+                    return
+                }
+                if (root.ambientField7) {
+                    // recruited particles are drawn by the text swarm below; the rest
+                    // keep drifting, dimmed while a message is on screen
+                    canvas.fieldFade += ((hasText7 ? 0.4 : 1.0) - canvas.fieldFade) * 0.06
+                    paintField(canvas.recruited, 0.5 * canvas.fieldFade)
                 }
 
                 var alive7 = false
@@ -1379,34 +1448,48 @@ Item {
                         var leave7 = age > p.r1 ? (age - p.r1) / (p.life - p.r1) : 0; leave7 = leave7 * leave7
                         var shift7 = p.d * (fx2 - fx1) * 0.45 * (leave7 - enter7)
                         var sdT = p.t % 86400000
-                        for (var ti = 0; ti < G.pts.length; ti++) {
+                        var Ptot = G.pts.length
+                        var af7 = root.ambientField7
+                        // with the field on, the SAME pool particles form the text
+                        // (subsampled if the message has more dots than the pool);
+                        // with it off, the original fly-in from the edge is used
+                        var step7 = (af7 && Ptot > N9) ? Math.ceil(Ptot / N9) : 1
+                        var jj7 = 0
+                        for (var ti = 0; ti < Ptot; ti += step7) {
                             var ptT = G.pts[ti]
                             var gT = geoT[ptT[2]]
-                            var wxT = fx1 + hash(sdT + ti * 7 + 5) * (fx2 - fx1) + shift7
+                            var pxT, pyT, rgT, rcT
+                            if (af7) {
+                                var d07 = driftPos(jj7)          // start = pool drift
+                                pxT = d07.x; pyT = d07.y; rgT = 1.3; rcT = 0.5
+                            } else {
+                                pxT = fx1 + hash(sdT + ti * 7 + 5) * (fx2 - fx1) + shift7
                                       + 12 * Math.sin(now / (800 + 500 * hash(sdT + ti * 7 + 1))
                                                       + 6.283 * hash(sdT + ti * 7 + 2))
-                            var wyT = cy + (height / 2 - 6) * 0.85
+                                pyT = cy + (height / 2 - 6) * 0.85
                                       * Math.sin(now / (600 + 500 * hash(sdT + ti * 7 + 3))
                                                  + 6.283 * hash(sdT + ti * 7 + 4))
-                            var rgT = 2.2, rcT = 1.0
-                            var pxT = wxT, pyT = wyT
+                                rgT = 2.2; rcT = 1.0
+                            }
                             if (gT && qT > 0) {
                                 pxT += (gT.ox + ptT[0] * gT.cell - pxT) * qT
                                 pyT += (gT.oy + ptT[1] * gT.cell - pyT) * qT
                                 if (qT > 0.98) {         // the held text breathes
-                                    pxT += 0.4 * Math.sin(now / 240 + ti)
-                                    pyT += 0.4 * Math.cos(now / 300 + ti * 1.7)
+                                    pxT += 0.4 * Math.sin(now / 240 + jj7)
+                                    pyT += 0.4 * Math.cos(now / 300 + jj7 * 1.7)
                                 }
-                                rgT += (gT.cell * 0.62 - 2.2) * qT
-                                rcT += (gT.cell * 0.30 - 1.0) * qT
+                                rgT += (gT.cell * 0.62 - rgT) * qT
+                                rcT += (gT.cell * 0.30 - rcT) * qT
                             }
                             dot7(pxT, pyT, rgT * wS, rcT * wS, alT * wA)
+                            jj7++
                         }
+                        canvas.recruited = af7 ? jj7 : 0
                     }
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
-                root.animating7 = alive7
-                canvas.tick7 = alive7 ? 16 : 250
+                root.animating7 = root.ambientField7 ? true : alive7
+                canvas.tick7 = alive7 ? 16 : (root.ambientField7 ? 64 : 250)
                 ctx.globalAlpha = 1.0
                 return
             }
