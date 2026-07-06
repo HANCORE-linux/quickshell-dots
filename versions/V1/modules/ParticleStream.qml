@@ -670,14 +670,28 @@ Item {
         onTriggered: root.warnCheck()
     }
 
-    // track change → swarm forms TITLE (left) and ARTIST - ALBUM (right)
+    // track change → swarm forms TITLE (left) and ARTIST - ALBUM (right).
+    // Debounced: web players (YouTube, YouTube Music, etc.) publish the metadata
+    // in stages while the next track buffers — a transient generic/channel title
+    // first, then the real one ~0.5s later. Firing on each stage restarts the
+    // swarm mid-flight (a visible "reset"). Wait for the title to settle, then
+    // announce once, and never re-announce the same track.
     MprisSelect { id: psSel }
     readonly property string psTrack: psSel.player ? (psSel.player.trackTitle || "") : ""
-    onPsTrackChanged: {
-        if (!armed7 || psTrack === "") return
-        var ar = psSel.player ? (psSel.player.trackArtist || "") : ""
-        var al = psSel.player ? (psSel.player.trackAlbum  || "") : ""
-        pushText(psTrack, ar + (al ? " - " + al : ""), 1, "long")
+    property string lastAnnouncedTrack: ""
+    onPsTrackChanged: if (armed7) trackDebounce.restart()
+    Timer {
+        id: trackDebounce
+        interval: 800
+        repeat: false
+        onTriggered: {
+            var t = root.psTrack
+            if (!root.armed7 || t === "" || t === root.lastAnnouncedTrack) return
+            root.lastAnnouncedTrack = t
+            var ar = psSel.player ? (psSel.player.trackArtist || "") : ""
+            var al = psSel.player ? (psSel.player.trackAlbum  || "") : ""
+            root.pushText(t, ar + (al ? " - " + al : ""), 1, "long")
+        }
     }
 
     // new notification (the bar's mako poll counts up) → fetch newest, show
@@ -801,6 +815,8 @@ Item {
         property var quoteSwarm: null
         property real fieldFade: 1.0   // ambient-field dim while text is forming
         property int  recruited: 0     // pool particles currently spelling the text
+        property real fieldT: 0        // drift clock, advanced with a per-paint clamp
+        property real lastPaintNow: 0  // (stall-proof: see driftPos below)
 
         onPaint: {
             var ctx  = getContext("2d")
@@ -1272,23 +1288,38 @@ Item {
                     }
                 }
 
-                // ── ambient pool: one set of particles drifting through the gaps;
+                // ── ambient pool: one set of particles drifting through the bar;
                 //    on an event these same particles reorganise into the text ──
                 var ps7 = root.pulses
                 var N9 = 110
+                // Drift clock with a per-paint CLAMP. If Quickshell's loop stalls a
+                // moment (an MPRIS metadata burst, a media relayout on track change…)
+                // wall-clock keeps running but no frame paints — driving the drift by
+                // Date.now() would make the field JUMP on the next paint (reads as a
+                // "reset"). Advance at most ~1 frame per paint → a micro-pause instead
+                // of a jump.
+                var dtF = now - canvas.lastPaintNow
+                canvas.lastPaintNow = now
+                canvas.fieldT += (dtF > 0 && dtF < 60) ? dtF : (dtF >= 60 ? 16 : 0)
+                var ftF = canvas.fieldT
                 var driftPos = function(i) {
                     var r1 = hash(i * 3 + 1), r2 = hash(i * 3 + 2), r3 = hash(i * 3 + 3)
                     var bf = hash(i * 5 + 7)
-                    return { x: fx1 + bf * (fx2 - fx1)
-                                + 16 * Math.sin(now / (1700 + 900 * r1) + 6.283 * r2),
-                             y: cy + (height / 2 - 5) * 0.78 * Math.sin(now / (1300 + 800 * r3) + 6.283 * r1) }
+                    // x in ABSOLUTE bar coords (constant width), not gap-relative, so a
+                    // relayout doesn't remap the pool. Two harmonics per axis → organic.
+                    return { x: bf * width
+                                + 16 * Math.sin(ftF / (1700 + 900 * r1) + 6.283 * r2)
+                                + 6 * Math.sin(ftF / (620 + 300 * r3) + r1 * 5.0),
+                             y: cy + (height / 2 - 5) * 0.78 * Math.sin(ftF / (1300 + 800 * r3) + 6.283 * r1)
+                                + 2.5 * Math.sin(ftF / (500 + 260 * r2) + r3 * 4.0) }
                 }
                 var paintField = function(fromIdx, alpha) {
                     if (alpha <= 0.01) return
                     for (var fi = fromIdx; fi < N9; fi++) {
                         var d = driftPos(fi)
-                        var tw = 0.55 + 0.30 * Math.sin(now / 640 + fi * 1.3)
-                        dot7(d.x, d.y, 1.3, 0.5, alpha * tw)
+                        var tw = 0.55 + 0.30 * Math.sin(ftF / 640 + fi * 1.3)
+                        var sz = 1.25 + 0.28 * Math.sin(ftF / 820 + fi * 2.1)   // breathing
+                        dot7(d.x, d.y, sz, sz * 0.4, alpha * tw)
                     }
                 }
                 var hasText7 = false
@@ -1301,7 +1332,7 @@ Item {
                         canvas.recruited = 0
                         paintField(0, 0.5 * canvas.fieldFade)
                         root.animating7 = true
-                        canvas.tick7 = 64            // slow drift, ~15 fps
+                        canvas.tick7 = 30            // slow drift, ~33 fps
                         ctx.globalAlpha = 1.0
                         return
                     }
@@ -1313,7 +1344,7 @@ Item {
                 if (root.ambientField7) {
                     // recruited particles are drawn by the text swarm below; the rest
                     // keep drifting, dimmed while a message is on screen
-                    canvas.fieldFade += ((hasText7 ? 0.4 : 1.0) - canvas.fieldFade) * 0.06
+                    canvas.fieldFade += ((hasText7 ? 0.18 : 1.0) - canvas.fieldFade) * 0.06
                     paintField(canvas.recruited, 0.5 * canvas.fieldFade)
                 }
 
@@ -1488,7 +1519,7 @@ Item {
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
                 root.animating7 = root.ambientField7 ? true : alive7
-                canvas.tick7 = alive7 ? 16 : (root.ambientField7 ? 64 : 250)
+                canvas.tick7 = alive7 ? 16 : (root.ambientField7 ? 30 : 250)
                 ctx.globalAlpha = 1.0
                 return
             }
