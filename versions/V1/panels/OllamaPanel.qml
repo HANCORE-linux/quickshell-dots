@@ -1,0 +1,396 @@
+import QtQuick
+import Quickshell
+import Quickshell.Wayland
+import "../modules"
+
+PanelWindow {
+    id: ollamaPanel
+    required property var root
+
+    screen: root.activePopupScreen
+    color: "transparent"
+    anchors { top: true; bottom: true; left: true; right: true }
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.namespace: "omarchy-ollama"
+
+    readonly property int barBottom: 35
+    readonly property int gap: 8
+
+    function formatBytes(bytes) {
+        var value = Number(bytes) || 0
+        var gib = 1024 * 1024 * 1024
+        var mib = 1024 * 1024
+        if (value >= gib) return (value / gib).toFixed(1) + " GiB"
+        return Math.round(value / mib) + " MiB"
+    }
+
+    property real reveal: root.ollamaVisible ? 1 : 0
+    Behavior on reveal {
+        NumberAnimation {
+            duration: root.ollamaVisible ? 160 : 120
+            easing.type: root.ollamaVisible ? Easing.OutCubic : Easing.InCubic
+        }
+    }
+    visible: reveal > 0.001
+    WlrLayershell.keyboardFocus: root.ollamaVisible
+        ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: root.ollamaVisible = false
+    }
+
+    component DetailRow: Row {
+        property string k: ""
+        property string v: ""
+        width: parent ? parent.width : 0
+
+        UiText {
+            width: parent.width * 0.45
+            text: k
+            color: ollamaPanel.root.sumiHi
+            font.family: ollamaPanel.root.mono
+            font.pixelSize: 11
+        }
+        UiText {
+            width: parent.width * 0.55
+            text: v
+            color: ollamaPanel.root.ink
+            font.family: ollamaPanel.root.mono
+            font.pixelSize: 11
+            horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
+        }
+    }
+
+    Rectangle {
+        id: card
+        width: Math.min(380, parent.width - 12)
+        height: Math.min(contentColumn.implicitHeight + 24,
+                         parent.height - 2 * (barBottom + gap))
+        radius: reveal > 0.001 ? root.pillRadius : 0
+        color: root.bg
+        border.color: root.pillBorder
+        border.width: root.pillBorderW
+        PillShadow { theme: root }
+
+        x: Math.round(Math.max(6, Math.min(root.ollamaBarX - width / 2,
+                                          parent.width - width - 6)))
+        y: root.barPosition === "bottom"
+            ? parent.height - barBottom - gap - height : barBottom + gap
+        opacity: ollamaPanel.reveal
+        focus: root.ollamaVisible
+
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) {
+                root.ollamaVisible = false
+                event.accepted = true
+            }
+        }
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Flickable {
+            id: scroller
+            anchors.fill: parent
+            anchors.margins: 12
+            contentWidth: width
+            contentHeight: contentColumn.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: contentColumn
+                width: scroller.width
+                spacing: 8
+
+                Item {
+                    width: parent.width
+                    height: 24
+
+                    UiText {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "OLLAMA"
+                        color: root.ink
+                        font.family: root.mono
+                        font.pixelSize: 13
+                        font.letterSpacing: 2
+                        font.weight: Font.Medium
+                    }
+
+                    UiText {
+                        anchors.right: refreshButton.left
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.ollama.connected
+                            ? "v" + root.ollama.version : "OFFLINE"
+                        color: root.ollama.connected ? root.seal : root.sumi
+                        font.family: root.mono
+                        font.pixelSize: 10
+                        font.letterSpacing: 1
+                    }
+
+                    Item {
+                        id: refreshButton
+                        anchors.right: closeButton.left
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 24
+                        height: 24
+
+                        IconText {
+                            anchors.centerIn: parent
+                            text: "\uE5D5"
+                            color: refreshMa.containsMouse ? root.seal : root.sumi
+                            font.pixelSize: 14
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
+                        MouseArea {
+                            id: refreshMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.ollama.refreshAll()
+                        }
+                    }
+
+                    Item {
+                        id: closeButton
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 24
+                        height: 24
+
+                        UiText {
+                            anchors.centerIn: parent
+                            text: "\u2715"
+                            color: closeMa.containsMouse ? root.seal : root.sumi
+                            font.pixelSize: 12
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
+                        MouseArea {
+                            id: closeMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.ollamaVisible = false
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                DetailRow {
+                    k: "GPU"
+                    v: root.ollama.gpuPercent >= 0 ? root.ollama.gpuPercent + "%" : "N/A"
+                }
+                DetailRow {
+                    k: "Ollama VRAM"
+                    v: ollamaPanel.formatBytes(root.ollama.loadedVramBytes)
+                }
+                DetailRow {
+                    k: "Loaded models"
+                    v: String(root.ollama.loadedModels.length)
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.busy
+                    text: "Working on " + root.ollama.pendingModel + "..."
+                    color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: !root.ollama.connected
+                    text: "Ollama is disconnected"
+                    color: root.sumiHi
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.lastError !== ""
+                    text: root.ollama.lastError
+                    color: root.sealRaw
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.connected
+                        && root.ollama.models.length === 0
+                        && root.ollama.lastError === ""
+                    text: "No models installed"
+                    color: root.sumiHi
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Repeater {
+                    model: root.ollama.models
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: contentColumn.width
+                        height: 58
+                        radius: root.tileRadius
+                        color: modelData.loaded ? root.fillActive : root.fillIdle
+                        border.color: modelData.loaded ? root.seal : root.sep
+                        border.width: 1
+
+                        UiText {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.right: modelAction.left
+                            anchors.rightMargin: 10
+                            anchors.top: parent.top
+                            anchors.topMargin: 8
+                            text: modelData.name
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            font.weight: Font.Medium
+                            elide: Text.ElideRight
+                        }
+
+                        UiText {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.right: modelAction.left
+                            anchors.rightMargin: 10
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 8
+                            text: ollamaPanel.formatBytes(modelData.size)
+                                + (modelData.parameterSize ? "  \u00B7  " + modelData.parameterSize : "")
+                                + (modelData.quantization ? "  \u00B7  " + modelData.quantization : "")
+                                + (modelData.loaded ? "  \u00B7  LOADED" : "")
+                            color: modelData.loaded ? root.seal : root.sumiHi
+                            font.family: root.mono
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            id: modelAction
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 58
+                            height: 28
+                            radius: root.tileRadius
+                            color: !modelActionMa.enabled ? root.fillIdle
+                                : modelActionMa.containsMouse ? root.fillPrimaryHover
+                                : modelData.loaded ? root.fillHover : root.seal
+                            border.color: modelData.loaded ? root.seal : "transparent"
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            UiText {
+                                anchors.centerIn: parent
+                                text: modelData.loaded ? "Eject" : "Load"
+                                color: !modelActionMa.enabled ? root.sumi
+                                    : modelData.loaded ? root.seal : root.paper
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+
+                            MouseArea {
+                                id: modelActionMa
+                                anchors.fill: parent
+                                enabled: !root.ollama.busy
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    if (modelData.loaded) root.ollama.ejectModel(modelData.name)
+                                    else root.ollama.loadModel(modelData.name)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                Row {
+                    width: parent.width
+                    height: 28
+                    spacing: 8
+
+                    Rectangle {
+                        width: parent.width - reloadTile.width - parent.spacing
+                        height: parent.height
+                        radius: root.tileRadius
+                        color: editMa.containsMouse ? root.fillPrimaryHover : root.seal
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        UiText {
+                            anchors.centerIn: parent
+                            text: "Edit configuration"
+                            color: root.paper
+                            font.family: root.mono
+                            font.pixelSize: 11
+                        }
+                        MouseArea {
+                            id: editMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.ollama.openConfiguration()
+                        }
+                    }
+
+                    Rectangle {
+                        id: reloadTile
+                        width: 28
+                        height: 28
+                        radius: root.tileRadius
+                        color: reloadMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: reloadMa.containsMouse ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        IconText {
+                            anchors.centerIn: parent
+                            text: "\uE5D5"
+                            color: reloadMa.containsMouse ? root.seal : root.ink
+                            font.pixelSize: 14
+                        }
+                        TooltipMixin {
+                            id: reloadTip
+                            root: ollamaPanel.root
+                            owner: reloadTile
+                            text: "Reload Ollama configuration"
+                        }
+                        MouseArea {
+                            id: reloadMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: reloadTip.show()
+                            onExited: reloadTip.hide()
+                            onClicked: {
+                                reloadTip.hide()
+                                root.ollama.reloadConfiguration()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

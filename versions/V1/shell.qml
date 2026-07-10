@@ -31,6 +31,11 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "ollama"
+        function refresh(): void { theme.ollama.refreshAll() }
+    }
+
+    IpcHandler {
         target: "reactor"
         function test(kind: string, arg: string): void { theme.reactorTest(kind, arg) }
         function monsweep(): void { theme.reactorTest("monsweep", "") }
@@ -233,6 +238,7 @@ ShellRoot {
     PowerProfilePanel { root: theme }
     MemoryPanel { root: theme }
     CpuPanel { root: theme }
+    OllamaPanel { root: theme }
     AiUsagePanel { root: theme }
     VolumePanel { root: theme }
     TrayPanel { root: theme }
