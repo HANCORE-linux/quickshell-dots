@@ -381,6 +381,134 @@ PanelWindow {
 
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
+                Column {
+                    width: parent.width
+                    spacing: 6
+
+                    Row {
+                        width: parent.width
+                        height: 32
+                        spacing: 6
+                        visible: !root.ollama.pullBusy
+
+                        Rectangle {
+                            width: parent.width - pullButton.width - parent.spacing
+                            height: 32
+                            radius: root.tileRadius
+                            color: root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
+
+                            TextInput {
+                                id: pullInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                verticalAlignment: Text.AlignVCenter
+                                font.family: root.mono
+                                font.pixelSize: 11
+                                color: root.ink
+                                clip: true
+                                selectByMouse: true
+                            }
+
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 10
+                                text: "Model name or URL..."
+                                color: root.sumiHi
+                                font.family: root.mono
+                                font.pixelSize: 11
+                                visible: !pullInput.text && !pullInput.activeFocus
+                            }
+                        }
+
+                        Rectangle {
+                            id: pullButton
+                            width: 64
+                            height: 32
+                            radius: root.tileRadius
+                            color: !pullMa.enabled ? root.fillIdle
+                                : pullMa.containsMouse ? root.fillPrimaryHover : root.seal
+                            border.color: !pullMa.enabled ? root.sep : "transparent"
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            UiText {
+                                anchors.centerIn: parent
+                                text: "Pull"
+                                color: !pullMa.enabled ? root.sumi : root.paper
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+
+                            MouseArea {
+                                id: pullMa
+                                anchors.fill: parent
+                                enabled: !root.ollama.pullBusy
+                                    && !root.ollama.busy
+                                    && String(pullInput.text).trim() !== ""
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    root.ollama.pullModel(pullInput.text)
+                                    pullInput.text = ""
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        width: parent.width
+                        spacing: 4
+                        visible: root.ollama.pullBusy
+
+                        UiText {
+                            width: parent.width
+                            text: root.ollama.pullStatus || "Starting..."
+                            color: root.seal
+                            font.family: root.mono
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 6
+                            radius: 3
+                            color: root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
+
+                            Rectangle {
+                                width: Math.min(parent.width - 2,
+                                    Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
+                                height: parent.height - 2
+                                anchors.left: parent.left
+                                anchors.leftMargin: 1
+                                anchors.verticalCenter: parent.verticalCenter
+                                radius: 2
+                                color: root.seal
+                                Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                            }
+                        }
+                    }
+
+                    UiText {
+                        width: parent.width
+                        visible: root.ollama.pullError !== ""
+                        text: root.ollama.pullError
+                        color: root.sealRaw
+                        font.family: root.mono
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
                 Row {
                     width: parent.width
                     height: 28
