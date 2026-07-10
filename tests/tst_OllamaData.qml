@@ -25,11 +25,12 @@ TestCase {
         function parseLoaded(body) { return OllamaDataLogic.parseLoaded(body) }
         function sumLoadedVram(entries) { return OllamaDataLogic.sumLoadedVram(entries) }
         function errorMessage(response, fallback) { return OllamaDataLogic.errorMessage(response, fallback) }
+        function successful(response) { return OllamaDataLogic.successful(response) }
         function buildRequest(method, path, payload) {
             return OllamaDataLogic.buildRequest(baseUrl, method, path, payload)
         }
         function applyVersion(raw) {
-            var state = OllamaDataLogic.versionState(raw)
+            var state = OllamaDataLogic.versionState(raw, version)
             connected = state.connected
             version = state.version
             lastError = state.lastError
@@ -85,6 +86,21 @@ TestCase {
         data.applyVersion("\n000")
         compare(data.connected, false)
         compare(data.lastError, "Unable to reach Ollama")
+    }
+
+    function test_preservesVersionOnSuccessfulHttpOllamaError() {
+        data.connected = true
+        data.version = "0.31.2"
+        data.applyVersion('{"error":"version unavailable"}\n200')
+        compare(data.connected, false)
+        compare(data.version, "0.31.2")
+        compare(data.lastError, "version unavailable")
+    }
+
+    function test_rejectsSuccessfulHttpActionWithOllamaError() {
+        var response = data.decodeResponse('{"error":"model failed to load"}\n200')
+        compare(data.successful(response), false)
+        compare(data.errorMessage(response, "request failed"), "model failed to load")
     }
 
     function test_actionStateAlwaysClears() {

@@ -55,7 +55,7 @@ Item {
     }
 
     function applyVersion(raw) {
-        var state = OllamaDataLogic.versionState(raw)
+        var state = OllamaDataLogic.versionState(raw, version)
         connected = state.connected
         version = state.version
         lastError = state.lastError
