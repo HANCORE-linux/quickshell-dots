@@ -196,9 +196,17 @@ Item {
 
     Process {
         id: actionProc
-        stdout: StdioCollector { onStreamFinished: ollama.applyAction(this.text) }
+        property bool _streamFinished: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                ollama.applyAction(this.text)
+                actionProc._streamFinished = true
+            }
+        }
         onRunningChanged: {
-            if (running || !ollama.busy) return
+            if (running) { _streamFinished = false; return }
+            if (_streamFinished) { _streamFinished = false; return }
+            if (!ollama.busy) return
             ollama.lastError = "Unable to update Ollama model"
             ollama.clearActionState()
             ollama.refreshLoaded()
@@ -207,14 +215,19 @@ Item {
 
     Process {
         id: gpuProc
-        command: ["bash", "-c",
+        command: [
+            "bash", "-c",
             "if command -v nvidia-smi &>/dev/null; then "
             + "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1; "
-            + "elif [ -f /sys/class/drm/card0/device/gpu_busy_percent ]; then "
-            + "cat /sys/class/drm/card0/device/gpu_busy_percent; "
-            + "elif [ -f /sys/class/hwmon/hwmon2/device/gpu_busy_percent ]; then "
-            + "cat /sys/class/hwmon/hwmon2/device/gpu_busy_percent; "
-            + "else echo -1; fi"]
+            + "else "
+            + "for card in /sys/class/drm/card[0-9]*/device/gpu_busy_percent; do "
+            + "[ -f \"$card\" ] && { cat \"$card\"; exit 0; }; "
+            + "done; "
+            + "for hwmon in /sys/class/hwmon/hwmon[0-9]*/device/gpu_busy_percent; do "
+            + "[ -f \"$hwmon\" ] && { cat \"$hwmon\"; exit 0; }; "
+            + "done; "
+            + "echo -1; fi"
+        ]
         stdout: StdioCollector {
             onStreamFinished: {
                 var value = parseInt(this.text.trim())
