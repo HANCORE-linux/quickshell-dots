@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+theme="$repo_root/versions/V1/Theme.qml"
+
+assert_contains() {
+    local text="$1"
+    grep -Fq "$text" "$theme" || {
+        printf 'missing %s in %s\n' "$text" "$theme" >&2
+        exit 1
+    }
+}
+
+assert_matches() {
+    local pattern="$1"
+    grep -Eq "$pattern" "$theme" || {
+        printf 'missing pattern %s in %s\n' "$pattern" "$theme" >&2
+        exit 1
+    }
+}
+
+assert_contains 'import "modules"'
+assert_contains 'OllamaData {'
+assert_contains 'id: ollamaData'
+assert_contains 'enabled: theme.modOllama'
+assert_contains 'property alias ollama: ollamaData'
+assert_matches 'property bool modOllama:[[:space:]]+false'
+assert_matches 'property bool compactOllama:[[:space:]]+false'
+assert_contains 'property bool ollamaVisible: false'
+assert_matches 'property real ollamaBarX:[[:space:]]+0'
+assert_contains '|| ollamaVisible'
+assert_contains 'if (except !== "ollamaVisible") ollamaVisible = false'
+assert_contains 'else if (name === "ollama") ollamaBarX = x'
+assert_contains 'onOllamaVisibleChanged: {'
+assert_contains 'popupOpened("ollamaVisible")'
+assert_contains 'if (ollamaVisible) ollama.refreshAll()'
+assert_matches 'onModOllamaChanged:[[:space:]]+if \(_widgetsLoaded\) saveWidgets\(\)'
+assert_matches 'onCompactOllamaChanged:[[:space:]]+if \(_widgetsLoaded && !_compactResetting\) saveWidgets\(\)'
+assert_contains '|| compactOllama'
+assert_contains 'compactOllama = false'
+assert_matches '\(modOllama[[:space:]]+\? "1" : "0"\)'
+assert_matches '\(compactOllama[[:space:]]+\? "1" : "0"\)'
+assert_contains 'if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"'
+assert_contains 'if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"'
+
+printf 'ollama theme wiring: ok\n'
