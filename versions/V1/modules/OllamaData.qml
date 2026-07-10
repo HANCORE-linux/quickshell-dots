@@ -100,7 +100,8 @@ Item {
         if (ok) {
             lastError = ""
         } else {
-            lastError = errorMessage(response, "Unable to update Ollama model")
+            var verb = pendingAction === "delete" ? "delete" : "update"
+            lastError = errorMessage(response, "Unable to " + verb + " Ollama model")
         }
         clearActionState()
         refreshLoaded()
@@ -153,16 +154,21 @@ Item {
         if (busy || !name) return
         beginActionState(actionName, name)
         lastError = ""
-        actionProc.command = buildRequest("POST", "/api/generate", {
-            model: name,
-            stream: false,
-            keep_alive: keepAlive
-        }, "120")
+        if (actionName === "delete") {
+            actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
+        } else {
+            actionProc.command = buildRequest("POST", "/api/generate", {
+                model: name,
+                stream: false,
+                keep_alive: keepAlive
+            }, "120")
+        }
         actionProc.running = true
     }
 
     function loadModel(name) { runModelAction(name, -1, "load") }
     function ejectModel(name) { runModelAction(name, 0, "eject") }
+    function deleteModel(name) { runModelAction(name, "delete", "delete") }
 
     function loadModelSolo(name) {
         if (busy || !name) return
@@ -237,7 +243,8 @@ Item {
             if (running) { _streamFinished = false; return }
             if (_streamFinished) { _streamFinished = false; return }
             if (!ollama.busy) return
-            ollama.lastError = "Unable to update Ollama model"
+            ollama.lastError = ollama.pendingAction === "delete"
+                ? "Unable to delete Ollama model" : "Unable to update Ollama model"
             ollama.clearActionState()
             ollama.refreshLoaded()
         }
