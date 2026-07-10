@@ -94,7 +94,7 @@ qs -p ~/Projects/Quickshell-Dots/versions/V1/shell.qml
 | Bar layout | unlock mode, widget-group drag/drop, persistent order, top/bottom position |
 | Visual style | theme-aware colors, border, shadow, frost, split groups, gap animations |
 | Pickers | theme, wallpaper, screenshots, videos, with Tanzaku, Hearthstone, and Carousel styles |
-| Widgets | workspaces, audio, battery, CPU, memory, network, Bluetooth, weather, MPRIS, tray, notifications |
+| Widgets | workspaces, audio, battery, CPU, memory, network, Bluetooth, weather, MPRIS, tray, notifications, optional Ollama management |
 | Updates | in-bar shell update badge, Arch/AUR counter, known-infected AUR safety check |
 | AI usage | Claude + Codex usage pill with switchable provider and detail panel |
 
@@ -108,6 +108,7 @@ qs -p ~/Projects/Quickshell-Dots/versions/V1/shell.qml
 | Self-update | in-bar badge when a new version ships, one-click update and restart |
 | Package updates | system + AUR counter with pre-install security check |
 | AI usage | combined Claude + Codex token-usage pill |
+| Ollama management | optional, default-off GPU monitor and loaded-model controls |
 | Workspaces | switch, overview, 10 / 5 / active-only modes, dots / numbers / magic styles |
 | Weather | current conditions, metric / imperial toggle |
 | Clock | time, calendar, 24h / 12h toggle |
@@ -147,6 +148,7 @@ Notes:
 - `bluez-utils` provides `bluetoothctl`, which the Bluetooth widget currently uses.
 - `wireplumber` provides `wpctl`; `libpulse` provides `pactl` for the audio panel.
 - `voxtype` is optional for the Voxtype widget.
+- The `ollama` runtime is optional and only needed for the default-off Ollama management widget.
 - The install script checks required tools and warns about missing optional tools.
 
 </details>
@@ -173,6 +175,14 @@ Common actions:
 - Open the launcher/control widget to change bar style, widgets, workspaces, logo, splits, and animations.
 - Use the self-update badge when it appears to update the shell from inside the bar.
 
+### Ollama Management
+
+Ollama management is an optional widget disabled by default. Enable the Ollama tile under **Bar Functions**; its separate **Compact Display** toggle only changes the widget's display mode.
+
+The bar reports global GPU utilization, while the panel reports VRAM used by loaded models. Click the widget to list installed models and use **Load** or **Eject**. Unsupported GPU monitoring displays `N/A` without disabling model controls.
+
+**Configuration** opens `/etc/systemd/system/ollama.service.d/override.conf` through Omarchy's editor. **Reload** applies the service configuration and requires interactive `sudo` authentication.
+
 <details>
 <summary>Click bindings</summary>
 
@@ -187,6 +197,7 @@ Common actions:
 | Voxtype | cycle model | - | config | - |
 | Workspace | switch workspace | - | overview | - |
 | MPRIS | inline controls | - | toggle panel | - |
+| Ollama | list installed models with Load / Eject | - | - | - |
 | Tray bar widget | toggle tray panel | - | - | - |
 | Tray icon | activate | context menu | hide icon | - |
 
