@@ -16,6 +16,7 @@ PanelWindow {
 
     readonly property int barBottom: 35
     readonly property int gap: 8
+    property string confirmDeleteModel: ""
 
     function formatBytes(bytes) {
         var value = Number(bytes) || 0
@@ -38,7 +39,10 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: root.ollamaVisible = false
+        onClicked: {
+            root.ollamaVisible = false
+            ollamaPanel.confirmDeleteModel = ""
+        }
     }
 
     component DetailRow: Row {
@@ -84,7 +88,11 @@ PanelWindow {
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
-                root.ollamaVisible = false
+                if (ollamaPanel.confirmDeleteModel !== "") {
+                    ollamaPanel.confirmDeleteModel = ""
+                } else {
+                    root.ollamaVisible = false
+                }
                 event.accepted = true
             }
         }
@@ -178,7 +186,10 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.ollamaVisible = false
+                            onClicked: {
+                                root.ollamaVisible = false
+                                ollamaPanel.confirmDeleteModel = ""
+                            }
                         }
                     }
                 }
@@ -258,8 +269,8 @@ PanelWindow {
                         UiText {
                             anchors.left: parent.left
                             anchors.leftMargin: 10
-                            anchors.right: modelAction.left
-                            anchors.rightMargin: 10
+                            anchors.right: modelDelete.left
+                            anchors.rightMargin: 8
                             anchors.top: parent.top
                             anchors.topMargin: 8
                             text: modelData.name
@@ -273,8 +284,8 @@ PanelWindow {
                         UiText {
                             anchors.left: parent.left
                             anchors.leftMargin: 10
-                            anchors.right: modelAction.left
-                            anchors.rightMargin: 10
+                            anchors.right: modelDelete.left
+                            anchors.rightMargin: 8
                             anchors.bottom: parent.bottom
                             anchors.bottomMargin: 8
                             text: ollamaPanel.formatBytes(modelData.size)
@@ -288,11 +299,53 @@ PanelWindow {
                         }
 
                         Rectangle {
+                            id: modelDelete
+                            anchors.right: modelAction.left
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 28
+                            height: 28
+                            radius: root.tileRadius
+                            color: !delMa.enabled ? root.fillIdle
+                                : ollamaPanel.confirmDeleteModel === modelData.name ? root.seal
+                                : delMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
+                            border.color: ollamaPanel.confirmDeleteModel === modelData.name
+                                ? root.seal : root.sep
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            IconText {
+                                anchors.centerIn: parent
+                                text: "\uE872"
+                                color: !delMa.enabled ? root.sumi
+                                    : ollamaPanel.confirmDeleteModel === modelData.name ? root.paper
+                                    : delMa.containsMouse ? root.seal : root.sumi
+                                font.pixelSize: 14
+                            }
+
+                            MouseArea {
+                                id: delMa
+                                anchors.fill: parent
+                                enabled: !root.ollama.busy
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    if (ollamaPanel.confirmDeleteModel === modelData.name) {
+                                        ollamaPanel.confirmDeleteModel = ""
+                                        root.ollama.deleteModel(modelData.name)
+                                    } else {
+                                        ollamaPanel.confirmDeleteModel = modelData.name
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
                             id: modelAction
                             anchors.right: parent.right
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 58
+                            width: 50
                             height: 28
                             radius: root.tileRadius
                             color: !modelActionMa.enabled ? root.fillIdle
