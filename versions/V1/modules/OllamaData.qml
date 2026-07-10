@@ -19,6 +19,8 @@ Item {
     property string pendingAction: ""
     property string pendingModel: ""
     property string lastError: ""
+    property string pendingLoadModel: ""
+    property var modelsToEject: []
 
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
@@ -94,14 +96,28 @@ Item {
 
     function applyAction(raw) {
         var response = decodeResponse(raw)
-        if (successful(response)) {
+        var ok = successful(response)
+        if (ok) {
             lastError = ""
         } else {
             lastError = errorMessage(response, "Unable to update Ollama model")
         }
         clearActionState()
         refreshLoaded()
-        if (successful(response)) refreshTags()
+        if (ok) refreshTags()
+        if (pendingLoadModel !== "" && ok) {
+            if (modelsToEject.length > 0) {
+                ejectModel(modelsToEject.pop())
+            } else {
+                var name = pendingLoadModel
+                pendingLoadModel = ""
+                modelsToEject = []
+                loadModel(name)
+            }
+        } else if (!ok) {
+            pendingLoadModel = ""
+            modelsToEject = []
+        }
     }
 
     function refreshAll() {
@@ -147,6 +163,18 @@ Item {
 
     function loadModel(name) { runModelAction(name, -1, "load") }
     function ejectModel(name) { runModelAction(name, 0, "eject") }
+
+    function loadModelSolo(name) {
+        if (busy || !name) return
+        var loaded = loadedModels.slice()
+        if (loaded.length === 0) {
+            loadModel(name)
+            return
+        }
+        pendingLoadModel = name
+        modelsToEject = loaded.map(function(m) { return m.name })
+        ejectModel(modelsToEject.pop())
+    }
 
     function beginActionState(actionName, name) {
         var state = OllamaDataLogic.beginActionState(actionName, name)

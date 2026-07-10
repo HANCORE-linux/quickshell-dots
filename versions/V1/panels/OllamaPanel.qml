@@ -319,7 +319,7 @@ PanelWindow {
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
                                     if (modelData.loaded) root.ollama.ejectModel(modelData.name)
-                                    else root.ollama.loadModel(modelData.name)
+                                    else root.ollama.loadModelSolo(modelData.name)
                                 }
                             }
                         }
