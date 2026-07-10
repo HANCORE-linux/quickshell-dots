@@ -3,11 +3,18 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.UPower
+import "modules"
 import "Palette.js" as Palette
 
 Item {
     id: theme
     signal reactorTest(string kind, string arg)
+
+    OllamaData {
+        id: ollamaData
+        enabled: theme.modOllama
+    }
+    property alias ollama: ollamaData
 
     readonly property string colorsPath: Quickshell.env("HOME") + "/.config/omarchy/current/theme/colors.toml"
 
@@ -94,6 +101,7 @@ Item {
         || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
         || workspaceVisible || imagePickerVisible || mediaBrowserVisible || notifVisible
         || powerProfileVisible || archVisible || shellUpdateVisible || trayVisible || trayMenuVisible
+        || ollamaVisible
     readonly property bool keyboardPopupVisible: imagePickerVisible || mediaBrowserVisible
 
     function registerBarLayoutController(screenName, controller) {
@@ -197,6 +205,7 @@ Item {
     function resetCompactDisplayModes() {
         var changed = compactNetwork || compactBattery || compactBrightness || compactCpu
                    || compactMemory || compactVolume || compactBluetooth || compactPower
+                   || compactOllama
         _compactResetting = true
         compactNetwork = false
         compactBattery = false
@@ -206,6 +215,7 @@ Item {
         compactVolume = false
         compactBluetooth = false
         compactPower = false
+        compactOllama = false
         _compactResetting = false
         if (changed && _widgetsLoaded) saveWidgets()
     }
@@ -284,6 +294,7 @@ Item {
         else if (name === "weather") weatherBarX = x
         else if (name === "launcher") launcherBarX = x
         else if (name === "shellUpdate") shellUpdateBarX = x
+        else if (name === "ollama") ollamaBarX = x
         else if (name === "trayMenu") trayMenuX = x
     }
 
@@ -345,6 +356,7 @@ Item {
         if (except !== "shellUpdateVisible") shellUpdateVisible = false
         if (except !== "trayVisible") trayVisible = false
         if (except !== "trayMenuVisible") trayMenuVisible = false
+        if (except !== "ollamaVisible") ollamaVisible = false
         hideTooltip()
         _closingPopups = false
     }
@@ -839,6 +851,7 @@ Item {
     property bool modQuick:      true    // G10 group pill (idle-inhibitor · media · theme)
     property bool modMpris:      true    // G9 now-playing / mpris pill
     property bool modClaude:     false   // default off (toggle in ControlPanel)
+    property bool modOllama:     false
 
     // Per-widget compact display modes. Defaults are full-width for backwards
     // compatibility; ControlPanel toggles persist these below.
@@ -850,6 +863,7 @@ Item {
     property bool compactVolume:     false
     property bool compactBluetooth:  false
     property bool compactPower:      false
+    property bool compactOllama:     false
 
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
     // ControlPanel uses this to hide the Brightness toggle on desktops without one.
@@ -887,6 +901,7 @@ Item {
     onModCpuChanged:        if (_widgetsLoaded) saveWidgets()
     onModVolumeChanged:     if (_widgetsLoaded) saveWidgets()
     onModMprisChanged:      if (_widgetsLoaded) saveWidgets()
+    onModOllamaChanged:     if (_widgetsLoaded) saveWidgets()
     onAiToolChanged:        if (_widgetsLoaded) saveWidgets()
     onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
     onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
@@ -905,6 +920,7 @@ Item {
     onCompactVolumeChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactBluetoothChanged:  if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactPowerChanged:      if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactOllamaChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleShadowChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleFrostChanged:       if (_widgetsLoaded) saveWidgets()
@@ -948,7 +964,9 @@ Item {
                  + (compactMemory     ? "1" : "0") + " "  // +27
                  + (compactVolume     ? "1" : "0") + " "  // +28
                  + (compactBluetooth  ? "1" : "0") + " "  // +29
-                 + (compactPower      ? "1" : "0")        // +30
+                 + (compactPower      ? "1" : "0") + " "  // +30
+                 + (modOllama         ? "1" : "0") + " "  // +31
+                 + (compactOllama     ? "1" : "0")        // +32
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1152,6 +1170,8 @@ Item {
                     if (parts.length > wsField + 28) theme.compactVolume     = parts[wsField + 28] === "1"
                     if (parts.length > wsField + 29) theme.compactBluetooth  = parts[wsField + 29] === "1"
                     if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
+                    if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"
+                    if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"
                 }
                 theme._widgetsLoaded = true
             }
@@ -1175,6 +1195,11 @@ Item {
     onWeatherVisibleChanged: popupOpened("weatherVisible")
     property bool workspaceVisible: false
     onWorkspaceVisibleChanged: popupOpened("workspaceVisible")
+    property bool ollamaVisible: false
+    onOllamaVisibleChanged: {
+        popupOpened("ollamaVisible")
+        if (ollamaVisible) ollama.refreshAll()
+    }
 
     // ── Image picker state (theme/wallpaper carousel) ──
     property bool   imagePickerVisible:  false
@@ -1391,6 +1416,7 @@ Item {
     property real powerBarX:      0
     property real mprisBarX:      0
     property real weatherBarX:    0
+    property real ollamaBarX:     0
     property real launcherBarX:   6   // ControlPanel follows the Launcher/Control group
 
     // ── Tray context-menu state (themed menu, rendered by TrayMenu.qml) ──
