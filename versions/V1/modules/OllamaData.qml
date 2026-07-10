@@ -21,6 +21,7 @@ Item {
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
     readonly property string configPath: "/etc/systemd/system/ollama.service.d/override.conf"
+    readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running
 
     function decodeResponse(raw) {
         return OllamaDataLogic.decodeResponse(raw)

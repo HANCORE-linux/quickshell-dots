@@ -27,6 +27,7 @@ ShellRoot {
         check(data.gpuPercent === -1, "GPU default")
         check(data.loadedVramBytes === 0, "VRAM default")
         check(data.busy === false, "busy default")
+        check(data.refreshRunning === false, "refresh-running default")
         check(data.pendingAction === "", "pending action default")
         check(data.pendingModel === "", "pending model default")
         check(data.lastError === "", "error default")
