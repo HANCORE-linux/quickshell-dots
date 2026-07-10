@@ -13,6 +13,8 @@ Item {
     property var installedModels: []
     property var loadedModels: []
     property int gpuPercent: -1
+    property var gpuHistory: []
+    readonly property int gpuMaxSamples: 30
     property bool busy: false
     property string pendingAction: ""
     property string pendingModel: ""
@@ -232,6 +234,10 @@ Item {
             onStreamFinished: {
                 var value = parseInt(this.text.trim())
                 ollama.gpuPercent = isNaN(value) ? -1 : value
+                var h = ollama.gpuHistory.slice()
+                h.push(isNaN(value) ? 0 : value / 100)
+                if (h.length > ollama.gpuMaxSamples) h.shift()
+                ollama.gpuHistory = h
             }
         }
     }
