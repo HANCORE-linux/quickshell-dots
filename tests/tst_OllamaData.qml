@@ -26,8 +26,8 @@ TestCase {
         function sumLoadedVram(entries) { return OllamaDataLogic.sumLoadedVram(entries) }
         function errorMessage(response, fallback) { return OllamaDataLogic.errorMessage(response, fallback) }
         function successful(response) { return OllamaDataLogic.successful(response) }
-        function buildRequest(method, path, payload) {
-            return OllamaDataLogic.buildRequest(baseUrl, method, path, payload)
+        function buildRequest(method, path, payload, maxTime) {
+            return OllamaDataLogic.buildRequest(baseUrl, method, path, payload, maxTime)
         }
         function applyVersion(raw) {
             var state = OllamaDataLogic.versionState(raw, version)
@@ -123,5 +123,12 @@ TestCase {
         verify(command.indexOf("bash") < 0)
         verify(command.indexOf("http://localhost:11434/api/generate") >= 0)
         verify(command.indexOf(JSON.stringify({ model: "registry/model:tag", stream: false, keep_alive: -1 })) >= 0)
+    }
+
+    function test_respectsCustomMaxTime() {
+        var command = data.buildRequest("GET", "/api/version", undefined, "120")
+        var maxTimeIdx = command.indexOf("--max-time")
+        compare(maxTimeIdx >= 0, true)
+        compare(command[maxTimeIdx + 1], "120")
     }
 }
