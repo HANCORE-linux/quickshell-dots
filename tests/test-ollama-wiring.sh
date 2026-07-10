@@ -57,4 +57,12 @@ assert_contains versions/V1/BarSlot.qml 'property var leftSplits:  [false, false
 assert_contains versions/V1/modules/OllamaWidget.qml 'visible: !root.compactOllama'
 assert_contains versions/V1/modules/OllamaWidget.qml 'source: Qt.resolvedUrl("../assets/ollama.svg")'
 
+assert_contains versions/V1/shell.qml 'target: "ollama"'
+assert_contains versions/V1/shell.qml 'OllamaPanel { root: theme }'
+assert_contains versions/V1/panels/OllamaPanel.qml 'model: root.ollama.models'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.loadModel(modelData.name)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.ejectModel(modelData.name)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.openConfiguration()'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.reloadConfiguration()'
+
 printf 'ollama theme wiring: ok\n'
