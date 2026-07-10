@@ -21,6 +21,11 @@ Item {
     property string lastError: ""
     property string pendingLoadModel: ""
     property var modelsToEject: []
+    property bool pullBusy: false
+    property string pullModelName: ""
+    property double pullProgress: 0
+    property string pullStatus: ""
+    property string pullError: ""
 
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
@@ -280,6 +285,88 @@ Item {
     Process { id: configProc }
     Process { id: reloadProc }
 
+    function pullModel(name) {
+        if (pullBusy || busy || !name) return
+        var cleanName = String(name).replace(/^ollama\s+run\s+/i, "").trim()
+        if (!cleanName) return
+        pullBusy = true
+        pullModelName = cleanName
+        pullProgress = 0
+        pullStatus = "Connecting..."
+        pullError = ""
+        pullProc.command = [
+            "bash", "-c",
+            "rm -f /tmp/ollama_pull_output && " +
+            "curl -sS --no-buffer -X POST " +
+            "-H 'Content-Type: application/json' -H 'Accept: application/json' " +
+            '-d "$1" ' + baseUrl + "/api/pull " +
+            "-o /tmp/ollama_pull_output " +
+            "--max-time 3600 --connect-timeout 3; echo $?",
+            "bash",
+            JSON.stringify({model: cleanName, stream: true})
+        ]
+        pullProc.running = true
+        pullProgressTimer.running = true
+    }
+
+    function applyPullProgress(raw) {
+        var text = String(raw || "").trim()
+        if (!text) return
+        try {
+            var data = JSON.parse(text)
+            if (data.total > 0 && data.completed !== undefined) {
+                pullProgress = Math.min(1, data.completed / data.total)
+            }
+            if (data.status) pullStatus = data.status
+        } catch (e) {}
+    }
+
+    function finishPull(raw) {
+        pullProgressTimer.running = false
+        var text = String(raw || "").trim()
+        var exitCode = parseInt(text)
+        if (exitCode === 0) {
+            pullProgress = 1
+            pullStatus = "Done"
+            refreshTags()
+            refreshLoaded()
+        } else {
+            pullError = "Download failed"
+            pullStatus = "Failed"
+        }
+        pullBusy = false
+    }
+
+    Process {
+        id: pullProc
+        property bool _streamFinished: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                ollama.finishPull(this.text)
+                pullProc._streamFinished = true
+            }
+        }
+        onRunningChanged: {
+            if (running) {
+                _streamFinished = false
+                pullProgressTimer.running = true
+                return
+            }
+            if (_streamFinished) { _streamFinished = false; return }
+            if (!ollama.pullBusy) return
+            ollama.pullError = "Download failed"
+            ollama.pullBusy = false
+            pullProgressTimer.running = false
+        }
+    }
+
+    Process {
+        id: progressReaderProc
+        stdout: StdioCollector {
+            onStreamFinished: ollama.applyPullProgress(this.text)
+        }
+    }
+
     Timer {
         interval: 15000
         running: ollama.enabled
@@ -302,5 +389,18 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: ollama.refreshGpu()
+    }
+
+    Timer {
+        id: pullProgressTimer
+        interval: 500
+        running: false
+        repeat: true
+        onTriggered: {
+            if (!progressReaderProc.running) {
+                progressReaderProc.command = ["bash", "-c", "tail -1 /tmp/ollama_pull_output 2>/dev/null || echo ''"]
+                progressReaderProc.running = true
+            }
+        }
     }
 }
