@@ -71,4 +71,8 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'cursorShape: enabled ? Qt.Po
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.connected && root.ollama.version !== ""'
 assert_contains versions/V1/panels/OllamaPanel.qml 'color: root.ollama.connected && root.ollama.version !== "" ? root.seal : root.sumi'
 
+assert_contains versions/V1/panels/ControlPanel.qml 'label: "Ollama";      active: root.modOllama'
+assert_contains versions/V1/panels/ControlPanel.qml 'label: "Ollama";     active: root.compactOllama'
+assert_contains README.md 'Ollama management'
+
 printf 'ollama theme wiring: ok\n'

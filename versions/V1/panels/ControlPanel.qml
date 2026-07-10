@@ -477,6 +477,7 @@ PanelWindow {
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Memory";      active: root.modMemory;    onActivated: root.modMemory = !root.modMemory }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Brightness";  visible: root.hasBacklight; active: root.modBrightness; onActivated: root.modBrightness = !root.modBrightness }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "AI usage";    active: root.modClaude;    onActivated: root.modClaude = !root.modClaude }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Ollama";      active: root.modOllama;    onActivated: root.modOllama = !root.modOllama }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Power Prof."; active: root.modPower;     onActivated: root.modPower = !root.modPower }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Bluetooth";   active: root.modBluetooth; onActivated: root.modBluetooth = !root.modBluetooth }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Network";     active: root.modNetwork; enabled: root.networkMode !== "wifi"; onActivated: root.modNetwork = !root.modNetwork }
@@ -509,6 +510,7 @@ PanelWindow {
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Power";      active: root.compactPower;      onToggled: root.compactPower = !root.compactPower }
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "CPU";        active: root.compactCpu;        onToggled: root.compactCpu = !root.compactCpu }
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Memory";     active: root.compactMemory;     onToggled: root.compactMemory = !root.compactMemory }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Ollama";     active: root.compactOllama;     onToggled: root.compactOllama = !root.compactOllama }
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Volume";     active: root.compactVolume;     onToggled: root.compactVolume = !root.compactVolume }
             }
 
