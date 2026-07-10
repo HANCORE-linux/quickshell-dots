@@ -5,9 +5,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 theme="$repo_root/versions/V1/Theme.qml"
 
 assert_contains() {
+    local file="$theme"
+    if [[ $# -eq 2 ]]; then
+        file="$repo_root/$1"
+        shift
+    fi
     local text="$1"
-    grep -Fq "$text" "$theme" || {
-        printf 'missing %s in %s\n' "$text" "$theme" >&2
+    grep -Fq "$text" "$file" || {
+        printf 'missing %s in %s\n' "$text" "$file" >&2
         exit 1
     }
 }
@@ -43,5 +48,13 @@ assert_matches '\(modOllama[[:space:]]+\? "1" : "0"\)'
 assert_matches '\(compactOllama[[:space:]]+\? "1" : "0"\)'
 assert_contains 'if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"'
 assert_contains 'if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"'
+
+assert_contains versions/V1/BarSlot.qml 'Component { id: compOllama; OllamaWidget { root: barSlot.root } }'
+assert_contains versions/V1/BarSlot.qml '"G16": compOllama'
+assert_contains versions/V1/BarSlot.qml 'ollama:       island.groupX("G16", 0.5)'
+assert_contains versions/V1/BarSlot.qml 'ListElement { gid: "G16" }'
+assert_contains versions/V1/BarSlot.qml 'property var leftSplits:  [false, false, false, false, false, false, false]'
+assert_contains versions/V1/modules/OllamaWidget.qml 'visible: !root.compactOllama'
+assert_contains versions/V1/modules/OllamaWidget.qml 'source: Qt.resolvedUrl("../assets/ollama.svg")'
 
 printf 'ollama theme wiring: ok\n'

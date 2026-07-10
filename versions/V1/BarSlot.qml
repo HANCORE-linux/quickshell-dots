@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BarSlot — slot-based bar (WIP port). Step 3: full static layout, all 15 groups
+// BarSlot — slot-based bar (WIP port). Step 3: full static layout, all 16 groups
 // in 3 regions on one continuous section-pill (matches the default no-split look).
 // Real widgets via a component registry. Splits + unlock/drag + slot-aware panel
 // bindings come next. Runs as the real TOP bar (shell.qml: Bar → BarSlot).
@@ -9,6 +9,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import "modules"
+import "BarOrder.js" as BarOrder
 
 PanelWindow {
     id: barSlot
@@ -147,22 +148,12 @@ PanelWindow {
         for (var i = 0; i < m.count; i++) if (registry[gids[i]]) m.setProperty(i, "gid", gids[i])
     }
     function applyOrder(str) {
-        var parts = str.split("|")
-        if (parts.length !== 3) return
-        var l = parts[0].split(","), c = parts[1].split(","), r = parts[2].split(",")
-        // F12: only apply a cache that is a valid permutation of all registry ids (correct region
-        // sizes, every id known, no duplicate, none missing) — a corrupt cache would otherwise
-        // duplicate one widget and silently drop another. On reject, keep the default order.
-        if (l.length !== leftModel.count || c.length !== centerModel.count || r.length !== rightModel.count) return
-        var all = l.concat(c, r), seen = {}
-        for (var i = 0; i < all.length; i++) {
-            if (!registry[all[i]] || seen[all[i]]) return
-            seen[all[i]] = true
-        }
-        if (Object.keys(seen).length !== Object.keys(registry).length) return
-        applyTo(leftModel,   l)
-        applyTo(centerModel, c)
-        applyTo(rightModel,  r)
+        var order = BarOrder.decode(str, Object.keys(registry),
+            [leftModel.count, centerModel.count, rightModel.count], "G16")
+        if (!order) return
+        applyTo(leftModel, order.left)
+        applyTo(centerModel, order.center)
+        applyTo(rightModel, order.right)
     }
     function saveOrder() {
         var serialized = serializeOrder()
@@ -186,7 +177,7 @@ PanelWindow {
     }
     // reset the 3 region models back to the default group order
     function resetOrder() {
-        var dL = ["G1","G2","G3","G4","G5","G6","G7"]
+        var dL = ["G1","G2","G3","G4","G5","G6","G7","G16"]
         var dR = ["G9","G10","G11","G14","G12","G13","G15"]
         for (var i = 0; i < dL.length; i++) leftModel.setProperty(i, "gid", dL[i])
         centerModel.setProperty(0, "gid", "G8")
@@ -196,12 +187,12 @@ PanelWindow {
 
     property var layoutController: ({
         splitAll: function () {
-            island.leftSplits     = [true, true, true, true, true, true]
+            island.leftSplits     = [true, true, true, true, true, true, true]
             island.rightSplits    = [true, true, true, true, true, true]
             island.boundarySplits = [true, true]
         },
         mergeAll: function () {
-            island.leftSplits     = [false, false, false, false, false, false]
+            island.leftSplits     = [false, false, false, false, false, false, false]
             island.rightSplits    = [false, false, false, false, false, false]
             island.boundarySplits = [false, false]
             barSlot.root.barAnim  = 0
@@ -277,6 +268,7 @@ PanelWindow {
     Component { id: compCpu;    CpuWidget    { root: barSlot.root } }
     Component { id: compVol;    AudioWidget  { root: barSlot.root } }
     Component { id: compClaude; ClaudeWidget { root: barSlot.root } }
+    Component { id: compOllama; OllamaWidget { root: barSlot.root } }
 
     Component {
         id: compCenter                                   // G8: weather·clock·date·indicators
@@ -455,7 +447,7 @@ PanelWindow {
 
     readonly property var registry: ({
         "G1": compLauncher, "G2": compWorkspace, "G3": compStatus,
-        "G4": compMem, "G5": compCpu, "G6": compVol, "G7": compClaude,
+        "G4": compMem, "G5": compCpu, "G6": compVol, "G7": compClaude, "G16": compOllama,
         "G8": compCenter,
         "G9": compMpris, "G10": compQuick, "G11": compNetwork,
         "G12": compBattery, "G13": compBrightness, "G14": compPower, "G15": compBluetooth
@@ -627,11 +619,11 @@ PanelWindow {
         }
 
         // ── split state (positional, per within-region gap) ──
-        property var leftSplits:  [false, false, false, false, false, false]   // gaps in leftModel
+        property var leftSplits:  [false, false, false, false, false, false, false]   // gaps in leftModel
         property var rightSplits: [false, false, false, false, false, false]   // gaps in rightModel
         property var boundarySplits: [false, false]   // [left↔center, center↔right]
 
-        readonly property real lcBoundaryX: leftRowItem.x + leftRowItem.width + 9    // just right of Claude
+        readonly property real lcBoundaryX: leftRowItem.x + leftRowItem.width + 9    // just right of Ollama
         readonly property real crBoundaryX: rightRowItem.x - 9                       // just left of Mpris
 
         // ── G8 collision handling (narrow-monitor overlap fix) ──
@@ -662,8 +654,8 @@ PanelWindow {
         function groupVisibleAtStage(gid, stage) {
             if (gid === "G8") return true                                        // clock has its own stages
             if (stage <= 0) return true
-            if (stage === 1) return ["G7", "G9", "G10"].indexOf(gid) < 0         // drop AI · MPRIS · Quick
-            if (stage === 2) return ["G4", "G5", "G7", "G9", "G10"].indexOf(gid) < 0   // also MEM · CPU
+            if (stage === 1) return ["G7", "G16", "G9", "G10"].indexOf(gid) < 0         // drop AI · MPRIS · Quick
+            if (stage === 2) return ["G4", "G5", "G7", "G16", "G9", "G10"].indexOf(gid) < 0   // also MEM · CPU
             return ["G1", "G2", "G6", "G8", "G11", "G14"].indexOf(gid) >= 0      // emergency whitelist
         }
         function sideNaturalWidth(row, stage) {
@@ -709,7 +701,9 @@ PanelWindow {
         function applySplits(str) {
             var p = str.split("|")
             if (p.length !== 3) return
-            if (p[0].length === leftSplits.length)     leftSplits     = _s2b(p[0], leftSplits.length)
+            var left = p[0]
+            if (left.length === leftSplits.length - 1) left += "0"
+            if (left.length === leftSplits.length)     leftSplits     = _s2b(left, leftSplits.length)
             if (p[1].length === rightSplits.length)    rightSplits    = _s2b(p[1], rightSplits.length)
             if (p[2].length === boundarySplits.length) boundarySplits = _s2b(p[2], boundarySplits.length)
         }
@@ -829,7 +823,7 @@ PanelWindow {
             id: leftModel
             ListElement { gid: "G1" } ListElement { gid: "G2" } ListElement { gid: "G3" }
             ListElement { gid: "G4" } ListElement { gid: "G5" } ListElement { gid: "G6" }
-            ListElement { gid: "G7" }
+            ListElement { gid: "G7" } ListElement { gid: "G16" }
         }
         ListModel { id: centerModel; ListElement { gid: "G8" } }
         ListModel {
@@ -896,6 +890,7 @@ PanelWindow {
                 memory:       island.groupX("G4",  0.5),
                 cpu:          island.groupX("G5",  0.5),
                 ai:           island.groupX("G7",  0.5),
+                ollama:       island.groupX("G16", 0.5),
                 workspace:    island.groupX("G2",  0.5),
                 arch:         island.groupX("G3",  0.5),
                 bluetooth:    island.groupX("G15", 0.5),
