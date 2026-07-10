@@ -82,17 +82,29 @@ function reconcileModels(installed, loaded) {
 function errorMessage(response, fallback) {
     try {
         var parsed = JSON.parse(response.body || "{}")
-        if (parsed.error) return String(parsed.error)
+        if (parsed.error !== undefined && parsed.error !== null) {
+            var message = String(parsed.error)
+            if (message.length > 0) return message
+        }
     } catch (error) {}
     return fallback
 }
 
 function successful(response) {
     return response.status >= 200 && response.status < 300
+        && errorMessage(response, "") === ""
 }
 
-function versionState(raw) {
+function versionState(raw, currentVersion) {
     var response = decodeResponse(raw)
+    var ollamaError = errorMessage(response, "")
+    if (ollamaError) {
+        return {
+            connected: false,
+            version: currentVersion || "",
+            lastError: ollamaError
+        }
+    }
     if (!successful(response)) {
         return {
             connected: false,
