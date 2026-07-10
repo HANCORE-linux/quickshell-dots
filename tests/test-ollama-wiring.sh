@@ -64,5 +64,11 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.loadModel(modelD
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.ejectModel(modelData.name)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.openConfiguration()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.reloadConfiguration()'
+assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running'
+assert_contains versions/V1/panels/OllamaPanel.qml 'enabled: !root.ollama.refreshRunning'
+assert_contains versions/V1/panels/OllamaPanel.qml 'opacity: refreshMa.enabled ? 1 : 0.35'
+assert_contains versions/V1/panels/OllamaPanel.qml 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor'
+assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.connected && root.ollama.version !== ""'
+assert_contains versions/V1/panels/OllamaPanel.qml 'color: root.ollama.connected && root.ollama.version !== "" ? root.seal : root.sumi'
 
 printf 'ollama theme wiring: ok\n'

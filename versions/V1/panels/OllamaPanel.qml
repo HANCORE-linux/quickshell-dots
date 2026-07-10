@@ -125,9 +125,9 @@ PanelWindow {
                         anchors.right: refreshButton.left
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.ollama.connected
+                        text: root.ollama.connected && root.ollama.version !== ""
                             ? "v" + root.ollama.version : "OFFLINE"
-                        color: root.ollama.connected ? root.seal : root.sumi
+                        color: root.ollama.connected && root.ollama.version !== "" ? root.seal : root.sumi
                         font.family: root.mono
                         font.pixelSize: 10
                         font.letterSpacing: 1
@@ -140,6 +140,7 @@ PanelWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 24
                         height: 24
+                        opacity: refreshMa.enabled ? 1 : 0.35
 
                         IconText {
                             anchors.centerIn: parent
@@ -151,8 +152,9 @@ PanelWindow {
                         MouseArea {
                             id: refreshMa
                             anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: !root.ollama.refreshRunning
+                            hoverEnabled: enabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.ollama.refreshAll()
                         }
                     }
