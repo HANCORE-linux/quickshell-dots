@@ -25,6 +25,7 @@ var icons = {
     "storage": "\uE1DB",
     "speed": "\uE9E4",
     "package_2": "\uF569",
+    "shield": "",
 }
 
 function icon(name) {

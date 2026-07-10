@@ -282,7 +282,22 @@ if [[ -f "$tmp/repo/scripts/qs-arch-security-gate.sh" ]]; then
   info "ArchUpdater security gate installed (weekly blacklist refresh)"
 fi
 
-# ── 4c. Theme update checker (panel "Check themes" helper) ─────
+# ── 4c. Security widget scanners ────────────────────────────────
+# Optional external scanners are detected by the helper and shown as unavailable
+# in the panel when absent; installing this support never blocks the bar.
+if [[ -f "$tmp/repo/scripts/qs-security-scan.sh" ]]; then
+  mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+  install -m 755 "$tmp/repo/scripts/qs-security-scan.sh" "$HOME/.local/bin/qs-security-scan.sh"
+  install -m 755 "$tmp/repo/scripts/qs-bumblebee-oneshot.sh" "$HOME/.local/bin/qs-bumblebee-oneshot.sh"
+  install -m 644 "$tmp/repo/systemd/qs-security-scan.service" "$HOME/.config/systemd/user/qs-security-scan.service"
+  install -m 644 "$tmp/repo/systemd/qs-security-scan.timer"   "$HOME/.config/systemd/user/qs-security-scan.timer"
+  systemctl --user daemon-reload
+  systemctl --user enable --now qs-security-scan.timer >/dev/null 2>&1 || true
+  "$HOME/.local/bin/qs-security-scan.sh" >/dev/null 2>&1 || true
+  info "Security widget scanner installed (every 6h)"
+fi
+
+# ── 4d. Theme update checker (panel "Check themes" helper) ─────
 install_theme_updater "$tmp/repo" || warn "Theme update checker setup incomplete — the bar is fine; the themes tab just cannot scan yet."
 
 # ── 5. theme hook (live color updates on Omarchy theme switch) ──

@@ -1,0 +1,14 @@
+[Unit]
+Description=Bar security-status scan timer
+
+[Timer]
+OnBootSec=10min
+# also fire shortly after the timer itself is (re)started — without this a
+# daemon-reload/re-enable mid-session leaves the timer "elapsed" with no NEXT
+OnActiveSec=10min
+OnUnitActiveSec=6h
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

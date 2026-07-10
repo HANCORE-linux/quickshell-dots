@@ -58,6 +58,148 @@ PanelWindow {
     readonly property bool   showClaude:  root.aiTool === "claude"
     readonly property bool   showCodex:   root.aiTool === "codex"
     readonly property bool   showOpenCode: root.aiTool === "opencode"
+    readonly property bool   showOllama:  root.aiTool === "ollama"
+    readonly property var    olInstalled: root.ollamaInstalled
+    readonly property var    olActive:    root.ollamaActive
+
+    function olFmtSize(bytes) {
+        if (!bytes) return ""
+        var gb = bytes / 1e9
+        return gb >= 1 ? gb.toFixed(1) + " GB" : (bytes / 1e6).toFixed(0) + " MB"
+    }
+    function olTotalSize() {
+        var total = 0
+        for (var i = 0; i < olInstalled.length; i++) total += (olInstalled[i].size || 0)
+        return total > 0 ? olFmtSize(total) : ""
+    }
+    function olFmtUntil(iso) {
+        if (!iso) return ""
+        var then = new Date(iso).getTime()
+        if (isNaN(then)) return ""
+        var mins = Math.round((then - Date.now()) / 60000)
+        if (mins <= 0) return "expiring"
+        if (mins < 60) return mins + "m left"
+        return Math.round(mins / 60) + "h left"
+    }
+
+    // ── Load a model on demand (POST /api/generate with an empty prompt —
+    //    per Ollama's API, this loads the model into memory without
+    //    generating text). Applies the current keep_alive/num_ctx pills. ──
+    property string loadingModel: ""
+    function keepAliveValue() {
+        return root.ollamaConfig.keepAlive === "inf" ? -1 : root.ollamaConfig.keepAlive
+    }
+    Process {
+        id: loadProc
+        command: []
+        onRunningChanged: if (!running) aiPanel.loadingModel = ""
+    }
+    function loadModel(name) {
+        if (!name || aiPanel.loadingModel !== "") return
+        var body = { model: name, prompt: "", keep_alive: aiPanel.keepAliveValue() }
+        if (root.ollamaConfig.numCtx !== "auto")
+            body.options = { num_ctx: parseInt(root.ollamaConfig.numCtx) }
+        aiPanel.loadingModel = name
+        loadProc.command = ["curl", "-s", "-X", "POST", root.ollamaConfig.host + "/api/generate",
+                             "-d", JSON.stringify(body)]
+        loadProc.running = false; loadProc.running = true
+    }
+
+    // ── Pull a new model (POST /api/pull, streamed NDJSON progress) ──
+    property string pullInput: ""
+    readonly property bool pullValid: /^[a-zA-Z0-9_.-]+(\/[a-zA-Z0-9_.-]+)?(:[a-zA-Z0-9_.-]+)?$/.test(pullInput.trim())
+    property bool pulling: false
+    property real pullFraction: 0
+    property string pullStatus: ""
+    property string pullError: ""
+
+    Process {
+        id: pullProc
+        command: []
+        onRunningChanged: if (!running) aiPanel.pulling = false
+        stdout: SplitParser {
+            onRead: function(line) {
+                if (!line) return
+                try {
+                    var j = JSON.parse(line)
+                    if (j.error) { aiPanel.pullError = j.error; return }
+                    aiPanel.pullStatus = j.status || ""
+                    if (j.total && j.completed) aiPanel.pullFraction = j.completed / j.total
+                    if (j.status === "success") aiPanel.pullFraction = 1
+                } catch (e) { /* ignore partial/non-JSON lines */ }
+            }
+        }
+    }
+    function startPull(name) {
+        if (!name || aiPanel.pulling) return
+        aiPanel.pullError = ""; aiPanel.pullFraction = 0; aiPanel.pullStatus = "starting…"; aiPanel.pulling = true
+        pullProc.command = ["curl", "-s", "-N", "-X", "POST", root.ollamaConfig.host + "/api/pull",
+                             "-d", JSON.stringify({ name: name, stream: true })]
+        pullProc.running = false; pullProc.running = true
+    }
+
+    // ── Ollama systemd service summary (read-only, no sudo needed) + edit ──
+    property var svcEnv: ({})   // {KEEP_ALIVE, MAX_LOADED, HOST, NUM_PARALLEL}
+    Process {
+        id: svcProc
+        command: ["systemctl", "show", "ollama.service", "--property=Environment"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var env = {}
+                var m = this.text.match(/^Environment=(.*)$/m)
+                if (m) m[1].split(/\s+/).forEach(function(tok) {
+                    var i = tok.indexOf("=")
+                    if (i > 0) env[tok.slice(0, i)] = tok.slice(i + 1)
+                })
+                aiPanel.svcEnv = {
+                    KEEP_ALIVE: env.OLLAMA_KEEP_ALIVE || "",
+                    MAX_LOADED: env.OLLAMA_MAX_LOADED_MODELS || "",
+                    HOST: env.OLLAMA_HOST || "",
+                    NUM_PARALLEL: env.OLLAMA_NUM_PARALLEL || ""
+                }
+            }
+        }
+    }
+    Timer {
+        interval: 15000; repeat: true; triggeredOnStart: true
+        running: aiPanel.showOllama && root.aiUsageVisible
+        onTriggered: { svcProc.running = false; svcProc.running = true }
+    }
+
+    function shellQuote(value) {
+        return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
+    }
+    Process { id: svcEditRunner; command: [] }
+    function editServiceConfig() {
+        // Pre-seed the drop-in (only if it doesn't exist yet) with just the 4
+        // vars this widget tracks, commented with example values. Otherwise
+        // `systemctl edit` on a unit with no existing override dumps the
+        // ENTIRE original unit file as commented reference text — technically
+        // correct, but reads as "everything is commented out" and buries the
+        // vars we actually care about.
+        var overrideDir = "/etc/systemd/system/ollama.service.d"
+        var overridePath = overrideDir + "/override.conf"
+        var seed = "[Service]\n"
+                 + "#Environment=OLLAMA_KEEP_ALIVE=5m\n"
+                 + "#Environment=OLLAMA_MAX_LOADED_MODELS=1\n"
+                 + "#Environment=OLLAMA_HOST=0.0.0.0:11434\n"
+                 + "#Environment=OLLAMA_NUM_PARALLEL=1\n"
+        // explicit env assignment (not relying on ambient $EDITOR) since this
+        // runs through sudo in a floating terminal spawned from the bar,
+        // which doesn't inherit an interactive shell's env
+        var cmd = "sudo mkdir -p " + aiPanel.shellQuote(overrideDir) + "; "
+                + "[ -f " + aiPanel.shellQuote(overridePath) + " ] || "
+                + "printf '%s' " + aiPanel.shellQuote(seed) + " | sudo tee " + aiPanel.shellQuote(overridePath) + " >/dev/null; "
+                + "sudo SYSTEMD_EDITOR=nvim EDITOR=nvim systemctl edit ollama.service; "
+                + "gum confirm 'Restart ollama.service to apply changes?' "
+                + "&& sudo systemctl restart ollama.service "
+                + "&& echo 'ollama.service restarted.' "
+                + "|| echo 'No restart performed.'"
+        svcEditRunner.command = ["bash", "-c",
+            "omarchy-launch-floating-terminal-with-presentation " + aiPanel.shellQuote(cmd)]
+        root.aiUsageVisible = false
+        svcEditRunner.running = false; svcEditRunner.running = true
+    }
 
     property real reveal: root.aiUsageVisible ? 1 : 0
     Behavior on reveal {
@@ -127,6 +269,52 @@ PanelWindow {
         }
     }
 
+    // ── labeled row of pill-style presets (Ollama CONFIG section) ──
+    component ConfigPillRow: Item {
+        id: pillRow
+        property string label: ""
+        property var options: []       // [{id, label}]
+        property string selected: ""
+        property var onPick: null      // function(id)
+        width: parent ? parent.width : 0
+        height: 22
+        UiText {
+            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+            text: pillRow.label
+            color: aiPanel.root.sumiHi
+            font.family: aiPanel.root.mono; font.pixelSize: 10; font.letterSpacing: 1
+        }
+        Row {
+            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            spacing: 4
+            Repeater {
+                model: pillRow.options
+                Rectangle {
+                    required property var modelData
+                    readonly property bool active: modelData.id === pillRow.selected
+                    width: pillLbl.implicitWidth + 14; height: 20; radius: 10
+                    color: active ? aiPanel.root.fillActive : (pillMa.containsMouse ? aiPanel.root.fillHover : aiPanel.root.fillIdle)
+                    border.color: (active || pillMa.containsMouse) ? aiPanel.root.seal : aiPanel.root.sep
+                    border.width: 1
+                    UiText {
+                        id: pillLbl
+                        anchors.centerIn: parent
+                        text: modelData.label
+                        color: (active || pillMa.containsMouse) ? aiPanel.root.seal : aiPanel.root.ink
+                        font.family: aiPanel.root.mono; font.pixelSize: 9
+                    }
+                    MouseArea {
+                        id: pillMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: if (pillRow.onPick) pillRow.onPick(modelData.id)
+                    }
+                }
+            }
+        }
+    }
+
     // ── compact OpenCode per-model usage row ──
     component ModelUsageRow: Item {
         property string name: ""
@@ -184,7 +372,7 @@ PanelWindow {
 
     Rectangle {
         id: card
-        width: 360
+        width: 500
         height: Math.min(col.implicitHeight + 24, parent.height - 2 * (barBottom + gap))
         radius: reveal > 0.001 ? root.pillRadius : 0
         color: root.bg
@@ -257,10 +445,10 @@ PanelWindow {
                     height: 28
                     spacing: 6
                     Repeater {
-                        model: [ { id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }, { id: "opencode", label: "OpenCode" } ]
+                        model: [ { id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }, { id: "opencode", label: "OpenCode" }, { id: "ollama", label: "Ollama" } ]
                         Rectangle {
                             required property var modelData
-                            width: root.evenW((parent.width - 12) / 3)
+                            width: root.evenW((parent.width - 18) / 4)
                             height: 28; radius: root.tileRadius
                             readonly property bool active: root.aiTool === modelData.id
                             color: active ? root.fillActive
@@ -412,6 +600,354 @@ PanelWindow {
                         cacheWriteLabel: modelData.cacheWriteLabel || "0"
                         todayLabel: modelData.todayLabel || "0"
                         pct: parseInt(modelData.pct) || 0
+                    }
+                }
+
+                // ── Ollama (local models — no quota, so just install/active state) ──
+                Item {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "Ollama"; color: root.ink
+                        font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
+                    }
+                    UiText {
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        text: aiPanel.olInstalled.length + " installed"
+                            + (aiPanel.olTotalSize() ? "  ·  " + aiPanel.olTotalSize() : "")
+                        color: root.sumi
+                        font.family: root.mono; font.pixelSize: 10
+                    }
+                }
+                UiText {
+                    visible: aiPanel.showOllama && aiPanel.olInstalled.length === 0
+                    width: parent.width
+                    text: "no data — is ollama running?"
+                    color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
+                }
+
+                Item {
+                    visible: aiPanel.showOllama && aiPanel.olActive.length > 0
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "ACTIVE"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                }
+                Repeater {
+                    model: aiPanel.showOllama ? aiPanel.olActive : []
+                    Column {
+                        width: col.width
+                        spacing: 1
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            UiText {
+                                width: parent.width - 78
+                                text: (modelData.name || "?")
+                                color: root.seal
+                                font.family: root.mono; font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            UiText {
+                                width: 70
+                                horizontalAlignment: Text.AlignRight
+                                text: aiPanel.olFmtSize(modelData.size)
+                                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
+                                font.family: root.mono; font.pixelSize: 10
+                            }
+                        }
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            UiText {
+                                width: parent.width - 78
+                                text: [modelData.param, (modelData.vram > 0 ? "GPU" : "CPU")].filter(s => s).join("  ·  ")
+                                color: root.sumi
+                                font.family: root.mono; font.pixelSize: 9
+                                elide: Text.ElideRight
+                            }
+                            UiText {
+                                width: 70
+                                horizontalAlignment: Text.AlignRight
+                                text: aiPanel.olFmtUntil(modelData.until)
+                                color: root.sumi
+                                font.family: root.mono; font.pixelSize: 9
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    visible: aiPanel.showOllama && aiPanel.olInstalled.length > 0
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "INSTALLED"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                }
+                Repeater {
+                    model: aiPanel.showOllama ? aiPanel.olInstalled : []
+                    Column {
+                        id: installedRow
+                        width: col.width
+                        spacing: 1
+                        readonly property bool isLoaded: aiPanel.olActive.some(m => m.name === (modelData.name || ""))
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            UiText {
+                                width: parent.width - 78
+                                text: (modelData.name || "?")
+                                color: root.ink
+                                font.family: root.mono; font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            UiText {
+                                width: 70
+                                horizontalAlignment: Text.AlignRight
+                                text: aiPanel.olFmtSize(modelData.size)
+                                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
+                                font.family: root.mono; font.pixelSize: 10
+                            }
+                        }
+                        UiText {
+                            visible: text !== ""
+                            width: parent.width
+                            text: [modelData.param, modelData.quant, modelData.family].filter(s => s).join("  ·  ")
+                            color: root.sumi
+                            font.family: root.mono; font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
+                        Item {
+                            width: parent.width
+                            height: 22
+                            visible: !installedRow.isLoaded
+                            Rectangle {
+                                id: loadBtn
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 46; height: 18; radius: 9
+                                readonly property bool busy: aiPanel.loadingModel === (modelData.name || "")
+                                color: loadMa.containsMouse ? root.fillHover : root.fillIdle
+                                border.color: (loadMa.containsMouse || busy) ? root.seal : root.sep
+                                border.width: 1
+                                UiText {
+                                    anchors.centerIn: parent
+                                    text: loadBtn.busy ? "…" : "Load"
+                                    color: (loadMa.containsMouse || loadBtn.busy) ? root.seal : root.ink
+                                    font.family: root.mono; font.pixelSize: 9
+                                }
+                                MouseArea {
+                                    id: loadMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: !loadBtn.busy
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: aiPanel.loadModel(modelData.name || "")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── pull a new model ──
+                Rectangle { visible: aiPanel.showOllama; width: parent.width; height: 1; color: root.sep }
+                Item {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "PULL MODEL"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                }
+                Row {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 26; spacing: 8
+                    Rectangle {
+                        width: parent.width - 78; height: 26; radius: root.tileRadius
+                        color: root.fillIdle
+                        border.color: pullNameInput.activeFocus ? root.seal : root.sep
+                        border.width: 1
+                        TextInput {
+                            id: pullNameInput
+                            anchors.fill: parent; anchors.margins: 7
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.ink
+                            font.family: root.mono; font.pixelSize: 10
+                            clip: true
+                            onTextChanged: aiPanel.pullInput = text
+                            Keys.onReturnPressed: if (aiPanel.pullValid && !aiPanel.pulling) aiPanel.startPull(text.trim())
+                        }
+                        UiText {
+                            visible: pullNameInput.text === ""
+                            anchors.left: parent.left; anchors.leftMargin: 7; anchors.verticalCenter: parent.verticalCenter
+                            text: "model name  e.g. llama3.2:3b"
+                            color: root.sumi
+                            font.family: root.mono; font.pixelSize: 10
+                        }
+                    }
+                    Rectangle {
+                        width: 70; height: 26; radius: root.tileRadius
+                        readonly property bool enabledNow: aiPanel.pullValid && !aiPanel.pulling
+                        opacity: enabledNow ? 1 : 0.4
+                        color: pullMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: pullMa.containsMouse ? root.seal : root.sep
+                        border.width: 1
+                        UiText {
+                            anchors.centerIn: parent
+                            text: aiPanel.pulling ? "…" : "Pull"
+                            color: pullMa.containsMouse ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 10
+                        }
+                        MouseArea {
+                            id: pullMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: parent.enabledNow
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: aiPanel.startPull(pullNameInput.text.trim())
+                        }
+                    }
+                }
+                UiText {
+                    visible: aiPanel.showOllama && pullNameInput.text !== "" && !aiPanel.pullValid
+                    width: parent.width
+                    text: "invalid model name"
+                    color: root.sealRaw
+                    font.family: root.mono; font.pixelSize: 9
+                }
+                Rectangle {
+                    visible: aiPanel.showOllama && (aiPanel.pulling || aiPanel.pullStatus !== "")
+                    width: parent.width; height: 8; radius: 4
+                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    Rectangle {
+                        width: parent.width * Math.max(0, Math.min(1, aiPanel.pullFraction))
+                        height: parent.height; radius: 4
+                        color: root.seal
+                        Behavior on width { NumberAnimation { duration: 200 } }
+                    }
+                }
+                UiText {
+                    visible: aiPanel.showOllama && (aiPanel.pullError !== "" || aiPanel.pullStatus !== "")
+                    width: parent.width
+                    text: aiPanel.pullError || aiPanel.pullStatus
+                    color: aiPanel.pullError !== "" ? root.sealRaw : root.sumi
+                    font.family: root.mono; font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+
+                // ── runtime config (per-request presets, not daemon-wide) ──
+                Rectangle { visible: aiPanel.showOllama; width: parent.width; height: 1; color: root.sep }
+                Item {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "CONFIG"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                }
+                ConfigPillRow {
+                    visible: aiPanel.showOllama
+                    width: parent.width
+                    label: "keep_alive"
+                    selected: root.ollamaConfig.keepAlive
+                    options: [{id:"5m",label:"5m"},{id:"30m",label:"30m"},{id:"inf",label:"∞"}]
+                    onPick: function(id) { root.setOllamaConfig("keepAlive", id) }
+                }
+                ConfigPillRow {
+                    visible: aiPanel.showOllama
+                    width: parent.width
+                    label: "num_ctx"
+                    selected: root.ollamaConfig.numCtx
+                    options: [{id:"auto",label:"auto"},{id:"8192",label:"8k"},{id:"16384",label:"16k"},{id:"32768",label:"32k"}]
+                    onPick: function(id) { root.setOllamaConfig("numCtx", id) }
+                }
+                ConfigPillRow {
+                    visible: aiPanel.showOllama
+                    width: parent.width
+                    label: "poll"
+                    selected: String(root.ollamaConfig.pollSec)
+                    options: [{id:"1",label:"1s"},{id:"2",label:"2s"},{id:"5",label:"5s"}]
+                    onPick: function(id) { root.setOllamaConfig("pollSec", parseInt(id)) }
+                }
+                Item {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 24
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "host"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                    Rectangle {
+                        anchors.right: parent.right
+                        width: parent.width * 0.62; height: 22; radius: root.tileRadius
+                        color: root.fillIdle
+                        border.color: hostInput.activeFocus ? root.seal : root.sep
+                        border.width: 1
+                        TextInput {
+                            id: hostInput
+                            anchors.fill: parent; anchors.margins: 6
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.ink
+                            font.family: root.mono; font.pixelSize: 10
+                            text: root.ollamaConfig.host
+                            clip: true
+                            onEditingFinished: {
+                                var v = text.trim()
+                                if (/^https?:\/\/.+/.test(v)) root.setOllamaConfig("host", v)
+                                else text = root.ollamaConfig.host
+                            }
+                        }
+                    }
+                }
+
+                // ── systemd service summary + edit ──
+                Rectangle { visible: aiPanel.showOllama; width: parent.width; height: 1; color: root.sep }
+                Item {
+                    visible: aiPanel.showOllama
+                    width: parent.width; height: 16
+                    UiText {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: "SERVICE (systemd)"
+                        color: root.sumiHi
+                        font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    }
+                }
+                DetailRow { visible: aiPanel.showOllama; k: "KEEP_ALIVE"; v: aiPanel.svcEnv.KEEP_ALIVE || "(default)" }
+                DetailRow { visible: aiPanel.showOllama; k: "MAX_LOADED"; v: aiPanel.svcEnv.MAX_LOADED || "(default)" }
+                DetailRow { visible: aiPanel.showOllama; k: "HOST"; v: aiPanel.svcEnv.HOST || "(default)" }
+                DetailRow { visible: aiPanel.showOllama; k: "NUM_PARALLEL"; v: aiPanel.svcEnv.NUM_PARALLEL || "(default)" }
+                Rectangle {
+                    visible: aiPanel.showOllama
+                    width: parent.width
+                    height: 26; radius: root.tileRadius
+                    color: svcEditMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: svcEditMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    UiText {
+                        anchors.centerIn: parent
+                        text: "Edit service config…"
+                        color: svcEditMa.containsMouse ? root.seal : root.ink
+                        font.family: root.mono; font.pixelSize: 11
+                    }
+                    MouseArea {
+                        id: svcEditMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: aiPanel.editServiceConfig()
                     }
                 }
             }

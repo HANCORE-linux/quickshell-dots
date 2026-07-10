@@ -56,6 +56,18 @@ else
   rc=1
 fi
 
+# ── Security widget scanner + ad-hoc project scan ───────────────
+if put "$repo/scripts/qs-security-scan.sh" "$bin/qs-security-scan.sh" 755; then
+  put "$repo/scripts/qs-bumblebee-oneshot.sh" "$bin/qs-bumblebee-oneshot.sh" 755 || rc=1
+  put "$repo/systemd/qs-security-scan.service" "$units/qs-security-scan.service" 644 || rc=1
+  put "$repo/systemd/qs-security-scan.timer"   "$units/qs-security-scan.timer"   644 || rc=1
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  systemctl --user enable --now qs-security-scan.timer >/dev/null 2>&1 || true
+  [ -s "$HOME/.cache/qs-security-status.json" ] || "$bin/qs-security-scan.sh" >/dev/null 2>&1 || true
+else
+  rc=1
+fi
+
 # ── keep the updater itself current (check + apply + this hook) ─
 put "$repo/scripts/qs-shell-check-update.sh" "$qsbin/qs-shell-check-update.sh" 755 || rc=1
 put "$repo/scripts/qs-shell-apply-update.sh" "$qsbin/qs-shell-apply-update.sh" 755 || rc=1
@@ -73,7 +85,7 @@ fi
 # alone can leave a monotonic timer "elapsed" with no next trigger.
 systemctl --user daemon-reload >/dev/null 2>&1 || true
 systemctl --user enable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
-systemctl --user try-restart qs-shell-update-check.timer qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
+systemctl --user try-restart qs-shell-update-check.timer qs-aur-blacklist-fetch.timer qs-security-scan.timer >/dev/null 2>&1 || true
 
 # ── opt-in components: refresh only if the user installed them ──
 if [ -x "$bin/claude-usage" ]; then

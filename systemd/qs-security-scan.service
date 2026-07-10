@@ -1,0 +1,8 @@
+[Unit]
+Description=Bar security-status scan (AUR-Malware + bumblebee)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/qs-security-scan.sh
+Nice=19
+IOSchedulingClass=idle

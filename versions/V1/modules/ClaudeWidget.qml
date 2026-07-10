@@ -14,6 +14,7 @@ Item {
     // ── which tool the bar pill displays ──
     readonly property bool isCodex: root.aiTool === "codex"
     readonly property bool isOpenCode: root.aiTool === "opencode"
+    readonly property bool isOllama: root.aiTool === "ollama"
     readonly property bool isLogo: isCodex || isOpenCode
     readonly property url  logoSource: Qt.resolvedUrl(isOpenCode ? "../assets/opencode-mark.svg" : "../assets/codex.svg")
     readonly property var  logoSourceSize: isOpenCode ? Qt.size(22, 14) : Qt.size(48, 48)
@@ -59,21 +60,29 @@ Item {
     readonly property int    ocToday:     root.aiOcToday
     readonly property bool   ocHas:       root.aiOcHas
 
+    // ── Ollama: local models, no quota — "signal" is just "a model is loaded".
+    //    Polled directly (no CLI --json flag exists for `ollama list`/`ollama ps`),
+    //    published to root.ollama* so AiUsagePanel's Ollama tab reads the same data. ──
+    readonly property var olInstalled: root.ollamaInstalled
+    readonly property var olActive:    root.ollamaActive
+    readonly property string olModelShort: olActive.length > 0 ? String(olActive[0].name || "").split(":")[0] : ""
+
     // ── per-tool signal (active OR fresh non-zero usage) ──
     readonly property bool clSignal: clActive || (clPct5h > 0 && clFresh)
     readonly property bool cxSignal: cxActive || (cxPct5h > 0 && cxFresh)
     readonly property bool ocSignal: ocActive || ((ocPct5h > 0 || ocToday > 0) && ocFresh)
+    readonly property bool olSignal: olActive.length > 0
 
     // ── selected-tool display values ──
     readonly property int  pct5h:   isOpenCode ? ocPct5h : (isCodex ? cxPct5h : clPct5h)
     readonly property int  pct5hStep: Math.round(pct5h / 5) * 5
     readonly property bool selFresh: isOpenCode ? ocFresh : (isCodex ? cxFresh : clFresh)
-    readonly property bool selSignal: isOpenCode ? ocSignal : (isCodex ? cxSignal : clSignal)
-    readonly property bool blocked:  (isCodex || isOpenCode) ? false : clBlocked
+    readonly property bool selSignal: isOllama ? olSignal : (isOpenCode ? ocSignal : (isCodex ? cxSignal : clSignal))
+    readonly property bool blocked:  (isCodex || isOpenCode || isOllama) ? false : clBlocked
 
     // show whenever the gate is on AND either tool has a signal — the pill stays
     // reachable (to open the panel + switch) even if the selected tool is idle
-    readonly property bool shown: (clSignal || cxSignal || ocSignal) && root.modClaude
+    readonly property bool shown: (clSignal || cxSignal || ocSignal || olSignal) && root.modClaude
 
     readonly property string tooltipText: {
         var lines = []
@@ -102,6 +111,13 @@ Item {
             if (ocTokens) lines.push(ocTokens + " tokens" + (ocRate ? "  · " + ocRate : ""))
             if (ocToday > 0) lines.push("today: " + (ocToday / 1e6).toFixed(2) + "M tok")
             if (ocModel) lines.push(ocModel)
+        }
+        if (olInstalled.length > 0 || olActive.length > 0) {
+            if (lines.length) lines.push("")
+            lines.push("Ollama · " + olInstalled.length + " installed")
+            lines.push(olActive.length > 0
+                ? "active: " + olActive.map(m => m.name).join(", ")
+                : "no active session")
         }
         return lines.length ? lines.join("\n") : "AI usage"
     }
@@ -133,12 +149,57 @@ Item {
         command: ["bash", "-c", "ps -eo args | grep -E '(^|/| )opencode( |$)|opencode-ai' | grep -vE 'grep|opencode-usage' >/dev/null && echo 1 || echo 0"]
         stdout: StdioCollector { onStreamFinished: { rootMod.ocActive = (this.text.trim() === "1") } }
     }
+    // Ollama: local REST API (no CLI --json flag for `ollama list`/`ollama ps`)
+    Process {
+        id: tagsProc
+        command: ["curl", "-s", "--max-time", "2", root.ollamaConfig.host + "/api/tags"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var j = JSON.parse(this.text)
+                    root.ollamaInstalled = (j.models || []).map(m => ({
+                        name: m.name || m.model || "?", size: m.size || 0, modified: m.modified_at || "",
+                        param: (m.details && m.details.parameter_size) || "",
+                        quant: (m.details && m.details.quantization_level) || "",
+                        family: (m.details && m.details.family) || ""
+                    }))
+                } catch (e) { /* ollama not running / unreachable — keep last good list */ }
+            }
+        }
+    }
+    Process {
+        id: psProc
+        command: ["curl", "-s", "--max-time", "2", root.ollamaConfig.host + "/api/ps"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var j = JSON.parse(this.text)
+                    root.ollamaActive = (j.models || []).map(m => ({
+                        name: m.name || m.model || "?", size: m.size || 0, until: m.expires_at || "",
+                        vram: m.size_vram || 0,
+                        param: (m.details && m.details.parameter_size) || ""
+                    }))
+                } catch (e) { root.ollamaActive = [] }
+            }
+        }
+    }
     Timer {
         interval: 5000; running: root.modClaude || root.aiUsageVisible; repeat: true; triggeredOnStart: true
         onTriggered: {
             detectClaude.running = false; detectClaude.running = true
             detectCodex.running = false;  detectCodex.running = true
             detectOpenCode.running = false; detectOpenCode.running = true
+        }
+    }
+    // Ollama polling is decoupled from the shared 5s timer above so the
+    // AiUsagePanel "poll" pill (root.ollamaConfig.pollSec) only affects Ollama.
+    Timer {
+        interval: root.ollamaConfig.pollSec * 1000
+        running: root.modClaude || root.aiUsageVisible
+        repeat: true; triggeredOnStart: true
+        onTriggered: {
+            tagsProc.running = false; tagsProc.running = true
+            psProc.running = false; psProc.running = true
         }
     }
 
@@ -168,10 +229,30 @@ Item {
             width: implicitWidth
             height: implicitHeight
 
+            // ── Ollama: official mark, tinted (no %, so no fill animation — dim when
+            //    idle, full-strength seal tint when a model is loaded) ──
+            Image {
+                anchors.centerIn: parent
+                visible: rootMod.isOllama
+                source: Qt.resolvedUrl("../assets/ollama-mark.svg")
+                sourceSize: Qt.size(15, 15)
+                width: 15; height: 15
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                opacity: rootMod.olSignal ? 1.0 : 0.4
+                Behavior on opacity { NumberAnimation { duration: 200 } }
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: ShaderEffect {
+                    property color tintColor: rootMod.olSignal ? root.seal : root.ink
+                    fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
+                }
+            }
+
             // ── Claude: nerd-font glyph (original look) ──
             Item {
                 anchors.centerIn: parent
-                visible: !rootMod.isLogo
+                visible: !rootMod.isLogo && !rootMod.isOllama
                 implicitWidth: glyphBase.implicitWidth
                 implicitHeight: glyphBase.implicitHeight
 
@@ -257,7 +338,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.blocked
                 ? "BLK"
-                : (rootMod.selSignal ? String(rootMod.pct5h).padStart(2, "0") + "%" : "··")
+                : rootMod.isOllama
+                    ? (rootMod.olSignal ? rootMod.olModelShort : "··")
+                    : (rootMod.selSignal ? String(rootMod.pct5h).padStart(2, "0") + "%" : "··")
             color: rootMod.blocked
                 ? root.seal
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)

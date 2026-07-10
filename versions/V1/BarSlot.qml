@@ -268,6 +268,7 @@ PanelWindow {
                 x: Math.round((parent.width - width) / 2)
                 spacing: 6
                 ArchUpdaterWidget  { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                SecurityWidget     { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                 TrayWidget         { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                 NotificationWidget { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
             }
