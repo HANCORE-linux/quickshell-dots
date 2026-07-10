@@ -139,7 +139,7 @@ Item {
             model: name,
             stream: false,
             keep_alive: keepAlive
-        })
+        }, "120")
         actionProc.running = true
     }
 

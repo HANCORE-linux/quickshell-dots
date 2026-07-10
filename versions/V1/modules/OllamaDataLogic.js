@@ -8,9 +8,10 @@ function decodeResponse(raw) {
     return { status: isNaN(status) ? 0 : status, body: text.slice(0, separator) }
 }
 
-function buildRequest(baseUrl, method, path, payload) {
+function buildRequest(baseUrl, method, path, payload, maxTime) {
+    var timeout = Number(maxTime) > 0 ? String(maxTime) : "5"
     var command = [
-        "curl", "-sS", "--connect-timeout", "1", "--max-time", "5",
+        "curl", "-sS", "--connect-timeout", "1", "--max-time", timeout,
         "-X", method, "-H", "Accept: application/json", "-w", "\n%{http_code}"
     ]
     if (payload !== undefined && payload !== null) {
