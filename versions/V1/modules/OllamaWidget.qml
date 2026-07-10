@@ -63,6 +63,67 @@ Item {
             font.pixelSize: 12
         }
 
+        Canvas {
+            id: gpuWave
+            visible: !root.compactOllama
+            width: 36
+            height: 14
+            anchors.verticalCenter: parent.verticalCenter
+
+            property color tint: root.seal
+            onTintChanged: requestPaint()
+
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                var h = root.ollama.gpuHistory
+                if (!h || h.length < 2) return
+
+                var maxV = 0.25
+                for (var n = 0; n < h.length; n++) {
+                    if (h[n] > maxV) maxV = h[n]
+                }
+                maxV = Math.min(1, Math.max(0.25, maxV * 1.15))
+
+                var pts = []
+                for (var i = 0; i < h.length; i++) {
+                    var x = (i / (root.ollama.gpuMaxSamples - 1)) * width
+                    var y = height - (h[i] / maxV) * height
+                    pts.push({ x: x, y: y })
+                }
+
+                ctx.beginPath()
+                ctx.moveTo(pts[0].x, height)
+                ctx.lineTo(pts[0].x, pts[0].y)
+                for (var j = 1; j < pts.length; j++) {
+                    var cx = (pts[j-1].x + pts[j].x) / 2
+                    ctx.bezierCurveTo(cx, pts[j-1].y, cx, pts[j].y, pts[j].x, pts[j].y)
+                }
+                ctx.lineTo(pts[pts.length-1].x, height)
+                ctx.closePath()
+                ctx.fillStyle = Qt.rgba(tint.r, tint.g, tint.b, 0.12)
+                ctx.fill()
+
+                ctx.beginPath()
+                ctx.moveTo(pts[0].x, pts[0].y)
+                for (var k = 1; k < pts.length; k++) {
+                    var mx = (pts[k-1].x + pts[k].x) / 2
+                    ctx.bezierCurveTo(mx, pts[k-1].y, mx, pts[k].y, pts[k].x, pts[k].y)
+                }
+                ctx.strokeStyle = tint
+                ctx.lineWidth = 1.5
+                ctx.lineCap = "round"
+                ctx.lineJoin = "round"
+                ctx.stroke()
+            }
+
+            Component.onCompleted: requestPaint()
+            Connections {
+                target: root.ollama
+                function onGpuHistoryChanged() { gpuWave.requestPaint() }
+            }
+        }
+
         UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.ollama.gpuPercent >= 0
