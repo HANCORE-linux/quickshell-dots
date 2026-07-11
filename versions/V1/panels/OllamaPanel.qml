@@ -327,6 +327,7 @@ PanelWindow {
 
                             UiText {
                                 visible: isCustom && (!selected || customInput.text === "")
+                                    && !customInput.activeFocus
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.left: parent.left
                                 anchors.leftMargin: 6
