@@ -37,7 +37,12 @@ ShellRoot {
         check(data.lastError === "", "error default")
         check(data.operationError === "", "operation-error default")
         check(data.displayError === "", "display-error default")
-        check(data.configPath === "/etc/systemd/system/ollama.service.d/override.conf", "config path")
+
+        check(data.selectedKeepAlive === "5m", "default keep alive")
+        check(data.selectedNumCtx === null, "default num ctx")
+        check(data.configDirty === false, "config dirty default")
+        check(typeof data.buildLoadPayload === "function", "buildLoadPayload method")
+        check(typeof data.applyRuntimeConfiguration === "function", "applyRuntimeConfiguration method")
 
         var response = data.decodeResponse('{"version":"0.31.2"}\n200')
         check(response.status === 200, "response status helper")

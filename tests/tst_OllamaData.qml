@@ -23,6 +23,15 @@ TestCase {
         function decodeResponse(raw) { return OllamaDataLogic.decodeResponse(raw) }
         function parseTags(body) { return OllamaDataLogic.parseTags(body) }
         function parseLoaded(body) { return OllamaDataLogic.parseLoaded(body) }
+        function buildLoadPayload(modelName, keepAlive, numCtx) {
+            return OllamaDataLogic.buildLoadPayload(modelName, keepAlive, numCtx)
+        }
+        function normalizeHost(host) {
+            return OllamaDataLogic.normalizeHost(host)
+        }
+        function validateContextLength(contextLength, numCtx) {
+            return OllamaDataLogic.validateContextLength(contextLength, numCtx)
+        }
         function conflictingModelNames(entries, selectedName) {
             return OllamaDataLogic.conflictingModelNames(entries, selectedName)
         }
@@ -212,5 +221,40 @@ TestCase {
         var maxTimeIdx = command.indexOf("--max-time")
         compare(maxTimeIdx >= 0, true)
         compare(command[maxTimeIdx + 1], "120")
+    }
+
+    function test_buildLoadPayloadWithKeepAliveAndContext() {
+        var p = data.buildLoadPayload("gemma4:latest", "30m", 16384)
+        compare(p.model, "gemma4:latest")
+        compare(p.prompt, "")
+        compare(p.stream, false)
+        compare(p.keep_alive, "30m")
+        compare(p.options.num_ctx, 16384)
+    }
+
+    function test_buildLoadPayloadOmitsNumCtxForAuto() {
+        var p = data.buildLoadPayload("gemma4:latest", "5m", null)
+        verify(p.options === undefined)
+    }
+
+    function test_buildLoadPayloadUsesNegativeOneForInfinite() {
+        var p = data.buildLoadPayload("gemma4:latest", -1, null)
+        compare(p.keep_alive, -1)
+    }
+
+    function test_normalizesHost() {
+        compare(data.normalizeHost("http://localhost:11434"), "http://localhost:11434")
+        compare(data.normalizeHost("http://localhost:11434/"), "http://localhost:11434")
+    }
+
+    function test_parseLoadedIncludesContextLength() {
+        var models = data.parseLoaded('{"models":[{"name":"qwen3:8b","size":1,"size_vram":1,"context_length":16384}]}')
+        compare(models[0].contextLength, 16384)
+    }
+
+    function test_validatesMatchingContextLength() {
+        verify(data.validateContextLength(16384, 16384).valid)
+        compare(data.validateContextLength(8192, 16384).error, "Context mismatch: expected 16384, got 8192")
+        verify(data.validateContextLength(4096, null).valid)
     }
 }

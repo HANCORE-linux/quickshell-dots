@@ -52,7 +52,8 @@ function parseLoaded(body) {
             name: name,
             size: Number(entry.size || 0),
             sizeVram: Number(entry.size_vram || 0),
-            expiresAt: String(entry.expires_at || "")
+            expiresAt: String(entry.expires_at || ""),
+            contextLength: Number(entry.context_length || 0)
         })
     }
     return result
@@ -171,6 +172,35 @@ function generateResponseState(body) {
     if (parsed.done !== true)
         return { valid: false, error: "Ollama generate did not complete" }
     return { valid: true, error: "" }
+}
+
+function buildLoadPayload(modelName, keepAlive, numCtx) {
+    var payload = {
+        model: String(modelName || ""),
+        prompt: "",
+        stream: false,
+        keep_alive: keepAlive
+    }
+    if (numCtx !== undefined && numCtx !== null) {
+        payload.options = { num_ctx: Number(numCtx) }
+    }
+    return payload
+}
+
+function normalizeHost(host) {
+    var h = String(host || "")
+    return h.replace(/\/+$/, "")
+}
+
+function validateContextLength(contextLength, numCtx) {
+    if (numCtx === undefined || numCtx === null) return { valid: true, error: "" }
+    var expected = Number(numCtx)
+    var actual = Number(contextLength || 0)
+    if (actual === expected) return { valid: true, error: "" }
+    return {
+        valid: false,
+        error: "Context mismatch: expected " + expected + ", got " + actual
+    }
 }
 
 function operationMessage(state, modelName) {

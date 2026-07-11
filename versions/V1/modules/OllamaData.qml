@@ -22,6 +22,7 @@ Item {
     property string operationError: ""
     property bool operationInProgress: false
     property string operationState: "idle"
+    property string operationMode: ""
     property int operationId: 0
     property int refreshEpoch: 0
     property var stopQueue: []
@@ -33,10 +34,16 @@ Item {
     property double pullProgress: 0
     property string pullStatus: ""
     property string pullError: ""
+    property string selectedKeepAlive: "5m"
+    property var selectedNumCtx: null
+    property bool configDirty: false
 
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
-    readonly property string configPath: "/etc/systemd/system/ollama.service.d/override.conf"
+    readonly property string runtimeConfigPath:
+        Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
+    readonly property int effectiveContextLength: loadedModels.length === 1
+        ? loadedModels[0].contextLength : 0
     readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running
     readonly property bool controlsLocked: operationInProgress || busy || pullBusy
     readonly property string displayError: operationError !== "" ? operationError : lastError
@@ -49,6 +56,10 @@ Item {
 
     function buildRequest(method, path, payload, maxTime) {
         return OllamaDataLogic.buildRequest(baseUrl, method, path, payload, maxTime)
+    }
+
+    function buildLoadPayload(modelName) {
+        return OllamaDataLogic.buildLoadPayload(modelName, selectedKeepAlive, selectedNumCtx)
     }
 
     function parseTags(body) {
@@ -167,6 +178,7 @@ Item {
         operationId += 1
         operationInProgress = true
         busy = true
+        operationMode = ""
         operationState = "checking"
         pendingAction = "load"
         pendingModel = selected
@@ -191,9 +203,11 @@ Item {
         busy = false
         pendingAction = ""
         pendingModel = ""
+        operationMode = ""
         stopQueue = []
         verificationAttempts = 0
         verificationKind = ""
+        failureMessage = ""
         operationState = ok ? "idle" : "error"
         if (ok) operationError = ""
         if (ok) lastError = ""
@@ -241,12 +255,39 @@ Item {
             return
         }
         if (purpose === "initial") {
+            if (operationMode === "apply") {
+                if (models.length > 0) {
+                    pendingModel = models[0].name
+                    stopQueue = models.map(function(m) { return m.name })
+                } else {
+                    operationInProgress = false
+                    busy = false
+                    operationMode = ""
+                    operationState = "idle"
+                    pendingAction = ""
+                    pendingModel = ""
+                    configDirty = false
+                    return
+                }
+            } else if (operationMode === "eject") {
+                stopQueue = models.map(function(m) { return m.name })
+                if (stopQueue.length > 0) {
+                    stopNextModel()
+                    return
+                }
+                finishExclusiveLoad(true, models)
+                return
+            }
             stopQueue = OllamaDataLogic.conflictingModelNames(models, pendingModel)
             if (stopQueue.length > 0) stopNextModel()
             else beginSelectedModelLoad()
             return
         }
         if (purpose === "unloadVerify") {
+            if (operationMode === "eject") {
+                finishExclusiveLoad(true, models)
+                return
+            }
             var conflicts = OllamaDataLogic.conflictingModelNames(models, pendingModel)
             if (conflicts.length === 0) beginSelectedModelLoad()
             else if (verificationAttempts < 10) verificationRetryTimer.restart()
@@ -254,6 +295,13 @@ Item {
             return
         }
         if (purpose === "loadVerify") {
+            if (operationMode === "apply" && selectedNumCtx !== null) {
+                var ctxValidation = OllamaDataLogic.validateContextLength(models[0].contextLength, selectedNumCtx)
+                if (!ctxValidation.valid) {
+                    failExclusiveLoad(ctxValidation.error)
+                    return
+                }
+            }
             var state = OllamaDataLogic.exclusiveLoadState(models, pendingModel)
             if (state.valid) finishExclusiveLoad(true, models)
             else if (verificationAttempts < 10) verificationRetryTimer.restart()
@@ -285,16 +333,17 @@ Item {
         var modelName = queue.shift()
         stopQueue = queue
         operationState = "unloading"
-        stopProc.requestId = operationId
-        stopProc.modelName = modelName
-        stopProc.timedOut = false
-        stopProc.command = ["env", "OLLAMA_HOST=" + baseUrl, "ollama", "stop", modelName]
-        stopProc.running = true
-        stopTimeoutTimer.restart()
+        unloadProc.requestId = operationId
+        unloadProc.modelName = modelName
+        unloadProc.timedOut = false
+        unloadProc.command = buildRequest("POST", "/api/generate",
+            OllamaDataLogic.buildLoadPayload(modelName, 0, null), "10")
+        unloadProc.running = true
+        unloadTimeoutTimer.restart()
     }
 
-    function handleStopExit(requestId, modelName, exitCode, timedOut) {
-        stopTimeoutTimer.stop()
+    function handleUnloadExit(requestId, modelName, exitCode, timedOut) {
+        unloadTimeoutTimer.stop()
         if (!operationInProgress || requestId !== operationId) return
         if (timedOut) {
             failExclusiveLoad("Timed out unloading Ollama model: " + modelName)
@@ -309,11 +358,7 @@ Item {
         if (!operationInProgress) return
         operationState = "loading"
         loadProc.requestId = operationId
-        loadProc.command = buildRequest("POST", "/api/generate", {
-            model: pendingModel,
-            keep_alive: -1,
-            stream: false
-        }, "120")
+        loadProc.command = buildRequest("POST", "/api/generate", buildLoadPayload(pendingModel), "120")
         loadProc.running = true
     }
 
@@ -333,23 +378,15 @@ Item {
     }
 
     function runModelAction(name, keepAlive, actionName) {
-        if (controlsLocked || !name) return
+        if (controlsLocked || !name || actionName !== "delete") return
         beginActionState(actionName, name)
         operationError = ""
         lastError = ""
-        if (actionName === "delete") {
-            actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
-        } else {
-            actionProc.command = buildRequest("POST", "/api/generate", {
-                model: name,
-                stream: false,
-                keep_alive: keepAlive
-            }, "120")
-        }
+        actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
         actionProc.running = true
     }
 
-    function ejectModel(name) { runModelAction(name, 0, "eject") }
+    function ejectModel(name) { startUnloadOperation("eject", name) }
     function deleteModel(name) { runModelAction(name, "delete", "delete") }
 
     function beginActionState(actionName, name) {
@@ -366,20 +403,64 @@ Item {
         pendingModel = state.pendingModel
     }
 
-    function openConfiguration() {
-        configProc.command = [
-            "omarchy-launch-floating-terminal-with-presentation",
-            "SUDO_EDITOR=\"${EDITOR:-nvim}\" sudoedit " + configPath
-        ]
-        configProc.running = true
+    function openConfiguration() {}
+    function reloadConfiguration() {}
+
+    function applyRuntimeConfigFile() {
+        var text = String(runtimeConfigFile.text || "").trim()
+        if (!text) return
+        try {
+            var cfg = JSON.parse(text)
+            var keep = cfg.keepAlive
+            if (keep === "5m" || keep === "30m" || keep === -1) selectedKeepAlive = keep
+            if (cfg.numCtx === null || (typeof cfg.numCtx === "number" && cfg.numCtx > 0))
+                selectedNumCtx = cfg.numCtx
+        } catch (e) {}
     }
 
-    function reloadConfiguration() {
-        reloadProc.command = [
-            "omarchy-launch-floating-terminal-with-presentation",
-            "sudo systemctl daemon-reload && sudo systemctl restart ollama && qs -c bar ipc call ollama refresh"
-        ]
-        reloadProc.running = true
+    function saveRuntimeConfig() {
+        var cfg = { keepAlive: selectedKeepAlive, numCtx: selectedNumCtx }
+        runtimeConfigFile.setText(JSON.stringify(cfg))
+    }
+
+    function setKeepAlive(value) {
+        if (value !== "5m" && value !== "30m" && value !== -1) return
+        selectedKeepAlive = value
+        configDirty = true
+        saveRuntimeConfig()
+    }
+
+    function setNumCtx(value) {
+        if (value !== null && !(typeof value === "number" && value > 0)) return
+        selectedNumCtx = value
+        configDirty = true
+        saveRuntimeConfig()
+    }
+
+    function applyRuntimeConfiguration() {
+        if (controlsLocked) return
+        startUnloadOperation("apply", "")
+    }
+
+    function startUnloadOperation(mode, name) {
+        refreshEpoch += 1
+        operationId += 1
+        operationInProgress = true
+        busy = true
+        operationMode = mode
+        operationState = "checking"
+        pendingAction = mode
+        pendingModel = String(name || "")
+        stopQueue = []
+        verificationAttempts = 0
+        failureMessage = ""
+        operationError = ""
+        lastError = ""
+        if (mode === "apply") {
+            saveRuntimeConfig()
+            configDirty = false
+        }
+        requestOperationModels("initial", operationId)
     }
 
     onEnabledChanged: if (enabled) refreshAll()
@@ -462,12 +543,12 @@ Item {
     }
 
     Process {
-        id: stopProc
+        id: unloadProc
         property int requestId: 0
         property string modelName: ""
         property bool timedOut: false
         onExited: function(code) {
-            ollama.handleStopExit(requestId, modelName, code, timedOut)
+            ollama.handleUnloadExit(requestId, modelName, code, timedOut)
         }
     }
 
@@ -510,13 +591,13 @@ Item {
     }
 
     Timer {
-        id: stopTimeoutTimer
-        interval: 30000
+        id: unloadTimeoutTimer
+        interval: 10000
         repeat: false
         onTriggered: {
-            if (!stopProc.running) return
-            stopProc.timedOut = true
-            stopProc.running = false
+            if (!unloadProc.running) return
+            unloadProc.timedOut = true
+            unloadProc.running = false
         }
     }
 
@@ -547,8 +628,12 @@ Item {
         }
     }
 
-    Process { id: configProc }
-    Process { id: reloadProc }
+    FileView {
+        id: runtimeConfigFile
+        path: runtimeConfigPath
+        onLoaded: ollama.applyRuntimeConfigFile()
+        onLoadFailed: ollama.applyRuntimeConfigFile()
+    }
 
     function pullModel(name) {
         if (controlsLocked || !name) return
