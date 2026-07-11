@@ -32,6 +32,7 @@ Item {
     property bool pullBusy: false
     property string pullModelName: ""
     property double pullProgress: 0
+    property int pullPercent: 0
     property string pullStatus: ""
     property string pullError: ""
     property string selectedKeepAlive: "5m"
@@ -668,6 +669,7 @@ Item {
         pullBusy = true
         pullModelName = cleanName
         pullProgress = 0
+        pullPercent = 0
         pullStatus = "Connecting..."
         pullError = ""
         pullProc.command = [
@@ -692,6 +694,7 @@ Item {
             var data = JSON.parse(text)
             if (data.total > 0 && data.completed !== undefined) {
                 pullProgress = Math.min(1, data.completed / data.total)
+                pullPercent = Math.round(pullProgress * 100)
             }
             if (data.status) pullStatus = data.status
         } catch (e) {}

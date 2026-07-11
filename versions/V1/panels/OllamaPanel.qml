@@ -554,24 +554,41 @@ PanelWindow {
                             elide: Text.ElideRight
                         }
 
-                        Rectangle {
+                        Row {
                             width: parent.width
-                            height: 6
-                            radius: 3
-                            color: root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
+                            height: 16
+                            spacing: 6
 
                             Rectangle {
-                                width: Math.min(parent.width - 2,
-                                    Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
-                                height: parent.height - 2
-                                anchors.left: parent.left
-                                anchors.leftMargin: 1
+                                width: parent.width - pullPercentText.implicitWidth - parent.spacing
+                                height: 6
                                 anchors.verticalCenter: parent.verticalCenter
-                                radius: 2
+                                radius: 3
+                                color: root.fillIdle
+                                border.color: root.sep
+                                border.width: 1
+
+                                Rectangle {
+                                    width: Math.min(parent.width - 2,
+                                        Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
+                                    height: parent.height - 2
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 1
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    radius: 2
+                                    color: root.seal
+                                    Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                }
+                            }
+
+                            UiText {
+                                id: pullPercentText
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.ollama.pullPercent + "%"
                                 color: root.seal
-                                Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignRight
                             }
                         }
                     }
