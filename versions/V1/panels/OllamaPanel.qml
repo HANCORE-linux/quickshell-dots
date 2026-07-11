@@ -18,6 +18,7 @@ PanelWindow {
     readonly property int gap: 8
     property string confirmDeleteModel: ""
     property string customCtxDisplay: ""
+    property bool configOpen: false
 
     function formatBytes(bytes) {
         var value = Number(bytes) || 0
@@ -227,6 +228,39 @@ PanelWindow {
 
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
+                // ── CONFIGURATION (collapsible) ──
+                Rectangle {
+                    width: parent.width
+                    height: 25
+                    radius: root.tileRadius
+                    color: configToggleMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: configToggleMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    UiText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        text: ollamaPanel.configOpen ? "Configuration  ▾" : "Configuration  ▸"
+                        color: configToggleMa.containsMouse ? root.seal : root.ink
+                        font.family: root.mono
+                        font.pixelSize: 11
+                    }
+                    MouseArea {
+                        id: configToggleMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    visible: ollamaPanel.configOpen
+
                 Row {
                     width: parent.width
                     height: 24
@@ -382,6 +416,7 @@ PanelWindow {
                     font.pixelSize: 10
                     horizontalAlignment: Text.AlignHCenter
                 }
+                }  // configOpen Column
 
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
