@@ -212,9 +212,17 @@ PanelWindow {
 
                 DetailRow {
                     k: "Context"
-                    v: root.ollama.loadedModels.length === 1
-                        ? String(root.ollama.effectiveContextLength)
-                        : (root.ollama.selectedNumCtx === null ? "auto" : String(root.ollama.selectedNumCtx))
+                    v: {
+                        if (root.ollama.loadedModels.length === 1 && root.ollama.effectiveContextLength > 0)
+                            return String(root.ollama.effectiveContextLength)
+                        return root.ollama.selectedNumCtx === null ? "auto"
+                            : String(root.ollama.selectedNumCtx)
+                    }
+                }
+
+                DetailRow {
+                    k: "Keep Alive"
+                    v: root.ollama.keepAliveStatus
                 }
 
                 Row {

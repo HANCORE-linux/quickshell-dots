@@ -108,6 +108,7 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.displayError ===
 assert_contains versions/V1/panels/OllamaPanel.qml 'visible: root.ollama.displayError !== ""'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.displayError'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Keep Alive"'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.keepAliveStatus'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Context"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setKeepAlive'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setNumCtx'

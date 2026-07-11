@@ -44,6 +44,21 @@ Item {
         Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
     readonly property int effectiveContextLength: loadedModels.length === 1
         ? loadedModels[0].contextLength : 0
+    readonly property string keepAliveStatus: {
+        if (loadedModels.length !== 1) {
+            if (selectedKeepAlive === -1) return "\u221E"
+            return selectedKeepAlive
+        }
+        var exp = String(loadedModels[0].expiresAt || "")
+        if (exp.length === 0) return "\u221E (indefinite)"
+        var ms = Date.parse(exp)
+        if (!ms || ms <= Date.now()) return "expired"
+        var remaining = Math.round((ms - Date.now()) / 1000)
+        if (remaining < 60) return remaining + "s"
+        if (remaining < 3600) return Math.round(remaining / 60) + "m"
+        if (remaining < 86400) return Math.round(remaining / 3600) + "h"
+        return Math.round(remaining / 86400) + "d"
+    }
     readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running
     readonly property bool controlsLocked: operationInProgress || busy || pullBusy
     readonly property string displayError: operationError !== "" ? operationError : lastError
