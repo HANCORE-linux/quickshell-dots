@@ -784,6 +784,7 @@ PanelWindow {
                             onExited: configBottomTip.hide()
                             onClicked: {
                                 configBottomTip.hide()
+                                root.ollamaVisible = false
                                 root.ollama.openRuntimeConfig()
                             }
                         }
