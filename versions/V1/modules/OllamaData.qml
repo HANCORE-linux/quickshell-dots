@@ -635,6 +635,16 @@ Item {
         onLoadFailed: ollama.applyRuntimeConfigFile()
     }
 
+    function openRuntimeConfig() {
+        runtimeConfigEditProc.command = [
+            "omarchy-launch-floating-terminal-with-presentation",
+            "\"${EDITOR:-nvim}\" " + runtimeConfigPath
+        ]
+        runtimeConfigEditProc.running = true
+    }
+
+    Process { id: runtimeConfigEditProc }
+
     function pullModel(name) {
         if (controlsLocked || !name) return
         var cleanName = String(name).replace(/^ollama\s+run\s+/i, "").trim()

@@ -745,7 +745,44 @@ PanelWindow {
                     spacing: 8
 
                     Rectangle {
-                        width: parent.width - refreshTile.width - parent.spacing
+                        id: configTile
+                        width: 28
+                        height: 28
+                        radius: root.tileRadius
+                        color: configBottomMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: configBottomMa.containsMouse ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        IconText {
+                            anchors.centerIn: parent
+                            text: "\uE8B8"
+                            color: configBottomMa.containsMouse ? root.seal : root.ink
+                            font.pixelSize: 14
+                        }
+                        TooltipMixin {
+                            id: configBottomTip
+                            root: ollamaPanel.root
+                            owner: configTile
+                            text: "Open Ollama config file"
+                        }
+                        MouseArea {
+                            id: configBottomMa
+                            anchors.fill: parent
+                            enabled: !root.ollama.controlsLocked
+                            hoverEnabled: true
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onEntered: configBottomTip.show()
+                            onExited: configBottomTip.hide()
+                            onClicked: {
+                                configBottomTip.hide()
+                                root.ollama.openRuntimeConfig()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width - refreshTile.width - configTile.width - 2 * parent.spacing
                         height: parent.height
                         radius: root.tileRadius
                         color: applyMa.enabled
