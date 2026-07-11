@@ -41,6 +41,7 @@ ShellRoot {
         check(data.selectedKeepAlive === "5m", "default keep alive")
         check(data.selectedNumCtx === null, "default num ctx")
         check(data.configDirty === false, "config dirty default")
+        check(data.keepAliveStatus === "5m", "default keep alive status")
         check(typeof data.buildLoadPayload === "function", "buildLoadPayload method")
         check(typeof data.applyRuntimeConfiguration === "function", "applyRuntimeConfiguration method")
 
