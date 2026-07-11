@@ -225,6 +225,8 @@ PanelWindow {
                     v: root.ollama.keepAliveStatus
                 }
 
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
                 Row {
                     width: parent.width
                     height: 24
