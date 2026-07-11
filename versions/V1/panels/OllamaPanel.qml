@@ -226,200 +226,6 @@ PanelWindow {
                     v: root.ollama.keepAliveStatus
                 }
 
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
-                // ── CONFIGURATION (collapsible) ──
-                Rectangle {
-                    width: parent.width
-                    height: 25
-                    radius: root.tileRadius
-                    color: configToggleMa.containsMouse ? root.fillHover : root.fillIdle
-                    border.color: configToggleMa.containsMouse ? root.seal : root.sep
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 120 } }
-
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        text: ollamaPanel.configOpen ? "Configuration  ▾" : "Configuration  ▸"
-                        color: configToggleMa.containsMouse ? root.seal : root.ink
-                        font.family: root.mono
-                        font.pixelSize: 11
-                    }
-                    MouseArea {
-                        id: configToggleMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
-                    }
-                }
-
-                Column {
-                    width: parent.width
-                    spacing: 8
-                    visible: ollamaPanel.configOpen
-
-                Row {
-                    width: parent.width
-                    height: 24
-                    spacing: 6
-
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 70
-                        text: "Keep Alive"
-                        color: root.sumiHi
-                        font.family: root.mono
-                        font.pixelSize: 11
-                    }
-
-                    Repeater {
-                        model: [
-                            { label: "5m", value: "5m" },
-                            { label: "30m", value: "30m" },
-                            { label: "∞", value: -1 }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            width: 36
-                            height: 22
-                            radius: root.tileRadius
-                            color: root.ollama.selectedKeepAlive === modelData.value ? root.seal : root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
-
-                            UiText {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: root.ollama.selectedKeepAlive === modelData.value ? root.paper : root.ink
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                onClicked: root.ollama.setKeepAlive(modelData.value)
-                            }
-                        }
-                    }
-                }
-
-                Row {
-                    width: parent.width
-                    height: 28
-                    spacing: 6
-
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 70
-                        text: "Context"
-                        color: root.sumiHi
-                        font.family: root.mono
-                        font.pixelSize: 11
-                    }
-
-                    Repeater {
-                        model: [
-                            { label: "auto", value: null },
-                            { label: "8k", value: 8192 },
-                            { label: "16k", value: 16384 },
-                            { label: "32k", value: 32768 },
-                            { label: "Custom", value: "custom" }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            property bool isCustom: modelData.value === "custom"
-                            property bool selected: isCustom
-                                ? root.ollama.selectedNumCtx !== null && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
-                                : root.ollama.selectedNumCtx === modelData.value
-                            width: isCustom ? Math.max(52, customInput.contentWidth + 20) : 40
-                            height: 22
-                            radius: root.tileRadius
-                            color: selected ? root.seal : root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
-
-                            UiText {
-                                visible: !isCustom
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: selected ? root.paper : root.ink
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            TextInput {
-                                id: customInput
-                                visible: isCustom
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
-                                verticalAlignment: Text.AlignVCenter
-                                font.family: root.mono
-                                font.pixelSize: 10
-                                enabled: !root.ollama.controlsLocked && isCustom
-                                color: enabled ? root.ink : root.sumi
-                                clip: true
-                                selectByMouse: true
-                                text: isCustom && selected
-                                    ? (ollamaPanel.customCtxDisplay !== "" ? ollamaPanel.customCtxDisplay : String(root.ollama.selectedNumCtx))
-                                    : ""
-                                onEditingFinished: {
-                                    var raw = String(text).trim()
-                                    if (!raw) return
-                                    var upper = raw.toUpperCase()
-                                    var multiplier = 1
-                                    if (upper.endsWith("K")) {
-                                        multiplier = 1024
-                                        upper = upper.slice(0, -1)
-                                    }
-                                    var n = parseInt(upper)
-                                    if (!isNaN(n) && n > 0) {
-                                        ollamaPanel.customCtxDisplay = raw
-                                        root.ollama.setNumCtx(n * multiplier)
-                                    }
-                                }
-                            }
-
-                            UiText {
-                                visible: isCustom && (!selected || customInput.text === "")
-                                    && !customInput.activeFocus
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 6
-                                text: "Custom"
-                                color: selected ? root.paper : root.ink
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                onClicked: {
-                                    if (isCustom) customInput.forceActiveFocus()
-                                    else root.ollama.setNumCtx(modelData.value)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.configDirty
-                    text: "Configuration pending — press Apply to reload model"
-                    color: root.seal
-                    font.family: root.mono
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                }
-                }  // configOpen Column
-
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
                 UiText {
                     width: parent.width
                     visible: root.ollama.operationInProgress
@@ -781,6 +587,198 @@ PanelWindow {
                         wrapMode: Text.Wrap
                     }
                 }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                // ── CONFIGURATION (collapsible) ──
+                Rectangle {
+                    width: parent.width
+                    height: 25
+                    radius: root.tileRadius
+                    color: configToggleMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: configToggleMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    UiText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        text: ollamaPanel.configOpen ? "Configuration  ▾" : "Configuration  ▸"
+                        color: configToggleMa.containsMouse ? root.seal : root.ink
+                        font.family: root.mono
+                        font.pixelSize: 11
+                    }
+                    MouseArea {
+                        id: configToggleMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    visible: ollamaPanel.configOpen
+
+                Row {
+                    width: parent.width
+                    height: 24
+                    spacing: 6
+
+                    UiText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 70
+                        text: "Keep Alive"
+                        color: root.sumiHi
+                        font.family: root.mono
+                        font.pixelSize: 11
+                    }
+
+                    Repeater {
+                        model: [
+                            { label: "5m", value: "5m" },
+                            { label: "30m", value: "30m" },
+                            { label: "∞", value: -1 }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 36
+                            height: 22
+                            radius: root.tileRadius
+                            color: root.ollama.selectedKeepAlive === modelData.value ? root.seal : root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
+
+                            UiText {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: root.ollama.selectedKeepAlive === modelData.value ? root.paper : root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !root.ollama.controlsLocked
+                                onClicked: root.ollama.setKeepAlive(modelData.value)
+                            }
+                        }
+                    }
+                }
+
+                Row {
+                    width: parent.width
+                    height: 28
+                    spacing: 6
+
+                    UiText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 70
+                        text: "Context"
+                        color: root.sumiHi
+                        font.family: root.mono
+                        font.pixelSize: 11
+                    }
+
+                    Repeater {
+                        model: [
+                            { label: "auto", value: null },
+                            { label: "8k", value: 8192 },
+                            { label: "16k", value: 16384 },
+                            { label: "32k", value: 32768 },
+                            { label: "Custom", value: "custom" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            property bool isCustom: modelData.value === "custom"
+                            property bool selected: isCustom
+                                ? root.ollama.selectedNumCtx !== null && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
+                                : root.ollama.selectedNumCtx === modelData.value
+                            width: isCustom ? Math.max(52, customInput.contentWidth + 20) : 40
+                            height: 22
+                            radius: root.tileRadius
+                            color: selected ? root.seal : root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
+
+                            UiText {
+                                visible: !isCustom
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: selected ? root.paper : root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+
+                            TextInput {
+                                id: customInput
+                                visible: isCustom
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                verticalAlignment: Text.AlignVCenter
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                enabled: !root.ollama.controlsLocked && isCustom
+                                color: enabled ? root.ink : root.sumi
+                                clip: true
+                                selectByMouse: true
+                                text: isCustom && selected
+                                    ? (ollamaPanel.customCtxDisplay !== "" ? ollamaPanel.customCtxDisplay : String(root.ollama.selectedNumCtx))
+                                    : ""
+                                onEditingFinished: {
+                                    var raw = String(text).trim()
+                                    if (!raw) return
+                                    var upper = raw.toUpperCase()
+                                    var multiplier = 1
+                                    if (upper.endsWith("K")) {
+                                        multiplier = 1024
+                                        upper = upper.slice(0, -1)
+                                    }
+                                    var n = parseInt(upper)
+                                    if (!isNaN(n) && n > 0) {
+                                        ollamaPanel.customCtxDisplay = raw
+                                        root.ollama.setNumCtx(n * multiplier)
+                                    }
+                                }
+                            }
+
+                            UiText {
+                                visible: isCustom && (!selected || customInput.text === "")
+                                    && !customInput.activeFocus
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 6
+                                text: "Custom"
+                                color: selected ? root.paper : root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !root.ollama.controlsLocked
+                                onClicked: {
+                                    if (isCustom) customInput.forceActiveFocus()
+                                    else root.ollama.setNumCtx(modelData.value)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.configDirty
+                    text: "Configuration pending — press Apply to reload model"
+                    color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                }  // configOpen Column
 
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
