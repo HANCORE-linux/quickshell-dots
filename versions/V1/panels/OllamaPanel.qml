@@ -320,8 +320,14 @@ PanelWindow {
                                 selectByMouse: true
                                 text: isCustom && selected ? String(root.ollama.selectedNumCtx) : ""
                                 onEditingFinished: {
-                                    var n = parseInt(text)
-                                    if (!isNaN(n) && n > 0) root.ollama.setNumCtx(n)
+                                    var raw = String(text).trim().toUpperCase()
+                                    var multiplier = 1
+                                    if (raw.endsWith("K")) {
+                                        multiplier = 1000
+                                        raw = raw.slice(0, -1)
+                                    }
+                                    var n = parseInt(raw)
+                                    if (!isNaN(n) && n > 0) root.ollama.setNumCtx(n * multiplier)
                                 }
                             }
 
