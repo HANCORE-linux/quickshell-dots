@@ -420,7 +420,7 @@ Item {
 
     function saveRuntimeConfig() {
         var cfg = { keepAlive: selectedKeepAlive, numCtx: selectedNumCtx }
-        runtimeConfigFile.setText(JSON.stringify(cfg))
+        runtimeConfigFile.setText(JSON.stringify(cfg, null, 2))
     }
 
     function setKeepAlive(value) {
