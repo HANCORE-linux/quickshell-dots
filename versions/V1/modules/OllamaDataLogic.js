@@ -40,14 +40,19 @@ function parseTags(body) {
 
 function parseLoaded(body) {
     var source = JSON.parse(body)
+    if (!source || !Array.isArray(source.models))
+        throw new Error("Invalid loaded-model response")
+
     var result = []
-    var entries = source.models || []
-    for (var i = 0; i < entries.length; i++) {
+    for (var i = 0; i < source.models.length; i++) {
+        var entry = source.models[i] || {}
+        var name = String(entry.name || entry.model || "")
+        if (!name) throw new Error("Loaded model is missing its name")
         result.push({
-            name: String(entries[i].name || entries[i].model || ""),
-            size: Number(entries[i].size || 0),
-            sizeVram: Number(entries[i].size_vram || 0),
-            expiresAt: String(entries[i].expires_at || "")
+            name: name,
+            size: Number(entry.size || 0),
+            sizeVram: Number(entry.size_vram || 0),
+            expiresAt: String(entry.expires_at || "")
         })
     }
     return result
@@ -126,6 +131,56 @@ function versionState(raw, currentVersion) {
             lastError: "Invalid Ollama version response"
         }
     }
+}
+
+function conflictingModelNames(entries, selectedName) {
+    var selected = String(selectedName || "")
+    var result = []
+    for (var i = 0; i < entries.length; i++) {
+        var name = String(entries[i].name || "")
+        if (name && name !== selected && result.indexOf(name) < 0) {
+            result.push(name)
+        }
+    }
+    return result
+}
+
+function exclusiveLoadState(entries, selectedName) {
+    var selected = String(selectedName || "")
+    if (entries.length === 1 && String(entries[0].name || "") === selected)
+        return { valid: true, error: "" }
+    if (entries.length === 0)
+        return { valid: false, error: "Selected model is not loaded" }
+    if (entries.length > 1)
+        return { valid: false, error: "Multiple Ollama models remain loaded" }
+    return {
+        valid: false,
+        error: "Unexpected Ollama model is loaded: " + String(entries[0].name || "unknown")
+    }
+}
+
+function generateResponseState(body) {
+    var parsed
+    try {
+        parsed = JSON.parse(String(body || ""))
+    } catch (error) {
+        return { valid: false, error: "Invalid Ollama generate response" }
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return { valid: false, error: "Invalid Ollama generate response" }
+    if (parsed.done !== true)
+        return { valid: false, error: "Ollama generate did not complete" }
+    return { valid: true, error: "" }
+}
+
+function operationMessage(state, modelName) {
+    var name = String(modelName || "")
+    if (state === "checking") return "Checking loaded models..."
+    if (state === "unloading") return "Unloading previous model..."
+    if (state === "verifyingUnload") return "Verifying model unload..."
+    if (state === "loading") return "Loading " + name + "..."
+    if (state === "verifyingLoad") return "Verifying " + name + "..."
+    return ""
 }
 
 function beginActionState(actionName, name) {

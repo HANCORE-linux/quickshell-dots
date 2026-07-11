@@ -160,7 +160,7 @@ PanelWindow {
                         MouseArea {
                             id: refreshMa
                             anchors.fill: parent
-                            enabled: !root.ollama.refreshRunning
+                            enabled: !root.ollama.refreshRunning && !root.ollama.controlsLocked
                             hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.ollama.refreshAll()
@@ -213,9 +213,34 @@ PanelWindow {
 
                 UiText {
                     width: parent.width
-                    visible: root.ollama.busy
+                    visible: root.ollama.operationInProgress
+                    text: root.ollama.operationMessage
+                    color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.busy && !root.ollama.operationInProgress
                     text: "Working on " + root.ollama.pendingModel + "..."
                     color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                UiText {
+                    width: parent.width
+                    visible: root.ollama.connected
+                        && !root.ollama.operationInProgress
+                        && root.ollama.loadedModels.length === 0
+                        && root.ollama.models.length > 0
+                        && root.ollama.displayError === ""
+                    text: "No model loaded"
+                    color: root.sumiHi
                     font.family: root.mono
                     font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
@@ -233,8 +258,8 @@ PanelWindow {
 
                 UiText {
                     width: parent.width
-                    visible: root.ollama.lastError !== ""
-                    text: root.ollama.lastError
+                    visible: root.ollama.displayError !== ""
+                    text: root.ollama.displayError
                     color: root.sealRaw
                     font.family: root.mono
                     font.pixelSize: 11
@@ -246,7 +271,7 @@ PanelWindow {
                     width: parent.width
                     visible: root.ollama.connected
                         && root.ollama.models.length === 0
-                        && root.ollama.lastError === ""
+                        && root.ollama.displayError === ""
                     text: "No models installed"
                     color: root.sumiHi
                     font.family: root.mono
@@ -300,7 +325,7 @@ PanelWindow {
 
                         Rectangle {
                             id: modelDelete
-                            anchors.right: modelAction.left
+                            anchors.right: modelReload.visible ? modelReload.left : modelAction.left
                             anchors.rightMargin: 4
                             anchors.verticalCenter: parent.verticalCenter
                             width: 28
@@ -326,7 +351,7 @@ PanelWindow {
                             MouseArea {
                                 id: delMa
                                 anchors.fill: parent
-                                enabled: !root.ollama.busy
+                                enabled: !root.ollama.controlsLocked
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
@@ -337,6 +362,46 @@ PanelWindow {
                                         ollamaPanel.confirmDeleteModel = modelData.name
                                     }
                                 }
+                            }
+                        }
+
+                        Rectangle {
+                            id: modelReload
+                            visible: modelData.loaded
+                            anchors.right: modelAction.left
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 28
+                            height: 28
+                            radius: root.tileRadius
+                            color: !modelReloadMa.enabled ? root.fillIdle
+                                : modelReloadMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
+                            border.color: modelReloadMa.containsMouse ? root.seal : root.sep
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            IconText {
+                                anchors.centerIn: parent
+                                text: "\uE5D5"
+                                color: !modelReloadMa.enabled ? root.sumi
+                                    : modelReloadMa.containsMouse ? root.seal : root.ink
+                                font.pixelSize: 13
+                            }
+                            TooltipMixin {
+                                id: modelReloadTip
+                                root: ollamaPanel.root
+                                owner: modelReload
+                                text: "Renew loaded model"
+                            }
+                            MouseArea {
+                                id: modelReloadMa
+                                anchors.fill: parent
+                                enabled: !root.ollama.controlsLocked
+                                hoverEnabled: enabled
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onEntered: modelReloadTip.show()
+                                onExited: modelReloadTip.hide()
+                                onClicked: root.ollama.loadModel(modelData.name)
                             }
                         }
 
@@ -357,7 +422,9 @@ PanelWindow {
 
                             UiText {
                                 anchors.centerIn: parent
-                                text: modelData.loaded ? "Eject" : "Load"
+                                text: root.ollama.operationInProgress && root.ollama.pendingModel === modelData.name
+                                    ? (root.ollama.operationState === "loading" ? "Loading" : "Wait")
+                                    : modelData.loaded ? "Eject" : "Load"
                                 color: !modelActionMa.enabled ? root.sumi
                                     : modelData.loaded ? root.seal : root.paper
                                 font.family: root.mono
@@ -367,12 +434,12 @@ PanelWindow {
                             MouseArea {
                                 id: modelActionMa
                                 anchors.fill: parent
-                                enabled: !root.ollama.busy
+                                enabled: !root.ollama.controlsLocked
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
                                     if (modelData.loaded) root.ollama.ejectModel(modelData.name)
-                                    else root.ollama.loadModelSolo(modelData.name)
+                                    else root.ollama.loadModel(modelData.name)
                                 }
                             }
                         }
@@ -446,8 +513,7 @@ PanelWindow {
                             MouseArea {
                                 id: pullMa
                                 anchors.fill: parent
-                                enabled: !root.ollama.pullBusy
-                                    && !root.ollama.busy
+                                enabled: !root.ollama.controlsLocked
                                     && String(pullInput.text).trim() !== ""
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor

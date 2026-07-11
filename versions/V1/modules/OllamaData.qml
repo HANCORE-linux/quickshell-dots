@@ -6,7 +6,7 @@ import "OllamaDataLogic.js" as OllamaDataLogic
 Item {
     id: ollama
 
-    property string baseUrl: "http://localhost:11434"
+    property string baseUrl: "http://127.0.0.1:11434"
     enabled: false
     property bool connected: false
     property string version: ""
@@ -19,8 +19,15 @@ Item {
     property string pendingAction: ""
     property string pendingModel: ""
     property string lastError: ""
-    property string pendingLoadModel: ""
-    property var modelsToEject: []
+    property string operationError: ""
+    property bool operationInProgress: false
+    property string operationState: "idle"
+    property int operationId: 0
+    property int refreshEpoch: 0
+    property var stopQueue: []
+    property int verificationAttempts: 0
+    property string verificationKind: ""
+    property string failureMessage: ""
     property bool pullBusy: false
     property string pullModelName: ""
     property double pullProgress: 0
@@ -31,13 +38,17 @@ Item {
     readonly property var models: reconcileModels(installedModels, loadedModels)
     readonly property string configPath: "/etc/systemd/system/ollama.service.d/override.conf"
     readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running
+    readonly property bool controlsLocked: operationInProgress || busy || pullBusy
+    readonly property string displayError: operationError !== "" ? operationError : lastError
+    readonly property string operationMessage:
+        OllamaDataLogic.operationMessage(operationState, pendingModel)
 
     function decodeResponse(raw) {
         return OllamaDataLogic.decodeResponse(raw)
     }
 
-    function buildRequest(method, path, payload) {
-        return OllamaDataLogic.buildRequest(baseUrl, method, path, payload)
+    function buildRequest(method, path, payload, maxTime) {
+        return OllamaDataLogic.buildRequest(baseUrl, method, path, payload, maxTime)
     }
 
     function parseTags(body) {
@@ -64,14 +75,16 @@ Item {
         return OllamaDataLogic.successful(response)
     }
 
-    function applyVersion(raw) {
+    function applyVersion(raw, requestEpoch) {
+        if (requestEpoch !== refreshEpoch) return
         var state = OllamaDataLogic.versionState(raw, version)
         connected = state.connected
         version = state.version
         lastError = state.lastError
     }
 
-    function applyTags(raw) {
+    function applyTags(raw, requestEpoch) {
+        if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
             lastError = errorMessage(response, "Unable to list Ollama models")
@@ -85,7 +98,8 @@ Item {
         }
     }
 
-    function applyLoaded(raw) {
+    function applyLoaded(raw, requestEpoch) {
+        if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
             lastError = errorMessage(response, "Unable to read loaded Ollama models")
@@ -93,6 +107,7 @@ Item {
         }
         try {
             loadedModels = parseLoaded(response.body)
+            connected = true
             lastError = ""
         } catch (error) {
             lastError = "Invalid Ollama loaded-model response"
@@ -111,19 +126,6 @@ Item {
         clearActionState()
         refreshLoaded()
         if (ok) refreshTags()
-        if (pendingLoadModel !== "" && ok) {
-            if (modelsToEject.length > 0) {
-                ejectModel(modelsToEject.pop())
-            } else {
-                var name = pendingLoadModel
-                pendingLoadModel = ""
-                modelsToEject = []
-                loadModel(name)
-            }
-        } else if (!ok) {
-            pendingLoadModel = ""
-            modelsToEject = []
-        }
     }
 
     function refreshAll() {
@@ -133,19 +135,22 @@ Item {
     }
 
     function refreshVersion() {
-        if (versionProc.running) return
+        if (operationInProgress || versionProc.running) return
+        versionProc.refreshEpoch = refreshEpoch
         versionProc.command = buildRequest("GET", "/api/version")
         versionProc.running = true
     }
 
     function refreshTags() {
-        if (tagsProc.running) return
+        if (operationInProgress || tagsProc.running) return
+        tagsProc.refreshEpoch = refreshEpoch
         tagsProc.command = buildRequest("GET", "/api/tags")
         tagsProc.running = true
     }
 
     function refreshLoaded() {
-        if (loadedProc.running) return
+        if (operationInProgress || loadedProc.running) return
+        loadedProc.refreshEpoch = refreshEpoch
         loadedProc.command = buildRequest("GET", "/api/ps")
         loadedProc.running = true
     }
@@ -155,9 +160,182 @@ Item {
         gpuProc.running = true
     }
 
+    function loadModel(name) {
+        var selected = String(name || "")
+        if (!selected || controlsLocked) return
+        refreshEpoch += 1
+        operationId += 1
+        operationInProgress = true
+        busy = true
+        operationState = "checking"
+        pendingAction = "load"
+        pendingModel = selected
+        stopQueue = []
+        verificationAttempts = 0
+        failureMessage = ""
+        operationError = ""
+        lastError = ""
+        requestOperationModels("initial", operationId)
+    }
+
+    function operationModels(raw) {
+        var response = decodeResponse(raw)
+        if (!successful(response))
+            throw new Error(errorMessage(response, "Unable to read loaded Ollama models"))
+        return parseLoaded(response.body)
+    }
+
+    function finishExclusiveLoad(ok, models) {
+        if (models !== undefined && models !== null) loadedModels = models
+        operationInProgress = false
+        busy = false
+        pendingAction = ""
+        pendingModel = ""
+        stopQueue = []
+        verificationAttempts = 0
+        verificationKind = ""
+        operationState = ok ? "idle" : "error"
+        if (ok) operationError = ""
+        if (ok) lastError = ""
+    }
+
+    function failExclusiveLoad(message) {
+        failureMessage = String(message || "Unable to change Ollama model")
+        operationError = failureMessage
+        operationState = "error"
+        Qt.callLater(function() {
+            if (operationInProgress) requestOperationModels("failureRefresh", operationId)
+        })
+    }
+
+    function requestOperationModels(purpose, requestId) {
+        if (!operationInProgress || requestId !== operationId || operationPsProc.running) return
+        operationPsProc.purpose = purpose
+        operationPsProc.requestId = requestId
+        operationPsProc.command = buildRequest("GET", "/api/ps")
+        operationPsProc.running = true
+    }
+
+    function handleOperationModels(purpose, requestId, exitCode, raw) {
+        if (!operationInProgress || requestId !== operationId) return
+        var models
+        try {
+            if (exitCode !== 0) {
+                connected = false
+                throw new Error("Unable to reach Ollama")
+            }
+            models = operationModels(raw)
+            connected = true
+        } catch (error) {
+            if (purpose === "failureRefresh") {
+                finishExclusiveLoad(false, null)
+            } else {
+                failExclusiveLoad(String(error.message || error))
+            }
+            return
+        }
+
+        loadedModels = models
+        if (purpose === "failureRefresh") {
+            finishExclusiveLoad(false, models)
+            return
+        }
+        if (purpose === "initial") {
+            stopQueue = OllamaDataLogic.conflictingModelNames(models, pendingModel)
+            if (stopQueue.length > 0) stopNextModel()
+            else beginSelectedModelLoad()
+            return
+        }
+        if (purpose === "unloadVerify") {
+            var conflicts = OllamaDataLogic.conflictingModelNames(models, pendingModel)
+            if (conflicts.length === 0) beginSelectedModelLoad()
+            else if (verificationAttempts < 10) verificationRetryTimer.restart()
+            else failExclusiveLoad("Unable to unload previous Ollama model")
+            return
+        }
+        if (purpose === "loadVerify") {
+            var state = OllamaDataLogic.exclusiveLoadState(models, pendingModel)
+            if (state.valid) finishExclusiveLoad(true, models)
+            else if (verificationAttempts < 10) verificationRetryTimer.restart()
+            else failExclusiveLoad(state.error)
+        }
+    }
+
+    function beginVerification(kind) {
+        verificationKind = kind
+        verificationAttempts = 0
+        requestVerification()
+    }
+
+    function requestVerification() {
+        if (!operationInProgress) return
+        verificationAttempts += 1
+        operationState = verificationKind === "unload" ? "verifyingUnload" : "verifyingLoad"
+        requestOperationModels(verificationKind === "unload" ? "unloadVerify" : "loadVerify",
+                               operationId)
+    }
+
+    function stopNextModel() {
+        if (!operationInProgress) return
+        if (stopQueue.length === 0) {
+            beginVerification("unload")
+            return
+        }
+        var queue = stopQueue.slice()
+        var modelName = queue.shift()
+        stopQueue = queue
+        operationState = "unloading"
+        stopProc.requestId = operationId
+        stopProc.modelName = modelName
+        stopProc.timedOut = false
+        stopProc.command = ["env", "OLLAMA_HOST=" + baseUrl, "ollama", "stop", modelName]
+        stopProc.running = true
+        stopTimeoutTimer.restart()
+    }
+
+    function handleStopExit(requestId, modelName, exitCode, timedOut) {
+        stopTimeoutTimer.stop()
+        if (!operationInProgress || requestId !== operationId) return
+        if (timedOut) {
+            failExclusiveLoad("Timed out unloading Ollama model: " + modelName)
+        } else if (exitCode !== 0) {
+            failExclusiveLoad("Unable to unload Ollama model: " + modelName)
+        } else {
+            stopNextModel()
+        }
+    }
+
+    function beginSelectedModelLoad() {
+        if (!operationInProgress) return
+        operationState = "loading"
+        loadProc.requestId = operationId
+        loadProc.command = buildRequest("POST", "/api/generate", {
+            model: pendingModel,
+            keep_alive: -1,
+            stream: false
+        }, "120")
+        loadProc.running = true
+    }
+
+    function handleLoadExit(requestId, exitCode, raw) {
+        if (!operationInProgress || requestId !== operationId) return
+        var response = decodeResponse(raw)
+        if (exitCode !== 0 || !successful(response)) {
+            failExclusiveLoad(errorMessage(response, "Unable to load selected Ollama model"))
+            return
+        }
+        var generateState = OllamaDataLogic.generateResponseState(response.body)
+        if (!generateState.valid) {
+            failExclusiveLoad(generateState.error)
+            return
+        }
+        beginVerification("load")
+    }
+
     function runModelAction(name, keepAlive, actionName) {
-        if (busy || !name) return
+        if (controlsLocked || !name) return
         beginActionState(actionName, name)
+        operationError = ""
         lastError = ""
         if (actionName === "delete") {
             actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
@@ -171,21 +349,8 @@ Item {
         actionProc.running = true
     }
 
-    function loadModel(name) { runModelAction(name, -1, "load") }
     function ejectModel(name) { runModelAction(name, 0, "eject") }
     function deleteModel(name) { runModelAction(name, "delete", "delete") }
-
-    function loadModelSolo(name) {
-        if (busy || !name) return
-        var loaded = loadedModels.slice()
-        if (loaded.length === 0) {
-            loadModel(name)
-            return
-        }
-        pendingLoadModel = name
-        modelsToEject = loaded.map(function(m) { return m.name })
-        ejectModel(modelsToEject.pop())
-    }
 
     function beginActionState(actionName, name) {
         var state = OllamaDataLogic.beginActionState(actionName, name)
@@ -222,17 +387,26 @@ Item {
 
     Process {
         id: versionProc
-        stdout: StdioCollector { onStreamFinished: ollama.applyVersion(this.text) }
+        property int refreshEpoch: -1
+        stdout: StdioCollector {
+            onStreamFinished: ollama.applyVersion(this.text, versionProc.refreshEpoch)
+        }
     }
 
     Process {
         id: tagsProc
-        stdout: StdioCollector { onStreamFinished: ollama.applyTags(this.text) }
+        property int refreshEpoch: -1
+        stdout: StdioCollector {
+            onStreamFinished: ollama.applyTags(this.text, tagsProc.refreshEpoch)
+        }
     }
 
     Process {
         id: loadedProc
-        stdout: StdioCollector { onStreamFinished: ollama.applyLoaded(this.text) }
+        property int refreshEpoch: -1
+        stdout: StdioCollector {
+            onStreamFinished: ollama.applyLoaded(this.text, loadedProc.refreshEpoch)
+        }
     }
 
     Process {
@@ -252,6 +426,97 @@ Item {
                 ? "Unable to delete Ollama model" : "Unable to update Ollama model"
             ollama.clearActionState()
             ollama.refreshLoaded()
+        }
+    }
+
+    Process {
+        id: operationPsProc
+        property int requestId: 0
+        property string purpose: ""
+        property bool exitSeen: false
+        property bool streamDone: false
+        property int resultCode: -1
+        property string responseText: ""
+        function completeIfReady() {
+            if (!exitSeen || !streamDone) return
+            ollama.handleOperationModels(purpose, requestId, resultCode, responseText)
+        }
+        onStarted: {
+            exitSeen = false
+            streamDone = false
+            resultCode = -1
+            responseText = ""
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                operationPsProc.responseText = this.text
+                operationPsProc.streamDone = true
+                operationPsProc.completeIfReady()
+            }
+        }
+        onExited: function(code) {
+            resultCode = code
+            exitSeen = true
+            completeIfReady()
+        }
+    }
+
+    Process {
+        id: stopProc
+        property int requestId: 0
+        property string modelName: ""
+        property bool timedOut: false
+        onExited: function(code) {
+            ollama.handleStopExit(requestId, modelName, code, timedOut)
+        }
+    }
+
+    Process {
+        id: loadProc
+        property int requestId: 0
+        property bool exitSeen: false
+        property bool streamDone: false
+        property int resultCode: -1
+        property string responseText: ""
+        function completeIfReady() {
+            if (!exitSeen || !streamDone) return
+            ollama.handleLoadExit(requestId, resultCode, responseText)
+        }
+        onStarted: {
+            exitSeen = false
+            streamDone = false
+            resultCode = -1
+            responseText = ""
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                loadProc.responseText = this.text
+                loadProc.streamDone = true
+                loadProc.completeIfReady()
+            }
+        }
+        onExited: function(code) {
+            resultCode = code
+            exitSeen = true
+            completeIfReady()
+        }
+    }
+
+    Timer {
+        id: verificationRetryTimer
+        interval: 500
+        repeat: false
+        onTriggered: ollama.requestVerification()
+    }
+
+    Timer {
+        id: stopTimeoutTimer
+        interval: 30000
+        repeat: false
+        onTriggered: {
+            if (!stopProc.running) return
+            stopProc.timedOut = true
+            stopProc.running = false
         }
     }
 
@@ -286,9 +551,10 @@ Item {
     Process { id: reloadProc }
 
     function pullModel(name) {
-        if (pullBusy || busy || !name) return
+        if (controlsLocked || !name) return
         var cleanName = String(name).replace(/^ollama\s+run\s+/i, "").trim()
         if (!cleanName) return
+        operationError = ""
         pullBusy = true
         pullModelName = cleanName
         pullProgress = 0
