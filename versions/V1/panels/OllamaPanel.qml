@@ -17,6 +17,7 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
     property string confirmDeleteModel: ""
+    property string customCtxDisplay: ""
 
     function formatBytes(bytes) {
         var value = Number(bytes) || 0
@@ -318,16 +319,23 @@ PanelWindow {
                                 color: enabled ? root.ink : root.sumi
                                 clip: true
                                 selectByMouse: true
-                                text: isCustom && selected ? String(root.ollama.selectedNumCtx) : ""
+                                text: isCustom && selected
+                                    ? (ollamaPanel.customCtxDisplay !== "" ? ollamaPanel.customCtxDisplay : String(root.ollama.selectedNumCtx))
+                                    : ""
                                 onEditingFinished: {
-                                    var raw = String(text).trim().toUpperCase()
+                                    var raw = String(text).trim()
+                                    if (!raw) return
+                                    var upper = raw.toUpperCase()
                                     var multiplier = 1
-                                    if (raw.endsWith("K")) {
+                                    if (upper.endsWith("K")) {
                                         multiplier = 1024
-                                        raw = raw.slice(0, -1)
+                                        upper = upper.slice(0, -1)
                                     }
-                                    var n = parseInt(raw)
-                                    if (!isNaN(n) && n > 0) root.ollama.setNumCtx(n * multiplier)
+                                    var n = parseInt(upper)
+                                    if (!isNaN(n) && n > 0) {
+                                        ollamaPanel.customCtxDisplay = raw
+                                        root.ollama.setNumCtx(n * multiplier)
+                                    }
                                 }
                             }
 
