@@ -18,7 +18,11 @@ ShellRoot {
 
     Component.onCompleted: {
         check(data.enabled === false, "enabled default")
-        check(data.baseUrl === "http://localhost:11434", "base URL")
+        check(data.baseUrl === "http://127.0.0.1:11434", "base URL")
+        check(data.operationInProgress === false, "operation default")
+        check(data.operationState === "idle", "operation-state default")
+        check(data.operationMessage === "", "operation-message default")
+        check(data.controlsLocked === false, "controls-lock default")
         check(data.connected === false, "connection default")
         check(data.version === "", "version default")
         check(data.installedModels.length === 0, "installed models default")
@@ -31,6 +35,8 @@ ShellRoot {
         check(data.pendingAction === "", "pending action default")
         check(data.pendingModel === "", "pending model default")
         check(data.lastError === "", "error default")
+        check(data.operationError === "", "operation-error default")
+        check(data.displayError === "", "display-error default")
         check(data.configPath === "/etc/systemd/system/ollama.service.d/override.conf", "config path")
 
         var response = data.decodeResponse('{"version":"0.31.2"}\n200')
