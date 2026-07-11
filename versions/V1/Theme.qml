@@ -13,6 +13,7 @@ Item {
     OllamaData {
         id: ollamaData
         enabled: theme.modOllama
+        panelVisible: theme.ollamaVisible
     }
     property alias ollama: ollamaData
 

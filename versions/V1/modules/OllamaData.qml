@@ -35,6 +35,7 @@ Item {
     property int pullPercent: 0
     property string pullStatus: ""
     property string pullError: ""
+    property bool panelVisible: false
     property string selectedKeepAlive: "5m"
     property var selectedNumCtx: null
     property bool configDirty: false
@@ -755,7 +756,7 @@ Item {
     }
 
     Timer {
-        interval: 2000
+        interval: ollama.panelVisible ? 2000 : 15000
         running: ollama.enabled
         repeat: true
         triggeredOnStart: true
@@ -763,7 +764,7 @@ Item {
     }
 
     Timer {
-        interval: 2000
+        interval: ollama.panelVisible ? 2000 : 15000
         running: ollama.enabled
         repeat: true
         triggeredOnStart: true
