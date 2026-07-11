@@ -285,66 +285,64 @@ PanelWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
-                            width: modelData.value === "custom" ? 52 : 40
-                            height: 22
-                            radius: root.tileRadius
-                            property bool selected: modelData.value === "custom"
+                            property bool isCustom: modelData.value === "custom"
+                            property bool selected: isCustom
                                 ? root.ollama.selectedNumCtx !== null && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
                                 : root.ollama.selectedNumCtx === modelData.value
+                            width: isCustom ? Math.max(52, customInput.contentWidth + 20) : 40
+                            height: 22
+                            radius: root.tileRadius
                             color: selected ? root.seal : root.fillIdle
                             border.color: root.sep
                             border.width: 1
 
                             UiText {
+                                visible: !isCustom
                                 anchors.centerIn: parent
                                 text: modelData.label
                                 color: selected ? root.paper : root.ink
                                 font.family: root.mono
                                 font.pixelSize: 10
                             }
+
+                            TextInput {
+                                id: customInput
+                                visible: isCustom
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                verticalAlignment: Text.AlignVCenter
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                enabled: !root.ollama.controlsLocked && isCustom
+                                color: enabled ? root.ink : root.sumi
+                                clip: true
+                                selectByMouse: true
+                                text: isCustom && selected ? String(root.ollama.selectedNumCtx) : ""
+                                onEditingFinished: {
+                                    var n = parseInt(text)
+                                    if (!isNaN(n) && n > 0) root.ollama.setNumCtx(n)
+                                }
+                            }
+
+                            UiText {
+                                visible: isCustom && (!selected || customInput.text === "")
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 6
+                                text: "Custom"
+                                color: selected ? root.paper : root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+
                             MouseArea {
                                 anchors.fill: parent
                                 enabled: !root.ollama.controlsLocked
                                 onClicked: {
-                                    if (modelData.value === "custom") {
-                                        if (root.ollama.selectedNumCtx === null) root.ollama.setNumCtx(4096)
-                                        else customInput.forceActiveFocus()
-                                    } else {
-                                        root.ollama.setNumCtx(modelData.value)
-                                    }
+                                    if (isCustom) customInput.forceActiveFocus()
+                                    else root.ollama.setNumCtx(modelData.value)
                                 }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        visible: root.ollama.selectedNumCtx !== null
-                            && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
-                        width: 64
-                        height: 22
-                        radius: root.tileRadius
-                        color: root.fillIdle
-                        border.color: root.sep
-                        border.width: 1
-
-                        TextInput {
-                            id: customInput
-                            anchors.fill: parent
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
-                            verticalAlignment: Text.AlignVCenter
-                            font.family: root.mono
-                            font.pixelSize: 10
-                            enabled: !root.ollama.controlsLocked
-                            color: enabled ? root.ink : root.sumi
-                            clip: true
-                            selectByMouse: true
-                            text: root.ollama.selectedNumCtx !== null
-                                && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
-                                ? String(root.ollama.selectedNumCtx) : ""
-                            onEditingFinished: {
-                                var n = parseInt(text)
-                                if (!isNaN(n) && n > 0) root.ollama.setNumCtx(n)
                             }
                         }
                     }
@@ -750,7 +748,7 @@ PanelWindow {
                         MouseArea {
                             id: applyMa
                             anchors.fill: parent
-                            enabled: !root.ollama.controlsLocked
+                            enabled: !root.ollama.controlsLocked && root.ollama.configDirty
                             hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.ollama.applyRuntimeConfiguration()
