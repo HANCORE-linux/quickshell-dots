@@ -11,12 +11,9 @@ config_path="$repo_root/versions/V1/OllamaPullIntegrationSmoke.qml"
 
 cleanup() {
     [[ -n "$fixture_pid" ]] && kill "$fixture_pid" 2>/dev/null || true
-    rm -f "$config_path"
     rm -rf "$fixture_root"
 }
 trap cleanup EXIT
-
-cp "$repo_root/tests/OllamaPullIntegrationSmoke.qml" "$config_path"
 
 cat >"$fixture_script" <<'PY'
 import http.server
