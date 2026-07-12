@@ -284,3 +284,12 @@ function beginActionState(actionName, name) {
 function clearActionState() {
     return { busy: false, pendingAction: "", pendingModel: "" }
 }
+
+function aggregateError(actionError, versionError, tagsError, loadedError) {
+    return String(actionError || "") || String(versionError || "")
+        || String(tagsError || "") || String(loadedError || "")
+}
+
+function aggregateConnected(versionConnected, tagsConnected, loadedConnected) {
+    return Boolean(versionConnected || tagsConnected || loadedConnected)
+}

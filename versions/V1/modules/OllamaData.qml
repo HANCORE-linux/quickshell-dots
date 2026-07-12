@@ -8,7 +8,7 @@ Item {
 
     property string baseUrl: "http://127.0.0.1:11434"
     enabled: false
-    property bool connected: false
+    readonly property bool connected: OllamaDataLogic.aggregateConnected(versionConnected, tagsConnected, loadedConnected)
     property string version: ""
     property var installedModels: []
     property var loadedModels: []
@@ -18,7 +18,13 @@ Item {
     property bool busy: false
     property string pendingAction: ""
     property string pendingModel: ""
-    property string lastError: ""
+    property string versionError: ""
+    property string tagsError: ""
+    property string loadedError: ""
+    property string actionError: ""
+    property bool versionConnected: false
+    property bool tagsConnected: false
+    property bool loadedConnected: false
     property string operationError: ""
     property bool operationInProgress: false
     property string operationState: "idle"
@@ -66,6 +72,8 @@ Item {
     }
     readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running
     readonly property bool controlsLocked: operationInProgress || busy || pullBusy
+    readonly property string lastError:
+        OllamaDataLogic.aggregateError(actionError, versionError, tagsError, loadedError)
     readonly property string displayError: operationError !== "" ? operationError : lastError
     readonly property string operationMessage:
         OllamaDataLogic.operationMessage(operationState, pendingModel)
@@ -109,23 +117,24 @@ Item {
     function applyVersion(raw, requestEpoch) {
         if (requestEpoch !== refreshEpoch) return
         var state = OllamaDataLogic.versionState(raw, version)
-        connected = state.connected
+        versionConnected = state.connected
         version = state.version
-        lastError = state.lastError
+        versionError = state.lastError
     }
 
     function applyTags(raw, requestEpoch) {
         if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
-            lastError = errorMessage(response, "Unable to list Ollama models")
+            tagsError = errorMessage(response, "Unable to list Ollama models")
             return
         }
         try {
             installedModels = parseTags(response.body)
-            lastError = ""
+            tagsConnected = true
+            tagsError = ""
         } catch (error) {
-            lastError = "Invalid Ollama model response"
+            tagsError = "Invalid Ollama model response"
         }
     }
 
@@ -133,15 +142,15 @@ Item {
         if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
-            lastError = errorMessage(response, "Unable to read loaded Ollama models")
+            loadedError = errorMessage(response, "Unable to read loaded Ollama models")
             return
         }
         try {
             loadedModels = parseLoaded(response.body)
-            connected = true
-            lastError = ""
+            loadedConnected = true
+            loadedError = ""
         } catch (error) {
-            lastError = "Invalid Ollama loaded-model response"
+            loadedError = "Invalid Ollama loaded-model response"
         }
     }
 
@@ -149,10 +158,10 @@ Item {
         var response = decodeResponse(raw)
         var ok = successful(response)
         if (ok) {
-            lastError = ""
+            actionError = ""
         } else {
             var verb = pendingAction === "delete" ? "delete" : "update"
-            lastError = errorMessage(response, "Unable to " + verb + " Ollama model")
+            actionError = errorMessage(response, "Unable to " + verb + " Ollama model")
         }
         clearActionState()
         refreshLoaded()
@@ -206,7 +215,7 @@ Item {
         verificationAttempts = 0
         failureMessage = ""
         operationError = ""
-        lastError = ""
+        actionError = ""
         requestOperationModels("initial", operationId)
     }
 
@@ -231,7 +240,7 @@ Item {
         failureMessage = ""
         operationState = ok ? "idle" : "error"
         if (ok) operationError = ""
-        if (ok) lastError = ""
+        if (ok) actionError = ""
         if (appliedConfig) {
             configDirty = false
             saveRuntimeConfig()
@@ -260,11 +269,11 @@ Item {
         var models
         try {
             if (exitCode !== 0) {
-                connected = false
+                loadedConnected = false
                 throw new Error("Unable to reach Ollama")
             }
             models = operationModels(raw)
-            connected = true
+            loadedConnected = true
         } catch (error) {
             if (purpose === "failureRefresh") {
                 finishExclusiveLoad(false, null)
@@ -401,7 +410,7 @@ Item {
         if (controlsLocked || !name || actionName !== "delete") return
         beginActionState(actionName, name)
         operationError = ""
-        lastError = ""
+        actionError = ""
         actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
         actionProc.running = true
     }
@@ -477,7 +486,7 @@ Item {
         verificationAttempts = 0
         failureMessage = ""
         operationError = ""
-        lastError = ""
+        actionError = ""
         if (mode === "apply") {
             saveRuntimeConfig()
         }
@@ -524,7 +533,7 @@ Item {
             if (running) { _streamFinished = false; return }
             if (_streamFinished) { _streamFinished = false; return }
             if (!ollama.busy) return
-            ollama.lastError = ollama.pendingAction === "delete"
+            ollama.actionError = ollama.pendingAction === "delete"
                 ? "Unable to delete Ollama model" : "Unable to update Ollama model"
             ollama.clearActionState()
             ollama.refreshLoaded()

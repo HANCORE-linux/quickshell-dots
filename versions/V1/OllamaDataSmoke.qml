@@ -35,6 +35,10 @@ ShellRoot {
         check(data.pendingAction === "", "pending action default")
         check(data.pendingModel === "", "pending model default")
         check(data.lastError === "", "error default")
+        check(data.versionError === "", "version-error default")
+        check(data.tagsError === "", "tags-error default")
+        check(data.loadedError === "", "loaded-error default")
+        check(data.actionError === "", "action-error default")
         check(data.operationError === "", "operation-error default")
         check(data.displayError === "", "display-error default")
 

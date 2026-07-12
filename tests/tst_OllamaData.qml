@@ -56,6 +56,12 @@ TestCase {
         function parseContextInput(raw) {
             return OllamaDataLogic.parseContextInput(raw)
         }
+        function aggregateError(action, versionE, tags, loaded) {
+            return OllamaDataLogic.aggregateError(action, versionE, tags, loaded)
+        }
+        function aggregateConnected(vConn, tConn, lConn) {
+            return OllamaDataLogic.aggregateConnected(vConn, tConn, lConn)
+        }
         function sumLoadedVram(entries) { return OllamaDataLogic.sumLoadedVram(entries) }
         function errorMessage(response, fallback) { return OllamaDataLogic.errorMessage(response, fallback) }
         function successful(response) { return OllamaDataLogic.successful(response) }
@@ -342,5 +348,39 @@ TestCase {
         compare(data.parseContextInput("16junk"), null)
         compare(data.parseContextInput("K"), null)
         compare(data.parseContextInput("0"), null)
+    }
+
+    function test_aggregateErrorActionPrecedence() {
+        compare(data.aggregateError("action failed", "", "", ""), "action failed")
+    }
+
+    function test_aggregateErrorVersionPrecedence() {
+        compare(data.aggregateError("", "version failed", "", ""), "version failed")
+    }
+
+    function test_aggregateErrorTagsPrecedence() {
+        compare(data.aggregateError("", "", "tags failed", ""), "tags failed")
+    }
+
+    function test_aggregateErrorLoadedFallback() {
+        compare(data.aggregateError("", "", "", "loaded failed"), "loaded failed")
+    }
+
+    function test_aggregateErrorActionOverridesRefresh() {
+        compare(data.aggregateError("action failed", "", "tags failed", "loaded failed"), "action failed")
+    }
+
+    function test_aggregateErrorClearWhenAllEmpty() {
+        compare(data.aggregateError("", "", "", ""), "")
+    }
+
+    function test_aggregateConnectedAnyTrue() {
+        verify(data.aggregateConnected(true, false, false))
+        verify(data.aggregateConnected(false, true, false))
+        verify(data.aggregateConnected(false, false, true))
+    }
+
+    function test_aggregateConnectedAllFalse() {
+        verify(!data.aggregateConnected(false, false, false))
     }
 }
