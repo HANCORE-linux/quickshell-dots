@@ -37,7 +37,10 @@ Item {
     property int verificationAttempts: 0
     property string verificationKind: ""
     property string failureMessage: ""
-    property bool pullBusy: false
+    property int pullAttempt: 0
+    property string pullState: "idle"
+    readonly property bool pullBusy: pullState === "streaming" || pullState === "cancelling"
+        || pullState === "reconciling"
     property string pullModelName: ""
     property double pullProgress: 0
     property int pullPercent: 0
@@ -56,6 +59,7 @@ Item {
     readonly property string runtimeConfigPath:
         Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
     property string pullLastLine: ""
+    property int pullReconcileAttempts: 0
     readonly property int effectiveContextLength: loadedModels.length === 1
         ? loadedModels[0].contextLength : 0
     readonly property string keepAliveStatus: {
@@ -191,6 +195,7 @@ Item {
     function refreshTags() {
         if (operationInProgress) return
         if (tagsProc.running) { tagsRefreshPending = true; return }
+        tagsProc.pullAttempt = 0
         tagsProc.refreshEpoch = refreshEpoch
         tagsProc.command = buildRequest("GET", "/api/tags")
         tagsProc.running = true
@@ -518,10 +523,21 @@ Item {
     Process {
         id: tagsProc
         property int refreshEpoch: -1
+        property int pullAttempt: 0
+        property bool streamDone: false
+        onStarted: streamDone = false
         stdout: StdioCollector {
-            onStreamFinished: ollama.applyTags(this.text, tagsProc.refreshEpoch)
+            onStreamFinished: {
+                tagsProc.streamDone = true
+                ollama.applyTags(this.text, tagsProc.refreshEpoch)
+                ollama.handlePullTags(tagsProc.pullAttempt, this.text)
+            }
         }
         onExited: {
+            if (!streamDone && pullAttempt === ollama.pullAttempt
+                    && ollama.pullState === "reconciling") {
+                ollama.handlePullTags(pullAttempt, "")
+            }
             if (ollama.tagsRefreshPending) {
                 ollama.tagsRefreshPending = false
                 ollama.refreshTags()
@@ -718,16 +734,26 @@ Item {
 
     function pullModel(name) {
         if (controlsLocked || !name) return
-        var cleanName = String(name).replace(/^ollama\s+run\s+/i, "").trim()
-        if (!cleanName) return
+        var input = OllamaDataLogic.normalizePullInput(name)
+        if (!input.valid) {
+            pullError = input.error
+            pullState = "failed"
+            pullStatus = "Failed"
+            return
+        }
+        var cleanName = input.model
         operationError = ""
-        pullBusy = true
+        pullAttempt += 1
+        pullState = "streaming"
         pullModelName = cleanName
         pullProgress = 0
         pullPercent = 0
         pullStatus = "Connecting..."
         pullError = ""
         pullLastLine = ""
+        pullReconcileAttempts = 0
+        pullReconcileTimer.stop()
+        pullProc.attempt = pullAttempt
         pullProc.command = [
             "curl", "-sS", "--fail-with-body", "--no-buffer",
             "--connect-timeout", "3", "--max-time", "3600",
@@ -740,7 +766,12 @@ Item {
         pullProc.running = true
     }
 
-    function applyPullProgress(raw) {
+    function applyPullProgress(attempt, raw) {
+        if (raw === undefined) {
+            raw = attempt
+            attempt = pullProc.attempt
+        }
+        if (attempt !== pullAttempt || pullState !== "streaming") return
         var text = String(raw || "").trim()
         if (!text) return
         try {
@@ -753,42 +784,122 @@ Item {
         } catch (e) {}
     }
 
-    function finishPull(exitCode) {
+    function cancelPull() {
+        if (pullState === "streaming") {
+            pullState = "cancelling"
+            pullStatus = "Cancelling locally..."
+            pullReconcileTimer.stop()
+            pullProc.running = false
+        } else if (pullState === "reconciling") {
+            pullReconcileTimer.stop()
+            pullState = "cancelled"
+            pullStatus = "Cancelled locally"
+            pullError = ""
+        }
+    }
+
+    function finishPull(attempt, exitCode) {
+        if (attempt !== pullAttempt) return
+        if (pullState === "cancelling") {
+            pullReconcileTimer.stop()
+            pullState = "cancelled"
+            pullStatus = "Cancelled locally"
+            pullError = ""
+            return
+        }
+        if (pullState !== "streaming") return
         var state = OllamaDataLogic.pullResultState(exitCode, pullLastLine)
         if (state.valid) {
             pullProgress = 1
-            pullStatus = "Done"
-            refreshTags()
+            pullState = "reconciling"
+            pullStatus = "Finalizing..."
+            refreshEpoch += 1
+            tagsRefreshPending = false
+            pullReconcileAttempts = 0
+            pullReconcileTimer.attempt = attempt
+            pullReconcileTimer.restart()
             refreshLoaded()
         } else {
             pullError = state.error
             pullStatus = "Failed"
+            pullState = "failed"
         }
-        pullBusy = false
+    }
+
+    function requestPullReconciliation(attempt) {
+        if (attempt !== pullAttempt || pullState !== "reconciling") return
+        if (tagsProc.running) {
+            pullReconcileTimer.restart()
+            return
+        }
+        pullReconcileAttempts += 1
+        tagsProc.pullAttempt = attempt
+        tagsProc.refreshEpoch = refreshEpoch
+        tagsProc.command = buildRequest("GET", "/api/tags")
+        tagsProc.running = true
+    }
+
+    function handlePullTags(attempt, raw) {
+        if (attempt !== pullAttempt || pullState !== "reconciling") return
+        var visible = false
+        try {
+            var response = decodeResponse(raw)
+            if (successful(response)) {
+                var models = parseTags(response.body)
+                for (var i = 0; i < models.length; i++) {
+                    if (models[i].name === pullModelName) {
+                        visible = true
+                        break
+                    }
+                }
+            }
+        } catch (error) {}
+        if (visible) {
+            pullState = "success"
+            pullStatus = "Done"
+            pullError = ""
+        } else if (pullReconcileAttempts >= 8) {
+            pullState = "failed"
+            pullStatus = "Failed"
+            pullError = "Pull finalization timed out: model was not listed"
+        } else {
+            pullReconcileTimer.restart()
+        }
     }
 
     Process {
         id: pullProc
+        property int attempt: 0
         property bool _exited: false
         stdout: SplitParser {
             onRead: function(line) {
                 var text = String(line || "").trim()
                 if (!text) return
+                if (pullProc.attempt !== ollama.pullAttempt) return
                 ollama.pullLastLine = text
                 ollama.applyPullProgress(text)
             }
         }
         onExited: function(code) {
             _exited = true
-            if (ollama.pullBusy) ollama.finishPull(code)
+            ollama.finishPull(attempt, code)
         }
         onRunningChanged: {
             if (running) { _exited = false; return }
-            if (!_exited && ollama.pullBusy) {
+            if (!_exited && attempt === ollama.pullAttempt && ollama.pullState === "streaming") {
                 ollama.pullError = "Download failed"
-                ollama.pullBusy = false
+                ollama.pullStatus = "Failed"
+                ollama.pullState = "failed"
             }
         }
+    }
+
+    Timer {
+        id: pullReconcileTimer
+        property int attempt: 0
+        interval: 1000
+        repeat: false
+        onTriggered: ollama.requestPullReconciliation(attempt)
     }
 
     Timer {

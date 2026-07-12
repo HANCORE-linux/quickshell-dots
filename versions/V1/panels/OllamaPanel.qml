@@ -591,6 +591,30 @@ PanelWindow {
                                 horizontalAlignment: Text.AlignRight
                             }
                         }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 24
+                            radius: root.tileRadius
+                            color: cancelPullMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
+
+                            UiText {
+                                anchors.centerIn: parent
+                                text: "Cancel"
+                                color: root.seal
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+                            MouseArea {
+                                id: cancelPullMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.ollama.cancelPull()
+                            }
+                        }
                     }
 
                     UiText {
