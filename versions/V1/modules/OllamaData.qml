@@ -36,7 +36,7 @@ Item {
     property string pullStatus: ""
     property string pullError: ""
     property bool panelVisible: false
-    property string selectedKeepAlive: "5m"
+    property var selectedKeepAlive: "5m"
     property var selectedNumCtx: null
     property bool configDirty: false
 
@@ -44,6 +44,9 @@ Item {
     readonly property var models: reconcileModels(installedModels, loadedModels)
     readonly property string runtimeConfigPath:
         Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
+    readonly property string pullOutputRoot:
+        Quickshell.env("XDG_RUNTIME_DIR") || Quickshell.env("HOME") + "/.cache"
+    property string pullOutputPath: ""
     readonly property int effectiveContextLength: loadedModels.length === 1
         ? loadedModels[0].contextLength : 0
     readonly property string keepAliveStatus: {
@@ -215,6 +218,7 @@ Item {
     }
 
     function finishExclusiveLoad(ok, models) {
+        var appliedConfig = ok && operationMode === "apply"
         if (models !== undefined && models !== null) loadedModels = models
         operationInProgress = false
         busy = false
@@ -228,6 +232,10 @@ Item {
         operationState = ok ? "idle" : "error"
         if (ok) operationError = ""
         if (ok) lastError = ""
+        if (appliedConfig) {
+            configDirty = false
+            saveRuntimeConfig()
+        }
     }
 
     function failExclusiveLoad(message) {
@@ -284,6 +292,7 @@ Item {
                     pendingAction = ""
                     pendingModel = ""
                     configDirty = false
+                    saveRuntimeConfig()
                     return
                 }
             } else if (operationMode === "eject") {
@@ -312,16 +321,10 @@ Item {
             return
         }
         if (purpose === "loadVerify") {
-            if (operationMode === "apply" && selectedNumCtx !== null) {
-                var ctxValidation = OllamaDataLogic.validateContextLength(models[0].contextLength, selectedNumCtx)
-                if (!ctxValidation.valid) {
-                    failExclusiveLoad(ctxValidation.error)
-                    return
-                }
-            }
-            var state = OllamaDataLogic.exclusiveLoadState(models, pendingModel)
+            var expectedContext = operationMode === "apply" ? selectedNumCtx : null
+            var state = OllamaDataLogic.loadVerificationState(models, pendingModel, expectedContext)
             if (state.valid) finishExclusiveLoad(true, models)
-            else if (verificationAttempts < 10) verificationRetryTimer.restart()
+            else if (state.retry && verificationAttempts < 10) verificationRetryTimer.restart()
             else failExclusiveLoad(state.error)
         }
     }
@@ -426,18 +429,20 @@ Item {
     function applyRuntimeConfigFile() {
         var text = String(runtimeConfigFile.text || "").trim()
         if (!text) return
-        try {
-            var cfg = JSON.parse(text)
-            var keep = cfg.keepAlive
-            if (keep === "5m" || keep === "30m" || keep === -1) selectedKeepAlive = keep
-            if (cfg.numCtx === null || (typeof cfg.numCtx === "number" && cfg.numCtx > 0))
-                selectedNumCtx = cfg.numCtx
-        } catch (e) {}
+        var state = OllamaDataLogic.runtimeConfigState(text)
+        if (!state.valid) return
+        selectedKeepAlive = state.keepAlive
+        selectedNumCtx = state.numCtx
+        configDirty = state.dirty
     }
 
     function saveRuntimeConfig() {
-        var cfg = { keepAlive: selectedKeepAlive, numCtx: selectedNumCtx }
+        var cfg = { keepAlive: selectedKeepAlive, numCtx: selectedNumCtx, dirty: configDirty }
         runtimeConfigFile.setText(JSON.stringify(cfg, null, 2))
+    }
+
+    function parseContextInput(raw) {
+        return OllamaDataLogic.parseContextInput(raw)
     }
 
     function setKeepAlive(value) {
@@ -475,7 +480,6 @@ Item {
         lastError = ""
         if (mode === "apply") {
             saveRuntimeConfig()
-            configDirty = false
         }
         requestOperationModels("initial", operationId)
     }
@@ -653,11 +657,16 @@ Item {
     }
 
     function openRuntimeConfig() {
+        var editor = Quickshell.env("EDITOR") || "nvim"
         runtimeConfigEditProc.command = [
             "omarchy-launch-floating-terminal-with-presentation",
-            "\"${EDITOR:-nvim}\" " + runtimeConfigPath
+            editor + " " + shellQuote(runtimeConfigPath)
         ]
         runtimeConfigEditProc.running = true
+    }
+
+    function shellQuote(value) {
+        return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
     }
 
     Process { id: runtimeConfigEditProc }
@@ -673,16 +682,22 @@ Item {
         pullPercent = 0
         pullStatus = "Connecting..."
         pullError = ""
+        pullOutputPath = pullOutputRoot + "/qs-ollama-pull-"
+            + Date.now().toString(36) + "-"
+            + Math.floor(Math.random() * 1000000000).toString(36) + ".jsonl"
         pullProc.command = [
             "bash", "-c",
-            "rm -f /tmp/ollama_pull_output && " +
-            "curl -sS --no-buffer -X POST " +
+            "set -o noclobber; : > \"$2\" || exit 73; " +
+            "curl -sS --fail-with-body --no-buffer -X POST " +
             "-H 'Content-Type: application/json' -H 'Accept: application/json' " +
-            '-d "$1" ' + baseUrl + "/api/pull " +
-            "-o /tmp/ollama_pull_output " +
-            "--max-time 3600 --connect-timeout 3; echo $?",
+            "-d \"$1\" \"$3\" -o \"$2\" " +
+            "--max-time 3600 --connect-timeout 3; " +
+            "code=$?; last=$(tail -n 1 \"$2\" 2>/dev/null || true); " +
+            "rm -f \"$2\"; printf '%s\\n%s\\n' \"$code\" \"$last\"",
             "bash",
-            JSON.stringify({model: cleanName, stream: true})
+            JSON.stringify({model: cleanName, stream: true}),
+            pullOutputPath,
+            baseUrl + "/api/pull"
         ]
         pullProc.running = true
         pullProgressTimer.running = true
@@ -704,14 +719,17 @@ Item {
     function finishPull(raw) {
         pullProgressTimer.running = false
         var text = String(raw || "").trim()
-        var exitCode = parseInt(text)
-        if (exitCode === 0) {
+        var separator = text.indexOf("\n")
+        var exitCode = parseInt(separator < 0 ? text : text.slice(0, separator))
+        var lastLine = separator < 0 ? "" : text.slice(separator + 1).trim()
+        var state = OllamaDataLogic.pullResultState(exitCode, lastLine)
+        if (state.valid) {
             pullProgress = 1
             pullStatus = "Done"
             refreshTags()
             refreshLoaded()
         } else {
-            pullError = "Download failed"
+            pullError = state.error
             pullStatus = "Failed"
         }
         pullBusy = false
@@ -778,7 +796,7 @@ Item {
         repeat: true
         onTriggered: {
             if (!progressReaderProc.running) {
-                progressReaderProc.command = ["bash", "-c", "tail -1 /tmp/ollama_pull_output 2>/dev/null || echo ''"]
+                progressReaderProc.command = ["tail", "-n", "1", ollama.pullOutputPath]
                 progressReaderProc.running = true
             }
         }

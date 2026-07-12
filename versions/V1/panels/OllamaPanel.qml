@@ -748,16 +748,10 @@ PanelWindow {
                                 onEditingFinished: {
                                     var raw = String(text).trim()
                                     if (!raw) return
-                                    var upper = raw.toUpperCase()
-                                    var multiplier = 1
-                                    if (upper.endsWith("K")) {
-                                        multiplier = 1024
-                                        upper = upper.slice(0, -1)
-                                    }
-                                    var n = parseInt(upper)
-                                    if (!isNaN(n) && n > 0) {
+                                    var n = root.ollama.parseContextInput(raw)
+                                    if (n !== null) {
                                         ollamaPanel.customCtxDisplay = raw
-                                        root.ollama.setNumCtx(n * multiplier)
+                                        root.ollama.setNumCtx(n)
                                     }
                                 }
                             }
@@ -776,10 +770,9 @@ PanelWindow {
 
                             MouseArea {
                                 anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
+                                enabled: !root.ollama.controlsLocked && !isCustom
                                 onClicked: {
-                                    if (isCustom) customInput.forceActiveFocus()
-                                    else root.ollama.setNumCtx(modelData.value)
+                                    root.ollama.setNumCtx(modelData.value)
                                 }
                             }
                         }

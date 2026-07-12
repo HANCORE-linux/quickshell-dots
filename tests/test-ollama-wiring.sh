@@ -11,7 +11,7 @@ assert_contains() {
         shift
     fi
     local text="$1"
-    grep -Fq "$text" "$file" || {
+    grep -Fq -- "$text" "$file" || {
         printf 'missing %s in %s\n' "$text" "$file" >&2
         exit 1
     }
@@ -46,8 +46,9 @@ assert_contains '|| compactOllama'
 assert_contains 'compactOllama = false'
 assert_matches '\(modOllama[[:space:]]+\? "1" : "0"\)'
 assert_matches '\(compactOllama[[:space:]]+\? "1" : "0"\)'
-assert_contains 'if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"'
-assert_contains 'if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"'
+assert_contains 'if (parts.length > wsField + 31) theme.archBadgeShell    = parts[wsField + 31] !== "0"'
+assert_contains 'if (parts.length > wsField + 32) theme.modOllama = parts[wsField + 32] === "1"'
+assert_contains 'if (parts.length > wsField + 33) theme.compactOllama = parts[wsField + 33] === "1"'
 
 assert_contains versions/V1/BarSlot.qml 'Component { id: compOllama; OllamaWidget { root: barSlot.root } }'
 assert_contains versions/V1/BarSlot.qml '"G16": compOllama'
@@ -61,9 +62,10 @@ assert_contains versions/V1/shell.qml 'target: "ollama"'
 assert_contains versions/V1/shell.qml 'OllamaPanel { root: theme }'
 assert_contains versions/V1/modules/OllamaData.qml 'property bool operationInProgress: false'
 assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool controlsLocked:'
-assert_contains versions/V1/modules/OllamaData.qml 'property string selectedKeepAlive: "5m"'
+assert_contains versions/V1/modules/OllamaData.qml 'property var selectedKeepAlive: "5m"'
 assert_contains versions/V1/modules/OllamaData.qml 'property var selectedNumCtx: null'
 assert_contains versions/V1/modules/OllamaData.qml 'property bool configDirty: false'
+assert_contains versions/V1/modules/OllamaData.qml 'dirty: configDirty'
 assert_contains versions/V1/modules/OllamaData.qml 'function buildLoadPayload(modelName)'
 assert_contains versions/V1/modules/OllamaData.qml 'function applyRuntimeConfiguration()'
 assert_contains versions/V1/modules/OllamaData.qml 'id: runtimeConfigFile'
@@ -87,6 +89,14 @@ assert_contains versions/V1/modules/OllamaData.qml 'if (ok) operationError = ""'
 assert_contains versions/V1/modules/OllamaData.qml 'function loadModel(name) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function runModelAction(name, keepAlive, actionName) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function pullModel(name) {'
+assert_contains versions/V1/modules/OllamaData.qml 'property string pullOutputPath: ""'
+assert_contains versions/V1/modules/OllamaData.qml 'pullOutputPath = pullOutputRoot'
+assert_contains versions/V1/modules/OllamaData.qml '--fail-with-body'
+
+if grep -Fq '/tmp/ollama_pull_output' "$repo_root/versions/V1/modules/OllamaData.qml"; then
+    printf 'pull progress must not use a shared predictable /tmp file\n' >&2
+    exit 1
+fi
 
 if grep -Fq 'ollama rm' "$repo_root/versions/V1/modules/OllamaData.qml"; then
     printf 'exclusive loading must not use ollama rm\n' >&2
@@ -112,6 +122,7 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.keepAliveStatus'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Context"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setKeepAlive'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setNumCtx'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.parseContextInput(raw)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.applyRuntimeConfiguration()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Apply configuration"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"'

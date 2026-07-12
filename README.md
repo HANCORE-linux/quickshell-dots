@@ -175,14 +175,6 @@ Common actions:
 - Open the launcher/control widget to change bar style, widgets, workspaces, logo, splits, and animations.
 - Use the self-update badge when it appears to update the shell from inside the bar.
 
-### Ollama Management
-
-Ollama management is an optional widget disabled by default. Enable the Ollama tile under **Bar Functions**; its separate **Compact Display** toggle only changes the widget's display mode.
-
-The bar reports global GPU utilization, while the panel reports VRAM used by loaded models. Click the widget to list installed models and use **Load** or **Eject**. Unsupported GPU monitoring displays `N/A` without disabling model controls.
-
-**Configuration** opens `/etc/systemd/system/ollama.service.d/override.conf` through Omarchy's editor. **Reload** applies the service configuration and requires interactive `sudo` authentication.
-
 <details>
 <summary>Click bindings</summary>
 

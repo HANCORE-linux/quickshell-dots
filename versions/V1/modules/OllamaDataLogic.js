@@ -203,6 +203,70 @@ function validateContextLength(contextLength, numCtx) {
     }
 }
 
+function loadVerificationState(entries, selectedName, numCtx) {
+    var loadState = exclusiveLoadState(entries, selectedName)
+    if (!loadState.valid) {
+        return { valid: false, retry: true, error: loadState.error }
+    }
+    var contextState = validateContextLength(entries[0].contextLength, numCtx)
+    if (!contextState.valid) {
+        return { valid: false, retry: false, error: contextState.error }
+    }
+    return { valid: true, retry: false, error: "" }
+}
+
+function pullResultState(exitCode, lastLine) {
+    var parsed
+    try {
+        parsed = JSON.parse(String(lastLine || ""))
+    } catch (error) {
+        return {
+            valid: false,
+            error: Number(exitCode) === 0 ? "Invalid Ollama pull response" : "Download failed"
+        }
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return { valid: false, error: "Invalid Ollama pull response" }
+    if (parsed.error !== undefined && String(parsed.error).length > 0)
+        return { valid: false, error: String(parsed.error) }
+    if (Number(exitCode) !== 0)
+        return { valid: false, error: "Download failed" }
+    if (parsed.status !== "success")
+        return { valid: false, error: "Ollama pull did not complete" }
+    return { valid: true, error: "" }
+}
+
+function runtimeConfigState(raw) {
+    var cfg
+    try {
+        cfg = JSON.parse(String(raw || ""))
+    } catch (error) {
+        return { valid: false }
+    }
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg))
+        return { valid: false }
+    var keep = cfg.keepAlive
+    if (keep !== "5m" && keep !== "30m" && keep !== -1)
+        return { valid: false }
+    var context = cfg.numCtx
+    if (context !== null && !(typeof context === "number" && context > 0))
+        return { valid: false }
+    return {
+        valid: true,
+        keepAlive: keep,
+        numCtx: context,
+        dirty: cfg.dirty === true
+    }
+}
+
+function parseContextInput(raw) {
+    var text = String(raw || "").trim()
+    var match = /^([1-9][0-9]*)([Kk])?$/.exec(text)
+    if (!match) return null
+    var value = Number(match[1]) * (match[2] ? 1024 : 1)
+    return isFinite(value) && value > 0 ? value : null
+}
+
 function operationMessage(state, modelName) {
     var name = String(modelName || "")
     if (state === "checking") return "Checking loaded models..."

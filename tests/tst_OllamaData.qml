@@ -32,6 +32,9 @@ TestCase {
         function validateContextLength(contextLength, numCtx) {
             return OllamaDataLogic.validateContextLength(contextLength, numCtx)
         }
+        function loadVerificationState(entries, selectedName, numCtx) {
+            return OllamaDataLogic.loadVerificationState(entries, selectedName, numCtx)
+        }
         function conflictingModelNames(entries, selectedName) {
             return OllamaDataLogic.conflictingModelNames(entries, selectedName)
         }
@@ -43,6 +46,15 @@ TestCase {
         }
         function generateResponseState(body) {
             return OllamaDataLogic.generateResponseState(body)
+        }
+        function pullResultState(exitCode, lastLine) {
+            return OllamaDataLogic.pullResultState(exitCode, lastLine)
+        }
+        function runtimeConfigState(raw) {
+            return OllamaDataLogic.runtimeConfigState(raw)
+        }
+        function parseContextInput(raw) {
+            return OllamaDataLogic.parseContextInput(raw)
         }
         function sumLoadedVram(entries) { return OllamaDataLogic.sumLoadedVram(entries) }
         function errorMessage(response, fallback) { return OllamaDataLogic.errorMessage(response, fallback) }
@@ -256,5 +268,79 @@ TestCase {
         verify(data.validateContextLength(16384, 16384).valid)
         compare(data.validateContextLength(8192, 16384).error, "Context mismatch: expected 16384, got 8192")
         verify(data.validateContextLength(4096, null).valid)
+    }
+
+    function test_retriesEmptyLoadVerificationBeforeCheckingContext() {
+        var state = data.loadVerificationState([], "qwen3:8b", 16384)
+        compare(state.valid, false)
+        compare(state.retry, true)
+        compare(state.error, "Selected model is not loaded")
+    }
+
+    function test_acceptsMatchingLoadVerificationContext() {
+        var state = data.loadVerificationState([
+            { name: "qwen3:8b", contextLength: 16384 }
+        ], "qwen3:8b", 16384)
+        compare(state.valid, true)
+        compare(state.retry, false)
+    }
+
+    function test_rejectsMismatchedLoadVerificationContext() {
+        var state = data.loadVerificationState([
+            { name: "qwen3:8b", contextLength: 8192 }
+        ], "qwen3:8b", 16384)
+        compare(state.valid, false)
+        compare(state.retry, false)
+        compare(state.error, "Context mismatch: expected 16384, got 8192")
+    }
+
+    function test_acceptsSuccessfulPullResult() {
+        var state = data.pullResultState(0, '{"status":"success"}')
+        compare(state.valid, true)
+        compare(state.error, "")
+    }
+
+    function test_rejectsOllamaPullError() {
+        var state = data.pullResultState(0, '{"error":"model not found"}')
+        compare(state.valid, false)
+        compare(state.error, "model not found")
+    }
+
+    function test_rejectsMalformedPullResult() {
+        var state = data.pullResultState(0, "not json")
+        compare(state.valid, false)
+        compare(state.error, "Invalid Ollama pull response")
+    }
+
+    function test_rejectsFailedCurlPull() {
+        var state = data.pullResultState(22, '{"error":"server unavailable"}')
+        compare(state.valid, false)
+        compare(state.error, "server unavailable")
+    }
+
+    function test_restoresPendingRuntimeConfiguration() {
+        var state = data.runtimeConfigState('{"keepAlive":-1,"numCtx":16384,"dirty":true}')
+        compare(state.valid, true)
+        compare(state.keepAlive, -1)
+        compare(typeof state.keepAlive, "number")
+        compare(state.numCtx, 16384)
+        compare(state.dirty, true)
+    }
+
+    function test_oldRuntimeConfigurationDefaultsToClean() {
+        var state = data.runtimeConfigState('{"keepAlive":"5m","numCtx":null}')
+        compare(state.valid, true)
+        compare(state.dirty, false)
+    }
+
+    function test_acceptsCompleteCustomContextInput() {
+        compare(data.parseContextInput("16K"), 16384)
+        compare(data.parseContextInput("4096"), 4096)
+    }
+
+    function test_rejectsPartialCustomContextInput() {
+        compare(data.parseContextInput("16junk"), null)
+        compare(data.parseContextInput("K"), null)
+        compare(data.parseContextInput("0"), null)
     }
 }

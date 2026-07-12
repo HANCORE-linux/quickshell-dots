@@ -1358,9 +1358,9 @@ Item {
                  + (compactVolume     ? "1" : "0") + " "  // +28
                  + (compactBluetooth  ? "1" : "0") + " "  // +29
                  + (compactPower      ? "1" : "0") + " "  // +30
-                 + (modOllama         ? "1" : "0") + " "  // +31
-                 + (compactOllama     ? "1" : "0") + " "  // +32
-                 + (archBadgeShell    ? "1" : "0")        // +33 updater shell badge
+                 + (archBadgeShell    ? "1" : "0") + " "  // +31 updater shell badge
+                 + (modOllama         ? "1" : "0") + " "  // +32
+                 + (compactOllama     ? "1" : "0")        // +33
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1566,9 +1566,9 @@ Item {
                     if (parts.length > wsField + 28) theme.compactVolume     = parts[wsField + 28] === "1"
                     if (parts.length > wsField + 29) theme.compactBluetooth  = parts[wsField + 29] === "1"
                     if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
-                    if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"
-                    if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"
-                    if (parts.length > wsField + 33) theme.archBadgeShell    = parts[wsField + 33] !== "0"
+                    if (parts.length > wsField + 31) theme.archBadgeShell    = parts[wsField + 31] !== "0"
+                    if (parts.length > wsField + 32) theme.modOllama = parts[wsField + 32] === "1"
+                    if (parts.length > wsField + 33) theme.compactOllama = parts[wsField + 33] === "1"
                 }
                 theme._widgetsLoaded = true
             }
