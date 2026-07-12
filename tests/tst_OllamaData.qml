@@ -482,6 +482,11 @@ TestCase {
         compare(stable, "1.0 KiB / 4.0 KiB · 1.0 KiB/s · about 3s")
     }
 
+    function test_omitsPullEtaSeparatorWhenStableEtaIsUnavailable() {
+        var progress = OllamaDataLogic.pullProgressText(1024, 4096, 1024, 0, 2)
+        compare(progress, "1.0 KiB / 4.0 KiB · 1.0 KiB/s")
+    }
+
     function test_formatsTerminalPullResultWithElapsedTime() {
         compare(OllamaDataLogic.pullResultText("success", "", 65), "Completed in 1m 5s")
         compare(OllamaDataLogic.pullResultText("failed", "model not found", 12),

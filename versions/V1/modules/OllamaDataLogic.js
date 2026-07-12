@@ -422,7 +422,8 @@ function pullProgressText(completed, total, rateBytesPerSecond, etaSeconds, stab
     var result = formatBytes(current) + " / " + formatBytes(maximum)
     var rate = formatRate(rateBytesPerSecond)
     if (rate) result += " · " + rate
-    result += " · " + (Number(stableSamples) >= 2 ? formatEta(etaSeconds) : "Calculating...")
+    var eta = Number(stableSamples) >= 2 ? formatEta(etaSeconds) : "Calculating..."
+    if (eta) result += " · " + eta
     return result
 }
 
