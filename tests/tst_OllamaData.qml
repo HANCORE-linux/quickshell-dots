@@ -459,6 +459,36 @@ TestCase {
         compare(invalidDelta.etaSeconds, 0)
     }
 
+    function test_formatsPullByteCountsAndRates() {
+        compare(OllamaDataLogic.formatBytes(0), "0 B")
+        compare(OllamaDataLogic.formatBytes(1536), "1.5 KiB")
+        compare(OllamaDataLogic.formatBytes(5 * 1024 * 1024 * 1024), "5.0 GiB")
+        compare(OllamaDataLogic.formatRate(1536), "1.5 KiB/s")
+        compare(OllamaDataLogic.formatRate(0), "")
+    }
+
+    function test_formatsConservativePullEta() {
+        compare(OllamaDataLogic.formatEta(0), "")
+        compare(OllamaDataLogic.formatEta(59), "about 59s")
+        compare(OllamaDataLogic.formatEta(65), "about 1m 5s")
+        compare(OllamaDataLogic.formatEta(3661), "about 1h 1m")
+    }
+
+    function test_hidesPullEtaUntilTwoStableRateSamples() {
+        var unstable = OllamaDataLogic.pullProgressText(1024, 4096, 1024, 3, 1)
+        compare(unstable, "1.0 KiB / 4.0 KiB · 1.0 KiB/s · Calculating...")
+
+        var stable = OllamaDataLogic.pullProgressText(1024, 4096, 1024, 3, 2)
+        compare(stable, "1.0 KiB / 4.0 KiB · 1.0 KiB/s · about 3s")
+    }
+
+    function test_formatsTerminalPullResultWithElapsedTime() {
+        compare(OllamaDataLogic.pullResultText("success", "", 65), "Completed in 1m 5s")
+        compare(OllamaDataLogic.pullResultText("failed", "model not found", 12),
+                "Pull failed: model not found")
+        compare(OllamaDataLogic.pullResultText("cancelled", "", 12), "Pull cancelled")
+    }
+
     function test_restoresPendingRuntimeConfiguration() {
         var state = data.runtimeConfigState('{"keepAlive":-1,"numCtx":16384,"dirty":true}')
         compare(state.valid, true)

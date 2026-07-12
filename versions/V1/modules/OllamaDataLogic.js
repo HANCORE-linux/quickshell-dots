@@ -384,6 +384,55 @@ function pullRateState(prior, digest, completed, nowMs) {
     }
 }
 
+function formatBytes(bytes) {
+    var value = Number(bytes)
+    if (!isFinite(value) || value <= 0) return "0 B"
+    var units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    var unit = 0
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024
+        unit += 1
+    }
+    return unit === 0 ? Math.round(value) + " " + units[unit]
+        : value.toFixed(1) + " " + units[unit]
+}
+
+function formatRate(bytesPerSecond) {
+    return Number(bytesPerSecond) > 0 ? formatBytes(bytesPerSecond) + "/s" : ""
+}
+
+function formatElapsed(seconds) {
+    var value = Math.max(0, Math.ceil(Number(seconds) || 0))
+    if (value < 60) return value + "s"
+    var minutes = Math.floor(value / 60)
+    var remainingSeconds = value % 60
+    if (minutes < 60) return minutes + "m " + remainingSeconds + "s"
+    var hours = Math.floor(minutes / 60)
+    return hours + "h " + (minutes % 60) + "m"
+}
+
+function formatEta(seconds) {
+    return Number(seconds) > 0 ? "about " + formatElapsed(seconds) : ""
+}
+
+function pullProgressText(completed, total, rateBytesPerSecond, etaSeconds, stableSamples) {
+    var current = Math.max(0, Number(completed) || 0)
+    var maximum = Math.max(0, Number(total) || 0)
+    if (maximum <= 0) return "Calculating..."
+    var result = formatBytes(current) + " / " + formatBytes(maximum)
+    var rate = formatRate(rateBytesPerSecond)
+    if (rate) result += " · " + rate
+    result += " · " + (Number(stableSamples) >= 2 ? formatEta(etaSeconds) : "Calculating...")
+    return result
+}
+
+function pullResultText(state, error, elapsedSeconds) {
+    if (state === "success") return "Completed in " + formatElapsed(elapsedSeconds)
+    if (state === "failed") return "Pull failed" + (error ? ": " + String(error) : "")
+    if (state === "cancelled") return "Pull cancelled"
+    return ""
+}
+
 function runtimeConfigState(raw) {
     var cfg
     try {

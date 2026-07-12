@@ -465,6 +465,7 @@ PanelWindow {
 
                 Column {
                     width: parent.width
+                    height: 78
                     spacing: 6
 
                     Row {
@@ -554,41 +555,33 @@ PanelWindow {
                             elide: Text.ElideRight
                         }
 
-                        Row {
+                        UiText {
                             width: parent.width
-                            height: 16
-                            spacing: 6
+                            text: root.ollama.pullProgressText
+                            color: root.sumiHi
+                            font.family: root.mono
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 6
+                            radius: 3
+                            color: root.fillIdle
+                            border.color: root.sep
+                            border.width: 1
 
                             Rectangle {
-                                width: parent.width - pullPercentText.implicitWidth - parent.spacing
-                                height: 6
+                                width: Math.min(parent.width - 2,
+                                    Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
+                                height: parent.height - 2
+                                anchors.left: parent.left
+                                anchors.leftMargin: 1
                                 anchors.verticalCenter: parent.verticalCenter
-                                radius: 3
-                                color: root.fillIdle
-                                border.color: root.sep
-                                border.width: 1
-
-                                Rectangle {
-                                    width: Math.min(parent.width - 2,
-                                        Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
-                                    height: parent.height - 2
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 1
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    radius: 2
-                                    color: root.seal
-                                    Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                                }
-                            }
-
-                            UiText {
-                                id: pullPercentText
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.ollama.pullPercent + "%"
+                                radius: 2
                                 color: root.seal
-                                font.family: root.mono
-                                font.pixelSize: 10
-                                horizontalAlignment: Text.AlignRight
+                                Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                             }
                         }
 
@@ -619,9 +612,9 @@ PanelWindow {
 
                     UiText {
                         width: parent.width
-                        visible: root.ollama.pullError !== ""
-                        text: root.ollama.pullError
-                        color: root.sealRaw
+                        visible: !root.ollama.pullBusy && root.ollama.pullResultText !== ""
+                        text: root.ollama.pullResultText
+                        color: root.ollama.pullState === "success" ? root.seal : root.sealRaw
                         font.family: root.mono
                         font.pixelSize: 10
                         horizontalAlignment: Text.AlignHCenter

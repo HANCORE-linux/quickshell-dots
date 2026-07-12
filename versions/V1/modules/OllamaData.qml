@@ -46,6 +46,14 @@ Item {
     property int pullPercent: 0
     property string pullStatus: ""
     property string pullError: ""
+    property string pullDigest: ""
+    property double pullCompletedBytes: 0
+    property double pullTotalBytes: 0
+    property var pullRate: ({ digest: "", completed: 0, total: 0, sampledAtMs: 0,
+                              rateBytesPerSecond: 0, etaSeconds: 0 })
+    property int pullStableRateSamples: 0
+    property double pullStartedAtMs: 0
+    property double pullElapsedSeconds: 0
     property bool panelVisible: false
     property var selectedKeepAlive: "5m"
     property var selectedNumCtx: null
@@ -84,6 +92,11 @@ Item {
     readonly property string displayError: operationError !== "" ? operationError : lastError
     readonly property string operationMessage:
         OllamaDataLogic.operationMessage(operationState, pendingModel)
+    readonly property string pullProgressText: OllamaDataLogic.pullProgressText(
+        pullCompletedBytes, pullTotalBytes, pullRate.rateBytesPerSecond,
+        pullRate.etaSeconds, pullStableRateSamples)
+    readonly property string pullResultText: OllamaDataLogic.pullResultText(
+        pullState, pullError, pullElapsedSeconds)
 
     function decodeResponse(raw) {
         return OllamaDataLogic.decodeResponse(raw)
@@ -752,9 +765,18 @@ Item {
         pullPercent = 0
         pullStatus = "Connecting..."
         pullError = ""
+        pullDigest = ""
+        pullCompletedBytes = 0
+        pullTotalBytes = 0
+        pullRate = { digest: "", completed: 0, total: 0, sampledAtMs: 0,
+            rateBytesPerSecond: 0, etaSeconds: 0 }
+        pullStableRateSamples = 0
+        pullStartedAtMs = Date.now()
+        pullElapsedSeconds = 0
         pullLastLine = ""
         pullReconcileAttempts = 0
         pullReconcileTimer.stop()
+        pullResultTimer.stop()
         pullProc.attempt = pullAttempt
         pullProc.command = [
             "curl", "-sS", "--fail-with-body", "--no-buffer",
@@ -777,12 +799,26 @@ Item {
         var text = String(raw || "").trim()
         if (!text) return
         try {
-            var data = JSON.parse(text)
-            if (data.total > 0 && data.completed !== undefined) {
-                pullProgress = Math.min(1, data.completed / data.total)
+            var event = OllamaDataLogic.pullEventState(text, {
+                digest: pullDigest, completed: pullCompletedBytes, total: pullTotalBytes
+            })
+            pullStatus = event.status
+            if (event.total > 0) {
+                pullDigest = event.digest
+                pullCompletedBytes = event.completed
+                pullTotalBytes = event.total
+                pullProgress = Math.min(1, event.completed / event.total)
                 pullPercent = Math.round(pullProgress * 100)
+                var previousRate = pullRate
+                if (event.digest !== previousRate.digest) pullStableRateSamples = 0
+                pullRate = OllamaDataLogic.pullRateState({
+                    digest: previousRate.digest,
+                    completed: previousRate.completed,
+                    total: event.total,
+                    sampledAtMs: previousRate.sampledAtMs
+                }, event.digest, event.completed, Date.now())
+                if (pullRate.rateBytesPerSecond > 0) pullStableRateSamples += 1
             }
-            if (data.status) pullStatus = data.status
         } catch (e) {}
     }
 
@@ -797,6 +833,7 @@ Item {
             pullState = "cancelled"
             pullStatus = "Cancelled locally"
             pullError = ""
+            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
         }
     }
 
@@ -807,6 +844,7 @@ Item {
             pullState = "cancelled"
             pullStatus = "Cancelled locally"
             pullError = ""
+            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
             return
         }
         if (pullState !== "streaming") return
@@ -825,6 +863,7 @@ Item {
             pullError = state.error
             pullStatus = "Failed"
             pullState = "failed"
+            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
         }
     }
 
@@ -860,10 +899,13 @@ Item {
             pullState = "success"
             pullStatus = "Done"
             pullError = ""
+            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
+            pullResultTimer.restart()
         } else if (pullReconcileAttempts >= 8) {
             pullState = "failed"
             pullStatus = "Failed"
             pullError = "Pull finalization timed out: model was not listed"
+            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
         } else {
             pullReconcileTimer.restart()
         }
@@ -892,6 +934,8 @@ Item {
                 ollama.pullError = "Download failed"
                 ollama.pullStatus = "Failed"
                 ollama.pullState = "failed"
+                ollama.pullElapsedSeconds = Math.max(0,
+                    (Date.now() - ollama.pullStartedAtMs) / 1000)
             }
         }
     }
@@ -902,6 +946,18 @@ Item {
         interval: 1000
         repeat: false
         onTriggered: ollama.requestPullReconciliation(attempt)
+    }
+
+    Timer {
+        id: pullResultTimer
+        interval: 4000
+        repeat: false
+        onTriggered: {
+            if (ollama.pullState !== "success") return
+            ollama.pullState = "idle"
+            ollama.pullStatus = ""
+            ollama.pullElapsedSeconds = 0
+        }
     }
 
     Timer {
