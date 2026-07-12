@@ -745,7 +745,6 @@ Item {
 
     Process {
         id: pullProc
-        property int _exitCode: -1
         property bool _exited: false
         stdout: SplitParser {
             onRead: function(line) {
@@ -756,12 +755,11 @@ Item {
             }
         }
         onExited: function(code) {
-            _exitCode = code
             _exited = true
             if (ollama.pullBusy) ollama.finishPull(code)
         }
         onRunningChanged: {
-            if (running) { _exited = false; _exitCode = -1; return }
+            if (running) { _exited = false; return }
             if (!_exited && ollama.pullBusy) {
                 ollama.pullError = "Download failed"
                 ollama.pullBusy = false
