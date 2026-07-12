@@ -20,6 +20,34 @@ PanelWindow {
     property string customCtxDisplay: ""
     property bool configOpen: false
 
+    function clearDeleteConfirmation() {
+        confirmDeleteModel = ""
+        deleteConfirmationTimer.stop()
+    }
+
+    function confirmDelete(name) {
+        confirmDeleteModel = name
+        deleteConfirmationTimer.restart()
+    }
+
+    Timer {
+        id: deleteConfirmationTimer
+        interval: 8000
+        onTriggered: ollamaPanel.clearDeleteConfirmation()
+    }
+
+    Connections {
+        target: root.ollama
+        function onModelsChanged() { ollamaPanel.clearDeleteConfirmation() }
+    }
+
+    Connections {
+        target: root
+        function onOllamaVisibleChanged() {
+            if (!root.ollamaVisible) ollamaPanel.clearDeleteConfirmation()
+        }
+    }
+
     function formatBytes(bytes) {
         var value = Number(bytes) || 0
         var gib = 1024 * 1024 * 1024
@@ -43,7 +71,7 @@ PanelWindow {
         anchors.fill: parent
         onClicked: {
             root.ollamaVisible = false
-            ollamaPanel.confirmDeleteModel = ""
+            ollamaPanel.clearDeleteConfirmation()
         }
     }
 
@@ -91,7 +119,7 @@ PanelWindow {
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
                 if (ollamaPanel.confirmDeleteModel !== "") {
-                    ollamaPanel.confirmDeleteModel = ""
+                    ollamaPanel.clearDeleteConfirmation()
                 } else {
                     root.ollamaVisible = false
                 }
@@ -165,7 +193,19 @@ PanelWindow {
                             enabled: !root.ollama.refreshRunning && !root.ollama.controlsLocked
                             hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: root.ollama.refreshAll()
+                            onEntered: refreshTip.show()
+                            onExited: refreshTip.hide()
+                            onEnabledChanged: if (!enabled) refreshTip.hide()
+                            onClicked: {
+                                ollamaPanel.clearDeleteConfirmation()
+                                root.ollama.refreshAll()
+                            }
+                        }
+                        TooltipMixin {
+                            id: refreshTip
+                            root: ollamaPanel.root
+                            owner: refreshButton
+                            text: "Refresh Ollama state"
                         }
                     }
 
@@ -188,10 +228,18 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onEntered: closeTip.show()
+                            onExited: closeTip.hide()
                             onClicked: {
                                 root.ollamaVisible = false
-                                ollamaPanel.confirmDeleteModel = ""
+                                ollamaPanel.clearDeleteConfirmation()
                             }
+                        }
+                        TooltipMixin {
+                            id: closeTip
+                            root: ollamaPanel.root
+                            owner: closeButton
+                            text: "Close Ollama panel"
                         }
                     }
                 }
@@ -300,7 +348,7 @@ PanelWindow {
                     delegate: Rectangle {
                         required property var modelData
                         width: contentColumn.width
-                        height: 58
+                        height: ollamaPanel.confirmDeleteModel === modelData.name ? 86 : 58
                         radius: root.tileRadius
                         color: modelData.loaded ? root.fillActive : root.fillIdle
                         border.color: modelData.loaded ? root.seal : root.sep
@@ -336,6 +384,7 @@ PanelWindow {
                             font.family: root.mono
                             font.pixelSize: 9
                             elide: Text.ElideRight
+                            visible: ollamaPanel.confirmDeleteModel !== modelData.name
                         }
 
                         Rectangle {
@@ -347,10 +396,8 @@ PanelWindow {
                             height: 28
                             radius: root.tileRadius
                             color: !delMa.enabled ? root.fillIdle
-                                : ollamaPanel.confirmDeleteModel === modelData.name ? root.seal
                                 : delMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
-                            border.color: ollamaPanel.confirmDeleteModel === modelData.name
-                                ? root.seal : root.sep
+                            border.color: delMa.containsMouse ? root.seal : root.sep
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -358,7 +405,6 @@ PanelWindow {
                                 anchors.centerIn: parent
                                 text: "\uE872"
                                 color: !delMa.enabled ? root.sumi
-                                    : ollamaPanel.confirmDeleteModel === modelData.name ? root.paper
                                     : delMa.containsMouse ? root.seal : root.sumi
                                 font.pixelSize: 14
                             }
@@ -367,16 +413,18 @@ PanelWindow {
                                 id: delMa
                                 anchors.fill: parent
                                 enabled: !root.ollama.controlsLocked
-                                hoverEnabled: true
+                                hoverEnabled: enabled
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    if (ollamaPanel.confirmDeleteModel === modelData.name) {
-                                        ollamaPanel.confirmDeleteModel = ""
-                                        root.ollama.deleteModel(modelData.name)
-                                    } else {
-                                        ollamaPanel.confirmDeleteModel = modelData.name
-                                    }
-                                }
+                                onEntered: modelDeleteTip.show()
+                                onExited: modelDeleteTip.hide()
+                                onEnabledChanged: if (!enabled) modelDeleteTip.hide()
+                                onClicked: ollamaPanel.confirmDelete(modelData.name)
+                            }
+                            TooltipMixin {
+                                id: modelDeleteTip
+                                root: ollamaPanel.root
+                                owner: modelDelete
+                                text: "Delete model"
                             }
                         }
 
@@ -416,7 +464,11 @@ PanelWindow {
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onEntered: modelReloadTip.show()
                                 onExited: modelReloadTip.hide()
-                                onClicked: root.ollama.loadModel(modelData.name)
+                                onEnabledChanged: if (!enabled) modelReloadTip.hide()
+                                onClicked: {
+                                    ollamaPanel.clearDeleteConfirmation()
+                                    root.ollama.loadModel(modelData.name)
+                                }
                             }
                         }
 
@@ -453,8 +505,78 @@ PanelWindow {
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
+                                    ollamaPanel.clearDeleteConfirmation()
                                     if (modelData.loaded) root.ollama.ejectModel(modelData.name)
                                     else root.ollama.loadModel(modelData.name)
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            visible: ollamaPanel.confirmDeleteModel === modelData.name
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 8
+                            height: 28
+                            radius: root.tileRadius
+                            color: root.fillIdle
+                            border.color: root.seal
+                            border.width: 1
+
+                            UiText {
+                                id: deleteConfirmationText
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.right: deleteConfirmationActions.left
+                                anchors.rightMargin: 6
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Delete " + ollamaPanel.confirmDeleteModel + "?"
+                                color: root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+                            Row {
+                                id: deleteConfirmationActions
+                                anchors.right: parent.right
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+
+                                Rectangle {
+                                    width: 46
+                                    height: 22
+                                    radius: root.tileRadius
+                                    color: cancelDeleteMa.containsMouse ? root.fillHover : root.fillIdle
+                                    UiText { anchors.centerIn: parent; text: "Cancel"; color: root.ink; font.family: root.mono; font.pixelSize: 9 }
+                                    MouseArea {
+                                        id: cancelDeleteMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: ollamaPanel.clearDeleteConfirmation()
+                                    }
+                                }
+                                Rectangle {
+                                    width: 76
+                                    height: 22
+                                    radius: root.tileRadius
+                                    color: deleteModelMa.containsMouse ? root.sealRaw : root.seal
+                                    UiText { anchors.centerIn: parent; text: "Delete model"; color: root.paper; font.family: root.mono; font.pixelSize: 9 }
+                                    MouseArea {
+                                        id: deleteModelMa
+                                        anchors.fill: parent
+                                        enabled: !root.ollama.controlsLocked
+                                        hoverEnabled: enabled
+                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: {
+                                            root.ollama.deleteModel(ollamaPanel.confirmDeleteModel)
+                                            ollamaPanel.clearDeleteConfirmation()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -534,6 +656,7 @@ PanelWindow {
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
+                                    ollamaPanel.clearDeleteConfirmation()
                                     root.ollama.pullModel(pullInput.text)
                                     pullInput.text = ""
                                 }
@@ -605,7 +728,10 @@ PanelWindow {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.ollama.cancelPull()
+                            onClicked: {
+                                ollamaPanel.clearDeleteConfirmation()
+                                root.ollama.cancelPull()
+                            }
                             }
                         }
                     }
@@ -840,10 +966,11 @@ PanelWindow {
                             id: configBottomMa
                             anchors.fill: parent
                             enabled: !root.ollama.controlsLocked
-                            hoverEnabled: true
+                            hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onEntered: configBottomTip.show()
                             onExited: configBottomTip.hide()
+                            onEnabledChanged: if (!enabled) configBottomTip.hide()
                             onClicked: {
                                 configBottomTip.hide()
                                 root.ollamaVisible = false
@@ -874,7 +1001,10 @@ PanelWindow {
                             enabled: !root.ollama.controlsLocked && root.ollama.configDirty
                             hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: root.ollama.applyRuntimeConfiguration()
+                            onClicked: {
+                                ollamaPanel.clearDeleteConfirmation()
+                                root.ollama.applyRuntimeConfiguration()
+                            }
                         }
                     }
 
@@ -904,12 +1034,14 @@ PanelWindow {
                             id: refreshBottomMa
                             anchors.fill: parent
                             enabled: !root.ollama.controlsLocked
-                            hoverEnabled: true
+                            hoverEnabled: enabled
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onEntered: refreshBottomTip.show()
                             onExited: refreshBottomTip.hide()
+                            onEnabledChanged: if (!enabled) refreshBottomTip.hide()
                             onClicked: {
                                 refreshBottomTip.hide()
+                                ollamaPanel.clearDeleteConfirmation()
                                 root.ollama.refreshAll()
                             }
                         }

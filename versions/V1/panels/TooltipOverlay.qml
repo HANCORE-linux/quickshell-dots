@@ -35,14 +35,17 @@ PanelWindow {
         readonly property int padH: 10
         readonly property int padV: 4
 
-        width: tipLabel.implicitWidth + padH * 2
+        width: Math.min(parent.width - 8, tipLabel.implicitWidth + padH * 2)
         height: tipLabel.implicitHeight + padV * 2
 
         x: {
             var cx = root.tooltipX;
             return Math.max(4, Math.min(parent.width - width - 4, cx - width / 2));
         }
-        y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
+        y: {
+            var cy = root.tooltipY;
+            return Math.max(4, Math.min(parent.height - height - 4, cy - height / 2));
+        }
 
         color: root.barBg   // frosts with the bar's Frost toggle (0.68 ⇄ 0.94)
         border.color: root.pillBorder
@@ -61,6 +64,9 @@ PanelWindow {
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 1
+            width: parent.width - tip.padH * 2
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
         }
     }
 }
