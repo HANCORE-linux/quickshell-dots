@@ -277,6 +277,113 @@ function pullResultState(exitCode, lastLine) {
     return { valid: true, error: "" }
 }
 
+function normalizePullInput(raw) {
+    var text = String(raw || "").trim()
+    if (!text) return { valid: false, model: "", error: "Model name is required" }
+    if (/[;&|`$<>(){}\[\]\\'"\n\r]/.test(text)) {
+        return { valid: false, model: "", error: "Model name contains unsafe shell syntax" }
+    }
+
+    var tokens = text.split(/\s+/)
+    var model = ""
+    if (tokens[0].toLowerCase() === "ollama") {
+        if (tokens.length !== 3 || !/^(pull|run)$/i.test(tokens[1])) {
+            return { valid: false, model: "", error: "Use ollama pull or ollama run with one model name" }
+        }
+        model = tokens[2]
+    } else {
+        if (tokens.length !== 1) {
+            return { valid: false, model: "", error: "Enter one model name" }
+        }
+        model = tokens[0]
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(model) || model.charAt(0) === "-") {
+        return { valid: false, model: "", error: "Model name contains unsupported characters" }
+    }
+    return { valid: true, model: model, error: "" }
+}
+
+function pullEventState(raw, prior) {
+    var previous = prior || {}
+    var event
+    try {
+        event = typeof raw === "string" ? JSON.parse(raw) : raw
+    } catch (error) {
+        return {
+            status: "Download failed", detail: "", digest: "", completed: 0, total: 0,
+            error: "Invalid Ollama pull event", terminal: true
+        }
+    }
+    if (!event || typeof event !== "object" || Array.isArray(event)) {
+        return {
+            status: "Download failed", detail: "", digest: "", completed: 0, total: 0,
+            error: "Invalid Ollama pull event", terminal: true
+        }
+    }
+    if (event.error !== undefined && String(event.error).length > 0) {
+        return {
+            status: "Download failed", detail: "", digest: "", completed: 0, total: 0,
+            error: String(event.error), terminal: true
+        }
+    }
+
+    var sourceStatus = String(event.status || "").toLowerCase()
+    var digest = event.digest !== undefined ? String(event.digest) : String(previous.digest || "")
+    var completed = isFinite(Number(event.completed)) ? Number(event.completed) : Number(previous.completed || 0)
+    var total = isFinite(Number(event.total)) ? Number(event.total) : Number(previous.total || 0)
+    var status = "Preparing download"
+    var detail = ""
+    var terminal = false
+
+    if (sourceStatus === "pulling manifest") status = "Fetching manifest"
+    else if (sourceStatus === "downloading") {
+        status = "Downloading"
+        if (total > 0 && completed >= 0) detail = String(Math.floor(completed * 100 / total)) + "%"
+    } else if (sourceStatus.indexOf("verifying") === 0) status = "Verifying download"
+    else if (sourceStatus === "writing manifest") status = "Writing manifest"
+    else if (sourceStatus === "success") {
+        status = "Download complete"
+        terminal = true
+    }
+
+    return {
+        status: status, detail: detail, digest: digest, completed: completed, total: total,
+        error: "", terminal: terminal
+    }
+}
+
+function pullRateState(prior, digest, completed, nowMs) {
+    var previous = prior || {}
+    var currentDigest = String(digest || "")
+    var currentCompleted = Number(completed)
+    var currentTime = Number(nowMs)
+    var total = Number(previous.total)
+    var rate = 0
+    var eta = 0
+    var previousCompleted = Number(previous.completed)
+    var previousTime = Number(previous.sampledAtMs)
+
+    if (String(previous.digest || "") === currentDigest
+            && isFinite(currentCompleted) && isFinite(currentTime)
+            && isFinite(previousCompleted) && isFinite(previousTime)) {
+        var bytesDelta = currentCompleted - previousCompleted
+        var timeDeltaSeconds = (currentTime - previousTime) / 1000
+        if (bytesDelta > 0 && timeDeltaSeconds > 0) {
+            rate = bytesDelta / timeDeltaSeconds
+            if (isFinite(total) && total > currentCompleted) eta = (total - currentCompleted) / rate
+        }
+    }
+
+    return {
+        digest: currentDigest,
+        completed: isFinite(currentCompleted) ? currentCompleted : 0,
+        total: isFinite(total) ? total : 0,
+        sampledAtMs: isFinite(currentTime) ? currentTime : 0,
+        rateBytesPerSecond: rate,
+        etaSeconds: eta
+    }
+}
+
 function runtimeConfigState(raw) {
     var cfg
     try {

@@ -386,6 +386,79 @@ TestCase {
         compare(state.error, "server unavailable")
     }
 
+    function test_normalizesSafePullInput() {
+        var direct = OllamaDataLogic.normalizePullInput("  hf.co/user/model-GGUF:Q6_K  ")
+        verify(direct.valid)
+        compare(direct.model, "hf.co/user/model-GGUF:Q6_K")
+
+        var pull = OllamaDataLogic.normalizePullInput("  OLLAMA   pull  qwen3:8b  ")
+        verify(pull.valid)
+        compare(pull.model, "qwen3:8b")
+
+        var run = OllamaDataLogic.normalizePullInput("ollama RUN gemma3:4b")
+        verify(run.valid)
+        compare(run.model, "gemma3:4b")
+    }
+
+    function test_rejectsUnsafePullInput() {
+        var inputs = ["", "ollama pull", "ollama pull --insecure qwen3:8b",
+                      "ollama run qwen3:8b extra", "qwen3:8b; rm -rf /", "$(id)"]
+        for (var i = 0; i < inputs.length; i++) {
+            var state = OllamaDataLogic.normalizePullInput(inputs[i])
+            verify(!state.valid, inputs[i])
+            verify(state.error.length > 0, inputs[i])
+        }
+    }
+
+    function test_reducesPullEventsToReadableStates() {
+        var manifest = OllamaDataLogic.pullEventState('{"status":"pulling manifest"}', {})
+        compare(manifest.status, "Fetching manifest")
+        compare(manifest.detail, "")
+        verify(!manifest.terminal)
+
+        var download = OllamaDataLogic.pullEventState(
+                    '{"status":"downloading","digest":"sha256:deadbeef","total":1000,"completed":250}', manifest)
+        compare(download.status, "Downloading")
+        compare(download.detail, "25%")
+        compare(download.digest, "sha256:deadbeef")
+        compare(download.completed, 250)
+        compare(download.total, 1000)
+
+        var verification = OllamaDataLogic.pullEventState('{"status":"verifying sha256:deadbeef"}', download)
+        compare(verification.status, "Verifying download")
+        verify(verification.status.indexOf("deadbeef") < 0)
+
+        var writing = OllamaDataLogic.pullEventState('{"status":"writing manifest"}', verification)
+        compare(writing.status, "Writing manifest")
+
+        var success = OllamaDataLogic.pullEventState('{"status":"success"}', writing)
+        compare(success.status, "Download complete")
+        verify(success.terminal)
+
+        var failure = OllamaDataLogic.pullEventState('{"error":"model not found"}', success)
+        compare(failure.status, "Download failed")
+        compare(failure.error, "model not found")
+        verify(failure.terminal)
+    }
+
+    function test_tracksPullRateAndEtaWithDeterministicTimestamps() {
+        var first = OllamaDataLogic.pullRateState({ total: 1000 }, "sha256:first", 100, 1000)
+        compare(first.rateBytesPerSecond, 0)
+        compare(first.etaSeconds, 0)
+
+        var second = OllamaDataLogic.pullRateState(first, "sha256:first", 300, 2000)
+        compare(second.rateBytesPerSecond, 200)
+        compare(second.etaSeconds, 3.5)
+
+        var changedDigest = OllamaDataLogic.pullRateState(second, "sha256:second", 100, 3000)
+        compare(changedDigest.rateBytesPerSecond, 0)
+        compare(changedDigest.etaSeconds, 0)
+
+        var invalidDelta = OllamaDataLogic.pullRateState(second, "sha256:first", 200, 2000)
+        compare(invalidDelta.rateBytesPerSecond, 0)
+        compare(invalidDelta.etaSeconds, 0)
+    }
+
     function test_restoresPendingRuntimeConfiguration() {
         var state = data.runtimeConfigState('{"keepAlive":-1,"numCtx":16384,"dirty":true}')
         compare(state.valid, true)
