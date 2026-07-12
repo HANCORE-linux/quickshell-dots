@@ -30,6 +30,16 @@ PanelWindow {
         deleteConfirmationTimer.restart()
     }
 
+    function setKeepAlive(value) {
+        clearDeleteConfirmation()
+        root.ollama.setKeepAlive(value)
+    }
+
+    function setContext(value) {
+        clearDeleteConfirmation()
+        root.ollama.setNumCtx(value)
+    }
+
     Timer {
         id: deleteConfirmationTimer
         interval: 8000
@@ -653,7 +663,7 @@ PanelWindow {
                                 anchors.fill: parent
                                 enabled: !root.ollama.controlsLocked
                                     && String(pullInput.text).trim() !== ""
-                                hoverEnabled: true
+                                hoverEnabled: enabled
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
                                     ollamaPanel.clearDeleteConfirmation()
@@ -822,7 +832,7 @@ PanelWindow {
                             MouseArea {
                                 anchors.fill: parent
                                 enabled: !root.ollama.controlsLocked
-                                onClicked: root.ollama.setKeepAlive(modelData.value)
+                                onClicked: ollamaPanel.setKeepAlive(modelData.value)
                             }
                         }
                     }
@@ -894,7 +904,7 @@ PanelWindow {
                                     var n = root.ollama.parseContextInput(raw)
                                     if (n !== null) {
                                         ollamaPanel.customCtxDisplay = raw
-                                        root.ollama.setNumCtx(n)
+                                        ollamaPanel.setContext(n)
                                     }
                                 }
                             }
@@ -915,7 +925,7 @@ PanelWindow {
                                 anchors.fill: parent
                                 enabled: !root.ollama.controlsLocked && !isCustom
                                 onClicked: {
-                                    root.ollama.setNumCtx(modelData.value)
+                                    ollamaPanel.setContext(modelData.value)
                                 }
                             }
                         }

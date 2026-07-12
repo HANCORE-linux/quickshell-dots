@@ -25,6 +25,15 @@ assert_matches() {
     }
 }
 
+assert_file_matches() {
+    local file="$repo_root/$1"
+    local pattern="$2"
+    grep -Pzq -- "$pattern" "$file" || {
+        printf 'missing pattern %s in %s\n' "$pattern" "$file" >&2
+        exit 1
+    }
+}
+
 assert_contains 'import "modules"'
 assert_contains 'OllamaData {'
 assert_contains 'id: ollamaData'
@@ -135,6 +144,11 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Context"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setKeepAlive'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setNumCtx'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.parseContextInput(raw)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'function setKeepAlive(value)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'function setContext(value)'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setKeepAlive\(value\)\s*\{\s*clearDeleteConfirmation\(\)\s*root\.ollama\.setKeepAlive\(value\)'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setContext\(value\)\s*\{\s*clearDeleteConfirmation\(\)\s*root\.ollama\.setNumCtx\(value\)'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: pullMa\s*anchors\.fill: parent\s*enabled: !root\.ollama\.controlsLocked\s*&& String\(pullInput\.text\)\.trim\(\) !== ""\s*hoverEnabled: enabled'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.applyRuntimeConfiguration()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Apply configuration"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"'
