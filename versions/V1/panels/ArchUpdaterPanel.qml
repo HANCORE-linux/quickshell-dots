@@ -94,21 +94,27 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: root.archVisible = false
+        onClicked: root.closeArchUpdatesPanel()
     }
 
-    // On open: show the blacklist/protection status instantly (the gate only reads
-    // a local file — no need to wait for the slow package check), and kick a package
-    // check if there is no data yet (e.g. right after a bar restart). The widget
-    // ignores the trigger while a refresh is already in flight. Re-running the gate
-    // here also clears a transient degraded verdict (blacklist mid-update at scan).
+    function refreshPackagesTabState() {
+        archPanel.nowEpoch = Math.floor(Date.now() / 1000)
+        root.archGateRescan()
+        if (root.archUpdates.length === 0) root.archRefreshTick++
+    }
+
+    // Packages tab only: show the blacklist/protection status instantly (the gate
+    // only reads a local file — no need to wait for the slow package check), and
+    // kick a package check if there is no data yet. Opening Themes/Shell must not
+    // start package work as a side effect.
     Connections {
         target: root
         function onArchVisibleChanged() {
             if (!root.archVisible) return
-            archPanel.nowEpoch = Math.floor(Date.now() / 1000)
-            root.archGateRescan()
-            if (root.archUpdates.length === 0) root.archRefreshTick++
+            if (root.activeUpdateTab === "packages") archPanel.refreshPackagesTabState()
+        }
+        function onActiveUpdateTabChanged() {
+            if (root.archVisible && root.activeUpdateTab === "packages") archPanel.refreshPackagesTabState()
         }
         function onArchScanCheckedEpochChanged() {
             archPanel.nowEpoch = Math.floor(Date.now() / 1000)
@@ -373,7 +379,7 @@ PanelWindow {
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
-                root.archVisible = false;
+                root.closeArchUpdatesPanel();
                 event.accepted = true;
             }
         }
@@ -413,7 +419,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.archVisible = false
+                        onClicked: root.closeArchUpdatesPanel()
                     }
                 }
                 Row {
@@ -433,14 +439,15 @@ PanelWindow {
                     Repeater {
                         model: [
                             { id: "packages", label: "PKG" },
-                            { id: "themes",   label: "Themes" }
+                            { id: "themes",   label: "Themes" },
+                            { id: "shell",    label: "Shell" }
                         ]
                         Item {
                             id: badgeToggleItem
                             required property var modelData
-                            readonly property bool active: modelData.id === "packages"
-                                ? root.archBadgePackages
-                                : root.archBadgeThemes
+                            readonly property bool active: modelData.id === "packages" ? root.archBadgePackages
+                                : modelData.id === "themes" ? root.archBadgeThemes
+                                : root.archBadgeShell
                             width: badgeToggleText.implicitWidth + 36
                             height: 18
                             UiText {
@@ -482,8 +489,10 @@ PanelWindow {
                                 onClicked: {
                                     if (badgeToggleItem.modelData.id === "packages")
                                         root.archBadgePackages = !root.archBadgePackages
-                                    else
+                                    else if (badgeToggleItem.modelData.id === "themes")
                                         root.archBadgeThemes = !root.archBadgeThemes
+                                    else
+                                        root.archBadgeShell = !root.archBadgeShell
                                 }
                             }
                         }
@@ -493,16 +502,20 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            // ── Packages ⟷ Themes tab switch (segmented, AiUsagePanel style) ──
+            // ── Packages ⟷ Themes ⟷ Shell tab switch (segmented, AiUsagePanel style) ──
             Row {
                 width: parent.width
                 height: 26
                 spacing: 6
                 Repeater {
-                    model: [ { id: "packages", label: "Packages" }, { id: "themes", label: "Themes" } ]
+                    model: [
+                        { id: "packages", label: "Packages" },
+                        { id: "themes", label: "Themes" },
+                        { id: "shell", label: "Shell" }
+                    ]
                     Rectangle {
                         required property var modelData
-                        width: (parent.width - 6) / 2
+                        width: (parent.width - 12) / 3
                         height: 26; radius: root.tileRadius
                         readonly property bool active: root.activeUpdateTab === modelData.id
                         color: active ? root.fillActive : tabMa.containsMouse ? root.fillHover : root.fillIdle
@@ -1121,6 +1134,12 @@ PanelWindow {
                 }
             }
             // ══════════ END THEMES TAB ══════════
+
+            ShellUpdateTab {
+                width: parent.width
+                root: archPanel.root
+                visible: root.activeUpdateTab === "shell"
+            }
         }
     }
 }

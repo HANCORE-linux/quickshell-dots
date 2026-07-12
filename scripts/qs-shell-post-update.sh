@@ -6,10 +6,11 @@
 # OUTSIDE the bar config dir — helper scripts and systemd user units — so a
 # bar update is complete on its own and never needs a manual install.sh re-run.
 #
-# Idempotent and defensive: a missing source file is skipped, and failures are
-# reported via exit code so qs-shell-apply-update.sh can roll the whole update
-# transaction back. Opt-in AI backends are refreshed only when installed or
-# discoverable.
+# Idempotent and defensive: legacy companions may lack newer optional sources
+# and are skipped, while current strict companions can require reviewed sources
+# and report failures via exit code so qs-shell-apply-update.sh can roll the
+# whole update transaction back. Opt-in AI backends are refreshed only when
+# installed or discoverable.
 set -uo pipefail
 
 repo="${1:-${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}}"
@@ -19,6 +20,7 @@ units="$HOME/.config/systemd/user"
 theme_hooks="$HOME/.config/omarchy/hooks/theme-set.d"
 post_boot_hooks="$HOME/.config/omarchy/hooks/post-boot.d"
 defer_systemd="${QS_SHELL_COMPANION_DEFER_SYSTEMD:-0}"
+require_post_boot_source="${QS_SHELL_REQUIRE_POST_BOOT_SOURCE:-0}"
 
 # install via temp + rename: the target gets a NEW inode, so replacing a script
 # that is currently executing (e.g. the apply script calling us) is safe.
@@ -100,7 +102,7 @@ if [ -f "$post_boot_hooks/quickshell-rise" ]; then
   mkdir -p "$post_boot_hooks" || rc=1
   if [ -f "$repo/contrib/post-boot.d/quickshell-rise" ]; then
     put "$repo/contrib/post-boot.d/quickshell-rise" "$post_boot_hooks/quickshell-rise" 755 || rc=1
-  else
+  elif [ "$require_post_boot_source" = "1" ]; then
     rc=1
   fi
 fi

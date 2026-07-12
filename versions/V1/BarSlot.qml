@@ -269,6 +269,18 @@ PanelWindow {
     Component { id: compVol;    AudioWidget  { root: barSlot.root } }
     Component { id: compClaude; ClaudeWidget { root: barSlot.root } }
     Component { id: compOllama; OllamaWidget { root: barSlot.root } }
+    Component {
+        id: compShellFallbackUpdater
+        Item {
+            width: 26
+            height: 28
+            ArchUpdaterWidget {
+                root: barSlot.root
+                preferShell: true
+                anchors.centerIn: parent
+            }
+        }
+    }
 
     Component {
         id: compCenter                                   // G8: weather·clock·date·indicators
@@ -393,19 +405,28 @@ PanelWindow {
                         id: iconsRow
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
+                        readonly property bool shellFallbackActive: !barSlot.root.modStatus
+                            && (barSlot.root.shellUpdateBehind > 0 || barSlot.root.shellUpdateProgressVisible)
                         readonly property bool hasActive: idleInd.awake
                             || dndInd.silenced
                             || screenRecInd.recording
                             || voxInd.state === "recording"
                             || voxInd.state === "transcribing"
                             || omarchyUpdateInd.updateAvailable
-                            || shellUpdateInd.updateAvailable
+                            || shellFallbackActive
                         IdleWidget               { id: idleInd;          root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                         NotificationSilenceWidget{ id: dndInd;           root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                         ScreenRecordWidget       { id: screenRecInd;     root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                         VoxtypeWidget            { id: voxInd;           root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                         UpdateWidget             { id: omarchyUpdateInd; root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
-                        ShellUpdateWidget        { id: shellUpdateInd;   root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                        Loader {
+                            visible: iconsRow.shellFallbackActive || width > 0.5
+                            active: iconsRow.shellFallbackActive
+                            width: iconsRow.shellFallbackActive ? 26 : 0
+                            height: 28
+                            sourceComponent: compShellFallbackUpdater
+                            Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                        }
                     }
                 }
             }

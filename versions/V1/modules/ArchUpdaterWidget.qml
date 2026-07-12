@@ -11,6 +11,7 @@ Item {
     property int systemCount: 0
     property int aurCount: 0
     property bool refreshing: false
+    property bool preferShell: false
 
     readonly property bool hasUpdates: rootMod.updateCount > 0
     readonly property bool badgePrefsLoaded: root._widgetsLoaded
@@ -25,9 +26,13 @@ Item {
     }
     readonly property bool hasThemeUpdates: rootMod.cleanThemeCount > 0
     readonly property int themeBadgeCount: (rootMod.badgePrefsLoaded && root.archBadgeThemes) ? Math.max(0, rootMod.cleanThemeCount) : 0
-    readonly property int badgeCount: rootMod.packageBadgeCount + rootMod.themeBadgeCount
+    readonly property bool hasShellUpdate: root.shellUpdateBehind > 0
+        || root.shellUpdateProgressVisible
+    readonly property int shellBadgeCount: (rootMod.badgePrefsLoaded && root.archBadgeShell && rootMod.hasShellUpdate) ? 1 : 0
+    readonly property int badgeCount: rootMod.packageBadgeCount + rootMod.themeBadgeCount + rootMod.shellBadgeCount
     readonly property bool hasBadge: rootMod.badgeCount > 0
-    readonly property bool hasNotice: rootMod.hasUpdates || rootMod.hasThemeUpdates || root.themeUpdLocalEdits > 0
+    readonly property bool hasNotice: rootMod.hasUpdates || rootMod.hasThemeUpdates
+        || root.themeUpdLocalEdits > 0 || rootMod.hasShellUpdate
 
     implicitWidth: 26
     implicitHeight: 28
@@ -160,6 +165,10 @@ Item {
         if (rootMod.aurCount) parts.push(rootMod.aurCount + " AUR")
         if (rootMod.cleanThemeCount > 0) parts.push(rootMod.cleanThemeCount + " themes")
         if (root.themeUpdLocalEdits > 0) parts.push(root.themeUpdLocalEdits + " review")
+        if (root.shellProgressRunning) parts.push("shell updating")
+        else if (root.shellProgressFailed || root.shellProgressInterrupted) parts.push("shell failed")
+        else if (root.shellProgressCompleted) parts.push("shell done")
+        else if (root.shellUpdateBehind > 0) parts.push("shell update")
         if (parts.length === 0) return "Up to date"
         return parts.join(" \u00B7 ") + "\nClick to view details"
     }
@@ -178,6 +187,16 @@ Item {
             if (e.button === Qt.RightButton) {
                 root.archRefreshTick++;
             } else {
+                if (root.shellUpdateProgressVisible || rootMod.preferShell) {
+                    root.showShellUpdateTabFromWidget()
+                    return
+                }
+                if (root.shellUpdateBehind > 0
+                        && !rootMod.hasUpdates
+                        && !rootMod.hasThemeUpdates
+                        && root.themeUpdLocalEdits <= 0) {
+                    root.activeUpdateTab = "shell"
+                }
                 root.archVisible = true;
             }
         }

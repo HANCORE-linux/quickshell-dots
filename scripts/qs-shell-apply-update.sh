@@ -6,8 +6,8 @@
 # Updating = read the checked state, verify the immutable target commit, deploy
 # exactly that commit's version payload, restart the bar.
 #
-# MUST be launched DETACHED from the bar (the QML button uses `setsid`), because
-# this script restarts the bar.
+# MUST be launched outside the bar's service/cgroup, because this script stops
+# and restarts the bar. `setsid` is not enough for systemd-managed launches.
 #
 # Safety contract:
 #   - single-flight (flock): no concurrent applies
@@ -23,7 +23,11 @@ DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 [ "$DEST" != "/" ] && DEST="${DEST%/}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
+PROGRESS_STATE="${QS_SHELL_PROGRESS_STATE:-$STATE_DIR/apply-status.json}"
 SCHEMA_VERSION=5
+PROGRESS_SCHEMA_VERSION=1
+PROGRESS_TOTAL_STEPS=5
+PROGRESS_STALE_SECONDS=600
 HOOK_PATH="hooks/50-quickshell-bar.sh"
 POST_BOOT_HOOK_PATH="contrib/post-boot.d/quickshell-rise"
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
@@ -32,7 +36,294 @@ BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell/backups"
 mkdir -p "$STATE_DIR"
 
 note() { notify-send -a "QS-Shell" "$@" 2>/dev/null || true; }
-fail() { note -u critical "Shell update failed" "$1"; exit 1; }
+
+progress_run_id=""
+progress_state="idle"
+progress_phase=""
+progress_step=0
+progress_target=""
+progress_started_epoch=0
+progress_screen="${QS_SHELL_PROGRESS_SCREEN:-}"
+progress_panel_open=true
+progress_last_trace_key=""
+launched_bar_unit=""
+
+systemd_env_args() {
+  local -n _args_ref="$1"
+  local name value
+  for name in \
+      DISPLAY \
+      WAYLAND_DISPLAY \
+      XDG_RUNTIME_DIR \
+      XDG_SESSION_ID \
+      XDG_SESSION_TYPE \
+      XDG_CURRENT_DESKTOP \
+      QT_QPA_PLATFORM \
+      QT_QUICK_CONTROLS_STYLE \
+      HYPRLAND_INSTANCE_SIGNATURE \
+      OMARCHY_PATH \
+      PATH; do
+    value="${!name-}"
+    [ -n "$value" ] && _args_ref+=("--setenv=$name=$value")
+  done
+}
+
+start_bar_instance() {
+  local unit args=()
+  unit="qsrise-bar-$(random_run_id)"
+
+  if command -v systemd-run >/dev/null 2>&1; then
+    args=(--user --collect --quiet "--unit=$unit" "--slice=app-graphical.slice" "--property=Type=exec")
+    systemd_env_args args
+    if systemd-run "${args[@]}" qs -n -c bar >/dev/null 2>&1 9>&-; then
+      launched_bar_unit="$unit"
+      return 0
+    fi
+    if [ -n "${INVOCATION_ID:-}" ]; then
+      return 1
+    fi
+  fi
+
+  setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
+}
+
+stop_launched_bar_unit() {
+  [ -n "${launched_bar_unit:-}" ] || return 0
+  command -v systemctl >/dev/null 2>&1 || return 0
+  systemctl --user stop "$launched_bar_unit" >/dev/null 2>&1 || true
+}
+
+epoch_now() {
+  date +%s
+}
+
+random_run_id() {
+  local id
+  id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')" || true
+  if [ -n "$id" ]; then
+    printf '%s\n' "$id"
+  else
+    printf '%s-%s\n' "$(epoch_now)" "$$"
+  fi
+}
+
+progress_trace() {
+  local key
+  [ -n "${QS_SHELL_PROGRESS_TRACE:-}" ] || return 0
+  key="$progress_state:$progress_phase:$progress_step"
+  [ "$key" != "$progress_last_trace_key" ] || return 0
+  progress_last_trace_key="$key"
+  printf '%s\t%s\t%s\t%s\n' "$progress_state" "$progress_phase" "$progress_step" "$progress_run_id" \
+    >> "$QS_SHELL_PROGRESS_TRACE" 2>/dev/null || true
+}
+
+write_progress() {
+  local state="$1" phase="$2" step="$3" error="${4:-}"
+  local now t panel_open
+
+  [ -n "$progress_run_id" ] || return 0
+  if [ -r "$PROGRESS_STATE" ]; then
+    panel_open="$(jq -r --argjson schema "$PROGRESS_SCHEMA_VERSION" --arg run "$progress_run_id" '
+      if .schemaVersion == $schema and .runId == $run and (.panelOpen | type == "boolean")
+      then .panelOpen else empty end
+    ' "$PROGRESS_STATE" 2>/dev/null)" || panel_open=""
+    case "$panel_open" in
+      true) progress_panel_open=true ;;
+      false) progress_panel_open=false ;;
+    esac
+  fi
+  now="$(epoch_now)"
+  [ "$progress_started_epoch" -gt 0 ] || progress_started_epoch="$now"
+  progress_state="$state"
+  progress_phase="$phase"
+  progress_step="$step"
+
+  t="$(mktemp -p "$STATE_DIR" apply-status.XXXXXX 2>/dev/null)" || return 0
+  if jq -nc \
+      --argjson schema "$PROGRESS_SCHEMA_VERSION" \
+      --arg runId "$progress_run_id" \
+      --arg state "$state" \
+      --arg phase "$phase" \
+      --argjson step "$step" \
+      --argjson totalSteps "$PROGRESS_TOTAL_STEPS" \
+      --arg targetCommit "$progress_target" \
+      --argjson startedEpoch "$progress_started_epoch" \
+      --argjson updatedEpoch "$now" \
+      --arg screenName "$progress_screen" \
+      --arg error "$error" \
+      --argjson panelOpen "$progress_panel_open" \
+      '{
+        schemaVersion: $schema,
+        runId: $runId,
+        state: $state,
+        phase: $phase,
+        step: $step,
+        totalSteps: $totalSteps,
+        targetCommit: $targetCommit,
+        startedEpoch: $startedEpoch,
+        updatedEpoch: $updatedEpoch,
+        screenName: $screenName,
+        error: $error,
+        acknowledged: false,
+        panelOpen: $panelOpen
+      }' > "$t" 2>/dev/null && mv "$t" "$PROGRESS_STATE" 2>/dev/null; then
+    progress_trace
+    return 0
+  fi
+
+  rm -f "$t" 2>/dev/null || true
+  return 0
+}
+
+progress_fail() {
+  local msg="$1"
+  [ -n "$progress_run_id" ] || return 0
+  [ -n "$progress_phase" ] || progress_phase="checking"
+  [ "$progress_step" -gt 0 ] || progress_step=1
+  write_progress "failed" "$progress_phase" "$progress_step" "$msg"
+}
+
+fail() {
+  progress_fail "$1"
+  note -u critical "Shell update failed" "$1"
+  exit 1
+}
+
+progress_recent_running_exists() {
+  local row state updated now
+  [ -r "$PROGRESS_STATE" ] || return 1
+  row="$(jq -r --argjson schema "$PROGRESS_SCHEMA_VERSION" '
+    if .schemaVersion == $schema
+       and (.state == "running")
+       and ((.updatedEpoch // 0) > 0)
+    then [.state, (.updatedEpoch | tostring)] | @tsv else empty end
+  ' "$PROGRESS_STATE" 2>/dev/null)" || return 1
+  [ -n "$row" ] || return 1
+  IFS=$'\t' read -r state updated <<< "$row"
+  now="$(epoch_now)"
+  [ $((now - updated)) -lt "$PROGRESS_STALE_SECONDS" ]
+}
+
+start_progress_run() {
+  progress_run_id="$(random_run_id)"
+  progress_state="running"
+  progress_phase="checking"
+  progress_step=1
+  progress_target=""
+  progress_started_epoch="$(epoch_now)"
+  progress_panel_open=true
+  write_progress "running" "checking" 1 ""
+}
+
+set_progress_panel() {
+  local run_id="$1" mode="$2" open t
+  case "$mode" in
+    open) open=true ;;
+    closed) open=false ;;
+    *) return 0 ;;
+  esac
+  [ -n "$run_id" ] || return 0
+  [ -r "$PROGRESS_STATE" ] || return 0
+  t="$(mktemp -p "$STATE_DIR" apply-status.XXXXXX 2>/dev/null)" || return 0
+  if jq -c --argjson schema "$PROGRESS_SCHEMA_VERSION" \
+      --arg run "$run_id" \
+      --argjson open "$open" \
+      'if .schemaVersion == $schema and .runId == $run
+       then .panelOpen = $open
+       else . end' "$PROGRESS_STATE" > "$t" 2>/dev/null \
+      && mv "$t" "$PROGRESS_STATE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$t" 2>/dev/null || true
+  return 0
+}
+
+load_progress_for_run() {
+  local run_id="$1" row
+  [ -n "$run_id" ] || return 1
+  [ -r "$PROGRESS_STATE" ] || return 1
+  row="$(jq -r --argjson schema "$PROGRESS_SCHEMA_VERSION" --arg run "$run_id" '
+    if .schemaVersion == $schema and .runId == $run
+    then [
+      .runId,
+      (.state // ""),
+      (.phase // ""),
+      ((.step // 0) | tostring),
+      (.targetCommit // ""),
+      ((.startedEpoch // 0) | tostring),
+      (.screenName // ""),
+      (if (.panelOpen | type == "boolean") then (.panelOpen | tostring) else "true" end)
+    ] | @tsv else empty end
+  ' "$PROGRESS_STATE" 2>/dev/null)" || return 1
+  [ -n "$row" ] || return 1
+  IFS=$'\t' read -r progress_run_id progress_state progress_phase progress_step progress_target progress_started_epoch progress_screen progress_panel_open <<< "$row"
+  [ -n "$progress_run_id" ]
+}
+
+complete_progress() {
+  local run_id="$1" deployed=""
+  load_progress_for_run "$run_id" || return 0
+  [ "$progress_state" = "running" ] || return 0
+  if [ -f "$DEST/.qsrise-commit" ]; then
+    deployed="$(tr -d '[:space:]' < "$DEST/.qsrise-commit" 2>/dev/null || true)"
+  fi
+  if [ -n "$progress_target" ] && [ "$deployed" = "$progress_target" ]; then
+    write_progress "completed" "restarting" 5 ""
+    note "Shell updated" "Now on reviewed target ${progress_target:0:12}."
+  else
+    write_progress "failed" "restarting" 5 "Loaded shell does not match the reviewed target."
+    note -u critical "Shell update failed" "Loaded shell does not match the reviewed target."
+  fi
+}
+
+ack_progress() {
+  local run_id="$1" now t
+  load_progress_for_run "$run_id" || return 0
+  now="$(epoch_now)"
+  t="$(mktemp -p "$STATE_DIR" apply-status.XXXXXX 2>/dev/null)" || return 0
+  if jq -nc \
+      --argjson schema "$PROGRESS_SCHEMA_VERSION" \
+      --arg runId "$progress_run_id" \
+      --arg targetCommit "$progress_target" \
+      --argjson startedEpoch "$progress_started_epoch" \
+      --argjson updatedEpoch "$now" \
+      --arg screenName "$progress_screen" \
+      --argjson panelOpen false \
+      '{
+        schemaVersion: $schema,
+        runId: $runId,
+        state: "idle",
+        phase: "",
+        step: 0,
+        totalSteps: 5,
+        targetCommit: $targetCommit,
+        startedEpoch: $startedEpoch,
+        updatedEpoch: $updatedEpoch,
+        screenName: $screenName,
+        error: "",
+        acknowledged: true,
+        panelOpen: $panelOpen
+      }' > "$t" 2>/dev/null && mv "$t" "$PROGRESS_STATE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$t" 2>/dev/null || true
+  return 0
+}
+
+case "${1:-}" in
+  --complete-progress)
+    complete_progress "${2:-}"
+    exit 0
+    ;;
+  --ack-progress)
+    ack_progress "${2:-}"
+    exit 0
+    ;;
+  --progress-panel)
+    set_progress_panel "${2:-}" "${3:-}"
+    exit 0
+    ;;
+esac
 
 # Single-flight: a second click (the panel lingers ~120ms while closing) must not
 # start a concurrent rm/rename on $DEST.
@@ -41,6 +332,11 @@ if ! flock -n 9; then
   note "Shell update" "An update is already running."
   exit 0
 fi
+if progress_recent_running_exists; then
+  note "Shell update" "An update is already running."
+  exit 0
+fi
+start_progress_run
 
 # State contract: never delete the state file; "up to date" is behind:0 (atomic).
 clear_state() {
@@ -287,31 +583,25 @@ commit_companion_systemd() {
   return "$rc"
 }
 
-check_stage_local_imports() {
-  local root="$1" file dir line rel rc=0
+check_stage_imports() {
+  local root="$1" file dir line rel path rc=0
   while IFS= read -r -d '' file; do
     dir="$(dirname "$file")"
     while IFS= read -r line || [ -n "$line" ]; do
-      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]*"\([^"]\+\)".*/\1/p')"
-      [ -n "$rel" ] || continue
-      case "$rel" in
-        :*|qrc:*) continue ;;
-      esac
-      [ -e "$dir/$rel" ] || rc=1
-    done < "$file"
-  done < <(find "$root" -name '*.qml' -type f -print0)
-  return "$rc"
-}
+      if [[ "$line" =~ ^[[:space:]]*import[[:space:]]*\"([^\"]+)\" ]]; then
+        rel="${BASH_REMATCH[1]}"
+        case "$rel" in
+          :*|qrc:*) ;;
+          *) [ -e "$dir/$rel" ] || rc=1 ;;
+        esac
+      fi
 
-check_stage_qs_imports() {
-  local root="$1" file line rel path rc=0
-  while IFS= read -r -d '' file; do
-    while IFS= read -r line || [ -n "$line" ]; do
-      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]\+qs\.\([A-Za-z0-9_.]\+\).*/\1/p')"
-      [ -n "$rel" ] || continue
-      path="${rel//./\/}"
-      [ -d "$root/$path" ] || rc=1
-      [ -f "$root/$path/qmldir" ] || rc=1
+      if [[ "$line" =~ ^[[:space:]]*import[[:space:]]+qs\.([A-Za-z0-9_.]+) ]]; then
+        rel="${BASH_REMATCH[1]}"
+        path="${rel//./\/}"
+        [ -d "$root/$path" ] || rc=1
+        [ -f "$root/$path/qmldir" ] || rc=1
+      fi
     done < "$file"
   done < <(find "$root" -name '*.qml' -type f -print0)
   return "$rc"
@@ -324,10 +614,7 @@ run_quickshell_smoke() {
   else
     timeout "$timeout_s" "$qs_bin" -p "$wrapper" --no-duplicate --no-color >"$out" 2>"$err" || rc=$?
   fi
-  case "$rc" in
-    0|124|143) ;;
-    *) return 1 ;;
-  esac
+  [ "$rc" -eq 0 ] || return 1
   grep -Fq "QS_SHELL_SMOKE_OK" "$out" "$err" 2>/dev/null || return 1
   ! grep -Fq "QS_SHELL_SMOKE_FAIL" "$out" "$err" 2>/dev/null
 }
@@ -341,8 +628,7 @@ smoke_stage() {
   fi
   [ -n "$qs_bin" ] || fail "quickshell is required for staged shell smoke."
   command -v timeout >/dev/null 2>&1 || fail "timeout is required for staged shell smoke."
-  check_stage_local_imports "$root" || fail "Staged shell contains unresolved local QML imports."
-  check_stage_qs_imports "$root" || fail "Staged shell contains unresolved qs.* QML imports."
+  check_stage_imports "$root" || fail "Staged shell contains unresolved local or qs.* QML imports."
 
   smoke="$(mktemp -d -p "$STATE_DIR" smoke.XXXXXX)" || fail "Could not create staged shell smoke directory."
   wrapper="$smoke/file-url-smoke.qml"
@@ -353,15 +639,33 @@ smoke_stage() {
 import QtQuick
 
 QtObject {
+  id: root
   property var component: null
+  property bool finished: false
+
+  function finish(ok, errorText) {
+    if (finished)
+      return
+    finished = true
+    if (ok)
+      console.log("QS_SHELL_SMOKE_OK")
+    else
+      console.error("QS_SHELL_SMOKE_FAIL " + errorText)
+    Qt.callLater(Qt.quit)
+  }
+
+  function evaluateStatus() {
+    if (component.status === Component.Ready)
+      finish(true, "")
+    else if (component.status === Component.Error)
+      finish(false, component.errorString())
+  }
 
   Component.onCompleted: {
     component = Qt.createComponent("__QS_SHELL_TARGET_URL__")
-    if (component.status === Component.Error) {
-      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
-    } else {
-      console.log("QS_SHELL_SMOKE_OK")
-    }
+    if (component.status === Component.Loading)
+      component.statusChanged.connect(function() { root.evaluateStatus() })
+    root.evaluateStatus()
   }
 }
 QML
@@ -388,15 +692,33 @@ QML
 import QtQuick
 
 QtObject {
+  id: root
   property var component: null
+  property bool finished: false
+
+  function finish(ok, errorText) {
+    if (finished)
+      return
+    finished = true
+    if (ok)
+      console.log("QS_SHELL_SMOKE_OK")
+    else
+      console.error("QS_SHELL_SMOKE_FAIL " + errorText)
+    Qt.callLater(Qt.quit)
+  }
+
+  function evaluateStatus() {
+    if (component.status === Component.Ready)
+      finish(true, "")
+    else if (component.status === Component.Error)
+      finish(false, component.errorString())
+  }
 
   Component.onCompleted: {
     component = Qt.createComponent(Qt.resolvedUrl("shell.qml"))
-    if (component.status === Component.Error) {
-      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
-    } else {
-      console.log("QS_SHELL_SMOKE_OK")
-    }
+    if (component.status === Component.Loading)
+      component.statusChanged.connect(function() { root.evaluateStatus() })
+    root.evaluateStatus()
   }
 }
 QML
@@ -425,6 +747,8 @@ cd "$REPO"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Repo is not a valid git checkout."
 head_commit="$(git rev-parse 'HEAD^{commit}' 2>/dev/null)" || fail "Repo HEAD is not a commit."
 read_pending_state
+progress_target="$state_target"
+write_progress "running" "checking" 1 ""
 [ "$state_repo" = "$repo_root" ] || fail "Pending update belongs to a different repo."
 [ "$state_version" = "$ver" ] || fail "Pending update targets '$state_version', but installed version is '$ver'."
 
@@ -451,6 +775,7 @@ git merge-base --is-ancestor "$state_target" "$state_upstream" 2>/dev/null || \
   fail "Stored target is no longer reachable from $state_upstream."
 git cat-file -e "$state_target:versions/$ver" 2>/dev/null || \
   fail "Version '$ver' missing at stored target commit."
+write_progress "running" "validating" 2 ""
 
 # Detect a state file where targetCommit was edited to a different reachable
 # commit: the immutable target must still match the stored full commit lineage,
@@ -554,6 +879,7 @@ fi
 printf '%s\n' "$ver" > "$stage/.qsrise"
 printf '%s\n' "$state_target" > "$stage/.qsrise-commit"
 printf '%s\n' "$state_payload_tree" > "$stage/.qsrise-payload-tree"
+write_progress "running" "testing" 3 ""
 smoke_stage "$stage"
 
 companion_paths=()
@@ -580,6 +906,7 @@ if [ "${#companion_paths[@]}" -gt 0 ]; then
   fi
 fi
 
+write_progress "running" "installing" 4 ""
 # Stop the bar before swapping, and WAIT for it to actually exit (don't trust a
 # fixed sleep). Prefer Quickshell's registered config path over command-line
 # matching: after IPC/crash recovery, the same bar can show up as
@@ -594,6 +921,7 @@ old="$DEST.old.$ts"
 swapped=0
 rollback() {
   local msg
+  stop_launched_bar_unit
   if [ "${swapped:-0}" -eq 1 ]; then   # new tree is visible, later step failed → restore old
     rm -rf "$DEST" 2>/dev/null || true
     if [ -d "$old" ]; then
@@ -613,10 +941,9 @@ rollback() {
     msg="Update aborted before any change — bar restarted unchanged."
   fi
   rm -rf "$old" 2>/dev/null || true
-  # 9>&- : do NOT leak the flock fd into the relaunched bar, or it holds the lock
-  # for its whole lifetime and blocks every future update (see normal path below).
+  progress_fail "$msg"
   if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-    setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
+    start_bar_instance || true
   fi
   note -u critical "Shell update failed" "$msg"
 }
@@ -639,25 +966,28 @@ trap 'post_swap_fail' ERR
 #     manual install.sh re-run. This is part of the reviewed update transaction:
 #     a failure rolls back the visible deploy and leaves the pending state intact.
 if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
-  QS_SHELL_COMPANION_DEFER_SYSTEMD=1 bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || post_swap_fail
+  QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+  QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
+    bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || post_swap_fail
   commit_companion_systemd || post_swap_fail
 fi
 
-# 5b. Mark up-to-date via an atomic state write (never delete), but only after
-#     every deploy and companion step has completed successfully.
+write_progress "running" "restarting" 5 ""
+# 6. Relaunch the bar outside the apply unit/cgroup before finalizing the
+#    transaction. If restart fails, rollback is still armed and the old deploy is
+#    restored.
+#
+#    systemd-run is preferred so
+#    a systemd-managed apply can exit without killing the new bar. 9>&- prevents
+#    the relaunched bar from inheriting the flock fd and blocking future updates.
+if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
+  start_bar_instance || post_swap_fail
+fi
+
+# 6b. Mark up-to-date via an atomic state write (never delete), but only after
+#     deploy, companion steps and the new bar start have completed successfully.
 clear_state || post_swap_fail
 
 trap - ERR
 rm -rf "$old" 2>/dev/null || true
 swapped=0
-
-# 6. Relaunch exactly how the user runs it. The Wayland session env is inherited
-#    via the chain bar → setsid → this script (so only ever call apply from the
-#    session, never from the timer). 9>&- closes the flock fd so the new bar does
-#    NOT inherit the lock — otherwise it would hold it for its whole lifetime and
-#    every future update would fail with "already running" (flock is on the OFD).
-if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-  setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
-fi
-
-note "Shell updated" "Now on reviewed '$ver' at ${state_target:0:12}. Backup kept at $backup"

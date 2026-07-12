@@ -114,7 +114,7 @@ Item {
         || memVisible || volVisible || controlVisible || networkVisible || bluetoothVisible
         || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
         || workspaceVisible || imagePickerVisible || mediaBrowserVisible || notifVisible
-        || powerProfileVisible || archVisible || shellUpdateVisible || trayVisible || trayMenuVisible
+        || powerProfileVisible || archVisible || trayVisible || trayMenuVisible
         || ollamaVisible
     readonly property bool keyboardPopupVisible: imagePickerVisible || mediaBrowserVisible
 
@@ -271,6 +271,22 @@ Item {
         return false
     }
 
+    function activatePopupScreenByName(screenName) {
+        if (screenName) {
+            for (var i = 0; i < Quickshell.screens.length; i++) {
+                var candidate = Quickshell.screens[i]
+                if (candidate.name === screenName
+                        && candidate.width > 0
+                        && candidate.height > 0) {
+                    activatePopupScreen(candidate)
+                    return true
+                }
+            }
+        }
+
+        return activateFocusedPopupScreen()
+    }
+
     Connections {
         target: Hyprland
 
@@ -307,7 +323,6 @@ Item {
         else if (name === "mpris") mprisBarX = x
         else if (name === "weather") weatherBarX = x
         else if (name === "launcher") launcherBarX = x
-        else if (name === "shellUpdate") shellUpdateBarX = x
         else if (name === "ollama") ollamaBarX = x
         else if (name === "trayMenu") trayMenuX = x
     }
@@ -367,7 +382,6 @@ Item {
         if (except !== "notifVisible") notifVisible = false
         if (except !== "powerProfileVisible") powerProfileVisible = false
         if (except !== "archVisible") archVisible = false
-        if (except !== "shellUpdateVisible") shellUpdateVisible = false
         if (except !== "trayVisible") trayVisible = false
         if (except !== "trayMenuVisible") trayMenuVisible = false
         if (except !== "ollamaVisible") ollamaVisible = false
@@ -1290,6 +1304,7 @@ Item {
     onClock12hChanged:        if (_widgetsLoaded) saveWidgets()
     onArchBadgePackagesChanged: if (_widgetsLoaded) saveWidgets()
     onArchBadgeThemesChanged:   if (_widgetsLoaded) saveWidgets()
+    onArchBadgeShellChanged:    if (_widgetsLoaded) saveWidgets()
     onCompactNetworkChanged:    if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactBatteryChanged:    if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactBrightnessChanged: if (_widgetsLoaded && !_compactResetting) saveWidgets()
@@ -1344,7 +1359,8 @@ Item {
                  + (compactBluetooth  ? "1" : "0") + " "  // +29
                  + (compactPower      ? "1" : "0") + " "  // +30
                  + (modOllama         ? "1" : "0") + " "  // +31
-                 + (compactOllama     ? "1" : "0")        // +32
+                 + (compactOllama     ? "1" : "0") + " "  // +32
+                 + (archBadgeShell    ? "1" : "0")        // +33 updater shell badge
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1352,7 +1368,7 @@ Item {
     }
 
     readonly property var launcherLogoTextOptions: ["omarchy", "hyprland", "arch", "omacom"]
-    readonly property var launcherLogoIconOptions: ["omarchy", "hyprland", "arch", "grid", "spark", "power", "dragon", "mark", "nix", "branch"]
+    readonly property var launcherLogoIconOptions: ["omarchy", "hyprland", "arch", "grid", "spark", "power", "dragon", "mark", "nix", "branch", "rebel"]
 
     function launcherLogoTextIndex(id) {
         for (var i = 0; i < launcherLogoTextOptions.length; i++)
@@ -1407,6 +1423,7 @@ Item {
         if (id === "mark") return "Mark"
         if (id === "nix") return "Nix"
         if (id === "branch") return "Branch"
+        if (id === "rebel") return "Rebel"
         return "Omarchy"
     }
     function launcherLogoIconGlyph(id) {
@@ -1420,6 +1437,7 @@ Item {
         if (id === "mark") return ""
         if (id === "nix") return ""
         if (id === "branch") return ""
+        if (id === "rebel") return ""
         return String.fromCodePoint(0xE900)
     }
     function launcherLogoIconFont(id) {
@@ -1550,6 +1568,7 @@ Item {
                     if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
                     if (parts.length > wsField + 31) theme.modOllama = parts[wsField + 31] === "1"
                     if (parts.length > wsField + 32) theme.compactOllama = parts[wsField + 32] === "1"
+                    if (parts.length > wsField + 33) theme.archBadgeShell    = parts[wsField + 33] !== "0"
                 }
                 theme._widgetsLoaded = true
             }
@@ -1752,13 +1771,243 @@ Item {
         }
     }
 
-    // ── Shell Updater state (badge ⇄ panel; fed by ShellUpdateWidget's FileView) ──
-    property bool shellUpdateVisible: false
-    onShellUpdateVisibleChanged: popupOpened("shellUpdateVisible")
+    // ── Shell Updater state (shared by ArchUpdaterWidget and ShellUpdateTab) ──
     property int  shellUpdateBehind: 0
     property var  shellUpdateSummary: []
     property string shellUpdateVersion: ""
-    property real shellUpdateBarX: 0
+    property string shellUpdateChecked: ""
+    property string shellUpdateBaseCommit: ""
+    property string shellUpdateTargetCommit: ""
+    property string shellUpdateRepository: ""
+    property string shellUpdateUpstreamRef: ""
+    property string shellInstalledCommit: ""
+    property bool shellUpdateChecking: false
+    property string shellProgressRunId: ""
+    property string shellProgressState: "idle"
+    property string shellProgressPhase: ""
+    property int shellProgressStep: 0
+    property int shellProgressTotalSteps: 5
+    property string shellProgressTargetCommit: ""
+    property int shellProgressStartedEpoch: 0
+    property int shellProgressUpdatedEpoch: 0
+    property string shellProgressScreenName: ""
+    property string shellProgressError: ""
+    property bool shellProgressAcknowledged: true
+    property bool shellProgressPanelOpen: true
+    property int shellProgressNowEpoch: Math.floor(Date.now() / 1000)
+    property string _shellProgressCompleteRunId: ""
+    readonly property bool shellProgressInterrupted: shellProgressState === "running"
+        && shellProgressUpdatedEpoch > 0
+        && shellProgressNowEpoch - shellProgressUpdatedEpoch > 600
+    readonly property bool shellProgressRunning: shellProgressState === "running" && !shellProgressInterrupted
+    readonly property bool shellProgressFailed: shellProgressState === "failed"
+    readonly property bool shellProgressCompleted: shellProgressState === "completed" && !shellProgressAcknowledged
+    readonly property bool shellUpdateProgressVisible: shellProgressRunning
+        || shellProgressFailed || shellProgressCompleted || shellProgressInterrupted
+
+    function updateShellProgressClock() {
+        shellProgressNowEpoch = Math.floor(Date.now() / 1000)
+    }
+
+    function resetShellProgress() {
+        shellProgressRunId = ""
+        shellProgressState = "idle"
+        shellProgressPhase = ""
+        shellProgressStep = 0
+        shellProgressTotalSteps = 5
+        shellProgressTargetCommit = ""
+        shellProgressStartedEpoch = 0
+        shellProgressUpdatedEpoch = 0
+        shellProgressScreenName = ""
+        shellProgressError = ""
+        shellProgressAcknowledged = true
+        shellProgressPanelOpen = true
+    }
+
+    function openShellProgressPanel() {
+        activatePopupScreenByName(shellProgressScreenName)
+        activeUpdateTab = "shell"
+        archVisible = true
+    }
+
+    function resetShellUpdateState() {
+        shellUpdateBehind = 0
+        shellUpdateSummary = []
+        shellUpdateVersion = ""
+        shellUpdateChecked = ""
+        shellUpdateBaseCommit = ""
+        shellUpdateTargetCommit = ""
+        shellUpdateRepository = ""
+        shellUpdateUpstreamRef = ""
+    }
+
+    function parseShellUpdateState(raw) {
+        try {
+            var j = JSON.parse(raw)
+            if (j.schemaVersion !== 5) {
+                resetShellUpdateState()
+                return
+            }
+            shellUpdateBehind = j.behind || 0
+            shellUpdateSummary = j.summary || []
+            shellUpdateVersion = j.version || ""
+            shellUpdateChecked = j.checked || ""
+            shellUpdateBaseCommit = j.baseCommit || ""
+            shellUpdateTargetCommit = j.targetCommit || ""
+            shellUpdateRepository = j.repository || ""
+            shellUpdateUpstreamRef = j.upstreamRef || ""
+        } catch (e) {
+            resetShellUpdateState()
+        }
+    }
+
+    function parseShellInstalledCommit(raw) {
+        shellInstalledCommit = raw.trim()
+    }
+
+    function parseShellProgress(raw) {
+        try {
+            var j = JSON.parse(raw)
+            if (j.schemaVersion !== 1) {
+                resetShellProgress()
+                return
+            }
+
+            shellProgressRunId = j.runId || ""
+            shellProgressState = j.state || "idle"
+            shellProgressPhase = j.phase || ""
+            shellProgressStep = j.step || 0
+            shellProgressTotalSteps = j.totalSteps || 5
+            shellProgressTargetCommit = j.targetCommit || ""
+            shellProgressStartedEpoch = j.startedEpoch || 0
+            shellProgressUpdatedEpoch = j.updatedEpoch || 0
+            shellProgressScreenName = j.screenName || ""
+            shellProgressError = j.error || ""
+            shellProgressAcknowledged = j.acknowledged === true
+            shellProgressPanelOpen = j.panelOpen !== false
+            updateShellProgressClock()
+
+            if (shellUpdateProgressVisible && shellProgressPanelOpen) openShellProgressPanel()
+            if (shellProgressRunning
+                    && shellProgressPhase === "restarting"
+                    && shellProgressRunId !== ""
+                    && _shellProgressCompleteRunId !== shellProgressRunId) {
+                _shellProgressCompleteRunId = shellProgressRunId
+                shellProgressCompleteProc.command = [
+                    "bash",
+                    Quickshell.env("HOME") + "/.config/quickshell/bin/qs-shell-apply-update.sh",
+                    "--complete-progress",
+                    shellProgressRunId
+                ]
+                shellProgressCompleteProc.running = false
+                shellProgressCompleteProc.running = true
+            }
+        } catch (e) {
+            resetShellProgress()
+        }
+    }
+
+    function ackShellProgress() {
+        if (!shellProgressRunId) return
+        shellProgressAckProc.command = [
+            "bash",
+            Quickshell.env("HOME") + "/.config/quickshell/bin/qs-shell-apply-update.sh",
+            "--ack-progress",
+            shellProgressRunId
+        ]
+        shellProgressAckProc.running = false
+        shellProgressAckProc.running = true
+    }
+
+    function setShellProgressPanelOpen(open) {
+        if (!shellProgressRunId || !shellUpdateProgressVisible) return
+        shellProgressPanelOpen = open
+        shellProgressPanelProc.command = [
+            "bash",
+            Quickshell.env("HOME") + "/.config/quickshell/bin/qs-shell-apply-update.sh",
+            "--progress-panel",
+            shellProgressRunId,
+            open ? "open" : "closed"
+        ]
+        shellProgressPanelProc.running = false
+        shellProgressPanelProc.running = true
+    }
+
+    function closeArchUpdatesPanel() {
+        if (shellUpdateProgressVisible) setShellProgressPanelOpen(false)
+        archVisible = false
+    }
+
+    function showShellUpdateTabFromWidget() {
+        if (shellUpdateProgressVisible) setShellProgressPanelOpen(true)
+        activeUpdateTab = "shell"
+        archVisible = true
+    }
+
+    function reloadShellUpdateState() {
+        shellUpdateStateFile.reload()
+        shellInstalledCommitFile.reload()
+        shellProgressFile.reload()
+    }
+
+    Timer {
+        interval: 15000
+        running: shellProgressState === "running"
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: updateShellProgressClock()
+    }
+
+    FileView {
+        id: shellUpdateStateFile
+        path: Quickshell.env("HOME") + "/.cache/qs-shell/update-available.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: shellUpdateStateFile.reload()
+        onLoaded: parseShellUpdateState(shellUpdateStateFile.text())
+        onLoadFailed: resetShellUpdateState()
+    }
+
+    FileView {
+        id: shellInstalledCommitFile
+        path: Quickshell.env("HOME") + "/.config/quickshell/bar/.qsrise-commit"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: shellInstalledCommitFile.reload()
+        onLoaded: parseShellInstalledCommit(shellInstalledCommitFile.text())
+        onLoadFailed: shellInstalledCommit = ""
+    }
+
+    FileView {
+        id: shellProgressFile
+        path: Quickshell.env("HOME") + "/.cache/qs-shell/apply-status.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: shellProgressFile.reload()
+        onLoaded: parseShellProgress(shellProgressFile.text())
+        onLoadFailed: resetShellProgress()
+    }
+
+    Process {
+        id: shellProgressCompleteProc
+        command: ["true"]
+        onExited: shellProgressFile.reload()
+    }
+
+    Process {
+        id: shellProgressAckProc
+        command: ["true"]
+        onExited: {
+            shellProgressFile.reload()
+            archVisible = false
+        }
+    }
+
+    Process {
+        id: shellProgressPanelProc
+        command: ["true"]
+        onExited: shellProgressFile.reload()
+    }
 
     // ── Theme Updater state (fed by ArchUpdaterPanel's FileView over
     //    ~/.cache/qs-theme-updates.json; the panel owns the check Process so it
@@ -1779,6 +2028,7 @@ Item {
     property string activeUpdateTab: "packages"   // which ArchUpdaterPanel tab is shown
     property bool   archBadgePackages: true   // package count badge on the bar updater icon
     property bool   archBadgeThemes: true     // clean-theme count badge on the bar updater icon
+    property bool   archBadgeShell: true      // shell-update badge on the bar updater icon
 
     // ── Tray state ──
     property bool trayVisible: false

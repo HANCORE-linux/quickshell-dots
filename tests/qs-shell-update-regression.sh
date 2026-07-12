@@ -26,8 +26,25 @@ assert_contains() {
   grep -Fq -- "$needle" "$file" || fail "$msg: missing '$needle'"
 }
 
+assert_not_contains() {
+  local needle="$1" file="$2" msg="$3"
+  [ ! -f "$file" ] || ! grep -Fq -- "$needle" "$file" || fail "$msg: unexpected '$needle'"
+}
+
 state_file() {
   printf '%s/.cache/qs-shell/update-available.json\n' "$1/home"
+}
+
+progress_file() {
+  printf '%s/.cache/qs-shell/apply-status.json\n' "$1/home"
+}
+
+progress_trace_file() {
+  printf '%s/progress.trace\n' "$1"
+}
+
+notify_log() {
+  printf '%s/home/notify.log\n' "$1"
 }
 
 write_payload() {
@@ -145,7 +162,9 @@ SCRIPT
 set -euo pipefail
 src="${1:?}"
 if [ -f "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" ]; then
-  [ -f "$src/contrib/post-boot.d/quickshell-rise" ] || exit 42
+  if [ ! -f "$src/contrib/post-boot.d/quickshell-rise" ] && [ "${QS_SHELL_REQUIRE_POST_BOOT_SOURCE:-0}" = "1" ]; then
+    exit 42
+  fi
 fi
 SCRIPT
   elif [ "$mode" = "hook-mutation-fail" ]; then
@@ -228,6 +247,8 @@ make_update_and_check() {
 
 run_apply() {
   local root="$1"
+  local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
+  local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
   PATH="$root/bin:$PATH" \
   HOME="$root/home" \
   XDG_STATE_HOME="$root/state" \
@@ -235,8 +256,36 @@ run_apply() {
   QS_SHELL_DEST="$root/dest" \
   QS_SHELL_NO_RESTART=1 \
   QS_SHELL_SMOKE_PLATFORM=offscreen \
-  QS_SHELL_SMOKE_TIMEOUT=1 \
+  QS_SHELL_SMOKE_TIMEOUT="${QS_SHELL_SMOKE_TIMEOUT:-1}" \
+  QS_SHELL_PROGRESS_TRACE="$trace" \
+  QS_SHELL_PROGRESS_SCREEN="$screen" \
     "$APPLY"
+}
+
+run_apply_with_restart() {
+  local root="$1"
+  local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
+  local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+  QS_SHELL_SMOKE_PLATFORM=offscreen \
+  QS_SHELL_SMOKE_TIMEOUT="${QS_SHELL_SMOKE_TIMEOUT:-1}" \
+  QS_SHELL_PROGRESS_TRACE="$trace" \
+  QS_SHELL_PROGRESS_SCREEN="$screen" \
+    "$APPLY"
+}
+
+run_progress_command() {
+  local root="$1"; shift
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+    "$APPLY" "$@"
 }
 
 install_fake_systemctl() {
@@ -277,6 +326,45 @@ SCRIPT
   chmod 755 "$root/bin/systemctl"
 }
 
+install_fake_restart_tools() {
+  local root="$1"
+  mkdir -p "$root/bin"
+  cat > "$root/bin/qs" <<'SCRIPT'
+#!/usr/bin/env bash
+if [ "${1:-}" = "list" ] && [ "${2:-}" = "--all" ]; then
+  exit 0
+fi
+printf 'qs %s\n' "$*" >> "$HOME/qs.log"
+exit 0
+SCRIPT
+  cat > "$root/bin/systemd-run" <<'SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$HOME/systemd-run.log"
+if [ -n "${QS_TEST_SYSTEMD_RUN_FAIL:-}" ]; then
+  exit 1
+fi
+exit 0
+SCRIPT
+  cat > "$root/bin/setsid" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'setsid %s\n' "$*" >> "$HOME/setsid.log"
+exit 99
+SCRIPT
+  cat > "$root/bin/mv" <<'SCRIPT'
+#!/usr/bin/env bash
+last=""
+for arg in "$@"; do
+  last="$arg"
+done
+if [ -n "${QS_TEST_CLEAR_STATE_FAIL:-}" ] && [ "$last" = "$HOME/.cache/qs-shell/update-available.json" ]; then
+  printf 'blocked clear_state mv: %s\n' "$*" >> "$HOME/mv.log"
+  exit 1
+fi
+exec /usr/bin/mv "$@"
+SCRIPT
+  chmod 755 "$root/bin/qs" "$root/bin/systemd-run" "$root/bin/setsid" "$root/bin/mv"
+}
+
 install_failing_systemctl() {
   local root="$1"
   mkdir -p "$root/bin"
@@ -286,6 +374,16 @@ printf '%s\n' "$*" >> "$HOME/systemctl.log"
 exit 1
 SCRIPT
   chmod 755 "$root/bin/systemctl"
+}
+
+install_fake_notify() {
+  local root="$1"
+  mkdir -p "$root/bin"
+  cat > "$root/bin/notify-send" <<'SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$HOME/notify.log"
+SCRIPT
+  chmod 755 "$root/bin/notify-send"
 }
 
 assert_pending_state_preserved() {
@@ -306,6 +404,41 @@ assert_installed_hook() {
 assert_installed_post_boot_hook() {
   local root="$1" label="$2"
   assert_eq "post-boot-$label" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "installed post-boot hook"
+}
+
+assert_progress_json_valid() {
+  local root="$1"
+  jq -e '(.schemaVersion == 1)
+    and (.runId | type == "string")
+    and (.state | type == "string")
+    and (.phase | type == "string")
+    and (.step | type == "number")
+    and (.totalSteps == 5)
+    and (.targetCommit | type == "string")
+    and (.startedEpoch | type == "number")
+    and (.updatedEpoch | type == "number")
+    and (.screenName | type == "string")
+    and (.error | type == "string")
+    and (.acknowledged | type == "boolean")
+    and (.panelOpen | type == "boolean")' "$(progress_file "$root")" >/dev/null
+}
+
+assert_progress_state() {
+  local root="$1" state="$2" phase="$3" step="$4" msg="$5"
+  assert_progress_json_valid "$root"
+  jq -e --arg state "$state" --arg phase "$phase" --argjson step "$step" \
+    '(.state == $state) and (.phase == $phase) and (.step == $step)' \
+    "$(progress_file "$root")" >/dev/null || fail "$msg"
+}
+
+progress_run_id() {
+  jq -r '.runId' "$(progress_file "$1")"
+}
+
+assert_progress_trace_order() {
+  local root="$1" want="$2" got
+  got="$(awk -F '\t' '{print $2 ":" $3}' "$(progress_trace_file "$root")" | paste -sd ' ' -)"
+  assert_eq "$want" "$got" "progress phase order"
 }
 
 installed_payload_hash() {
@@ -433,6 +566,7 @@ test_changed_post_boot_hook_blob_aborts_before_mutation() {
   assert_dest_label "$root" base
   assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "post-boot hook survived blob mismatch"
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed validating 2 "post-boot blob mismatch did not fail in validating phase"
 }
 
 test_check_clears_stale_schema_before_offline_fetch() {
@@ -586,6 +720,221 @@ test_dirty_repo_is_preserved_while_deploying_checked_target() {
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
+test_shell_apply_launcher_uses_systemd_unit() {
+  local file="$REPO_ROOT/versions/V1/panels/ShellUpdateTab.qml"
+  assert_contains '"systemd-run"' "$file" "shell apply launcher does not use systemd-run"
+  assert_contains '"--collect"' "$file" "shell apply launcher does not collect transient unit"
+  assert_contains '"--unit=" + applyUnitName()' "$file" "shell apply launcher does not use unique unit name"
+  assert_contains '"--property=Type=exec"' "$file" "shell apply launcher does not use Type=exec"
+  assert_contains 'cmd.push("bash", applyScript)' "$file" "shell apply launcher does not invoke apply helper"
+  assert_not_contains '"setsid"' "$file" "shell apply launcher still uses setsid"
+}
+
+test_apply_restarts_bar_in_own_systemd_unit() {
+  local root="$WORK/restart-systemd-unit"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+
+  run_apply_with_restart "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  assert_contains "--unit=qsrise-bar-" "$root/home/systemd-run.log" "bar restart did not use a transient systemd unit"
+  assert_contains "--slice=app-graphical.slice" "$root/home/systemd-run.log" "bar restart did not use app-graphical.slice"
+  assert_contains "--property=Type=exec" "$root/home/systemd-run.log" "bar restart did not use Type=exec"
+  assert_contains "qs -n -c bar" "$root/home/systemd-run.log" "bar restart did not invoke qs as the systemd service main process"
+  [ ! -e "$root/home/setsid.log" ] || fail "bar restart fell back to setsid despite successful systemd-run"
+  assert_progress_state "$root" running restarting 5 "successful apply did not reach restarting phase"
+}
+
+test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails() {
+  local root="$WORK/restart-systemd-fail-closed"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if INVOCATION_ID=test QS_TEST_SYSTEMD_RUN_FAIL=1 run_apply_with_restart "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "systemd-managed apply succeeded after bar systemd-run failed"
+  fi
+
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  [ ! -e "$root/home/setsid.log" ] || fail "systemd-managed apply fell back to setsid after systemd-run failed"
+  assert_contains "Deploy failed" "$(progress_file "$root")" "restart failure did not record rollback failure"
+}
+
+test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit() {
+  local root="$WORK/restart-clear-state-fail"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+  local before first second unit_count
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if QS_TEST_CLEAR_STATE_FAIL=1 run_apply_with_restart "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded despite clear_state failure after bar start"
+  fi
+
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_contains "blocked clear_state mv" "$root/home/mv.log" "clear_state failure was not exercised"
+  [ ! -e "$root/home/setsid.log" ] || fail "rollback fell back to setsid"
+
+  unit_count="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | wc -l | tr -d ' ')"
+  assert_eq 2 "$unit_count" "expected one new-bar start and one rollback-bar start"
+  first="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | sed -n '1p' | sed 's/^--unit=//')"
+  second="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | sed -n '2p' | sed 's/^--unit=//')"
+  [ -n "$first" ] || fail "first bar unit missing"
+  [ -n "$second" ] || fail "rollback bar unit missing"
+  [ "$first" != "$second" ] || fail "rollback reused the same bar unit name"
+  assert_contains "--user stop $first" "$root/home/systemctl.log" "rollback did not stop the started new-bar unit"
+}
+
+test_progress_success_complete_and_ack() {
+  local root="$WORK/progress-success"
+  init_fixture "$root"
+  install_fake_notify "$root"
+  make_update_and_check "$root" A
+  local target run
+  target="$(jq -r '.targetCommit' "$(state_file "$root")")"
+
+  run_apply "$root" >/dev/null
+
+  assert_not_contains "Shell updated" "$(notify_log "$root")" "success notification fired before loaded-bar completion"
+  assert_progress_trace_order "$root" "checking:1 validating:2 testing:3 installing:4 restarting:5"
+  assert_progress_state "$root" running restarting 5 "successful apply did not wait for loaded-bar completion"
+  assert_eq "$target" "$(jq -r '.targetCommit' "$(progress_file "$root")")" "progress target commit"
+  assert_eq "DP-1" "$(jq -r '.screenName' "$(progress_file "$root")")" "progress screen name"
+  jq -e '.panelOpen == true' "$(progress_file "$root")" >/dev/null || fail "new progress run did not start with panelOpen true"
+  run="$(progress_run_id "$root")"
+
+  run_progress_command "$root" --complete-progress "$run"
+  assert_progress_state "$root" completed restarting 5 "complete-progress did not mark completed"
+  assert_contains "Shell updated" "$(notify_log "$root")" "success notification missing after loaded-bar completion"
+  assert_eq 1 "$(grep -Fc 'Shell updated' "$(notify_log "$root")")" "success notification count after completion"
+
+  run_progress_command "$root" --complete-progress "$run"
+  assert_eq 1 "$(grep -Fc 'Shell updated' "$(notify_log "$root")")" "success notification was repeated"
+
+  run_progress_command "$root" --ack-progress "$run"
+  assert_progress_state "$root" idle "" 0 "ack-progress did not mark idle"
+  jq -e '.acknowledged == true' "$(progress_file "$root")" >/dev/null || fail "ack-progress did not acknowledge status"
+}
+
+test_progress_panel_visibility_survives_phase_writes() {
+  local root="$WORK/progress-panel-open"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  run_apply "$root" >/dev/null
+  local run
+  run="$(progress_run_id "$root")"
+
+  run_progress_command "$root" --progress-panel "$run" closed
+  jq -e '.panelOpen == false' "$(progress_file "$root")" >/dev/null || fail "progress panel close was not persisted"
+
+  run_progress_command "$root" --complete-progress "$run"
+  jq -e '(.state == "completed") and (.panelOpen == false)' "$(progress_file "$root")" >/dev/null || \
+    fail "complete-progress did not preserve closed panel state"
+
+  run_progress_command "$root" --progress-panel "$run" open
+  jq -e '.panelOpen == true' "$(progress_file "$root")" >/dev/null || fail "progress panel reopen was not persisted"
+}
+
+test_complete_progress_requires_target_marker_match() {
+  local root="$WORK/progress-complete-mismatch"
+  init_fixture "$root"
+  install_fake_notify "$root"
+  make_update_and_check "$root" A
+  run_apply "$root" >/dev/null
+  local run
+  run="$(progress_run_id "$root")"
+  printf '0000000000000000000000000000000000000000\n' > "$root/dest/.qsrise-commit"
+
+  run_progress_command "$root" --complete-progress "$run"
+
+  assert_progress_state "$root" failed restarting 5 "complete-progress accepted wrong deploy marker"
+  assert_contains "Loaded shell does not match" "$(progress_file "$root")" "complete-progress mismatch error"
+  assert_not_contains "Shell updated" "$(notify_log "$root")" "mismatch emitted success notification"
+  assert_contains "Shell update failed" "$(notify_log "$root")" "mismatch did not emit failure notification"
+}
+
+test_recent_running_progress_blocks_second_apply() {
+  local root="$WORK/progress-double-click"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  mkdir -p "$(dirname "$(progress_file "$root")")"
+  local now before
+  now="$(date +%s)"
+  jq -nc --argjson now "$now" '{
+    schemaVersion: 1,
+    runId: "already-running",
+    state: "running",
+    phase: "installing",
+    step: 4,
+    totalSteps: 5,
+    targetCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    startedEpoch: $now,
+    updatedEpoch: $now,
+    screenName: "DP-2",
+    error: "",
+    acknowledged: false,
+    panelOpen: true
+  }' > "$(progress_file "$root")"
+  before="$(jq -c . "$(progress_file "$root")")"
+
+  run_apply "$root" >/dev/null
+
+  assert_dest_label "$root" base
+  assert_eq "$before" "$(jq -c . "$(progress_file "$root")")" "second apply overwrote active progress"
+  [ ! -e "$(progress_trace_file "$root")" ] || fail "second apply started a new progress trace"
+}
+
+test_stale_running_progress_can_be_replaced() {
+  local root="$WORK/progress-stale"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  mkdir -p "$(dirname "$(progress_file "$root")")"
+  local old
+  old="$(( $(date +%s) - 1200 ))"
+  jq -nc --argjson old "$old" '{
+    schemaVersion: 1,
+    runId: "stale-running",
+    state: "running",
+    phase: "installing",
+    step: 4,
+    totalSteps: 5,
+    targetCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    startedEpoch: $old,
+    updatedEpoch: $old,
+    screenName: "DP-2",
+    error: "",
+    acknowledged: false,
+    panelOpen: true
+  }' > "$(progress_file "$root")"
+
+  run_apply "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  [ "$(progress_run_id "$root")" != "stale-running" ] || fail "stale progress run was not replaced"
+  assert_progress_state "$root" running restarting 5 "stale progress replacement did not finish apply"
+}
+
+test_progress_failure_in_checking_phase() {
+  local root="$WORK/progress-checking-fail"
+  init_fixture "$root"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with no pending state"
+  fi
+
+  assert_progress_state "$root" failed checking 1 "checking failure did not write failed checking status"
+}
+
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
   local root="$WORK/smoke"
   init_fixture "$root"
@@ -598,6 +947,7 @@ test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "staging smoke failure did not fail in testing phase"
 }
 
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy() {
@@ -612,6 +962,7 @@ test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "invalid shell failure did not fail in testing phase"
 }
 
 test_invalid_import_fails_smoke_and_keeps_old_deploy() {
@@ -626,6 +977,7 @@ test_invalid_import_fails_smoke_and_keeps_old_deploy() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "invalid import failure did not fail in testing phase"
 }
 
 test_bad_local_import_fails_smoke_and_keeps_old_deploy() {
@@ -665,6 +1017,19 @@ test_qs_module_import_passes_smoke() {
   assert_dest_label "$root" qs-module
   [ ! -e "$root/dest/.qs-shell-smoke.qml" ] || fail "smoke wrapper leaked into deployed payload"
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_successful_smoke_exits_without_timeout() {
+  local root="$WORK/smoke-fast-success"
+  init_fixture "$root"
+  make_update_and_check "$root" fast
+  local start end elapsed
+  start="$(date +%s%3N)"
+  QS_SHELL_SMOKE_TIMEOUT=5 run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"
+  end="$(date +%s%3N)"
+  elapsed=$((end - start))
+  assert_dest_label "$root" fast
+  [ "$elapsed" -lt 4000 ] || fail "successful shell smoke waited for timeout: elapsed=${elapsed}ms"
 }
 
 test_qs_module_with_qmldir_smoke_does_not_execute_side_effect() {
@@ -725,7 +1090,7 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
   chmod 755 "$root/bin/systemctl"
 
-  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
     bash "$repo/scripts/qs-shell-post-update.sh" "$repo" >/dev/null
 
   cmp -s "$repo/contrib/post-boot.d/quickshell-rise" "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" || \
@@ -739,6 +1104,49 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
     fail "post-update installed opt-in post-boot hook unexpectedly"
   grep -Fxq '.config/omarchy/hooks/post-boot.d/quickshell-rise' "$repo/scripts/qs-shell-post-update.targets" || \
     fail "post-boot hook is missing from companion rollback targets"
+}
+
+make_minimal_legacy_companion() {
+  local root="$1"
+  mkdir -p "$root/companion/scripts" "$root/companion/hooks"
+  cp "$REPO_ROOT/scripts/qs-shell-post-update.sh" "$root/companion/scripts/qs-shell-post-update.sh"
+  printf 'theme-hook\n' > "$root/companion/hooks/50-quickshell-bar.sh"
+  chmod 755 "$root/companion/hooks/50-quickshell-bar.sh"
+}
+
+test_legacy_post_update_missing_post_boot_source_keeps_installed_hook() {
+  local root="$WORK/legacy-post-boot-missing-source"
+  make_minimal_legacy_companion "$root"
+  mkdir -p "$root/home/.local/share" "$root/home/.config/omarchy/hooks/post-boot.d" "$root/bin"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
+  chmod 755 "$root/bin/systemctl"
+
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+    bash "$root/companion/scripts/qs-shell-post-update.sh" "$root/companion" >/dev/null
+
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" \
+    "legacy missing post-boot source should leave installed hook untouched"
+}
+
+test_strict_post_update_missing_post_boot_source_fails() {
+  local root="$WORK/strict-post-boot-missing-source"
+  make_minimal_legacy_companion "$root"
+  mkdir -p "$root/home/.local/share" "$root/home/.config/omarchy/hooks/post-boot.d" "$root/bin"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
+  chmod 755 "$root/bin/systemctl"
+
+  if HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
+      bash "$root/companion/scripts/qs-shell-post-update.sh" "$root/companion" >"$root/post.out" 2>"$root/post.err"; then
+    fail "strict post-update accepted installed post-boot hook with missing staged source"
+  fi
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" \
+    "strict missing post-boot source should not mutate installed hook"
 }
 
 test_missing_post_boot_source_rolls_back_and_preserves_pending_state() {
@@ -771,6 +1179,7 @@ test_companion_failure_keeps_old_deploy_and_pending_state() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed installing 4 "companion failure did not fail in installing phase"
 }
 
 test_companion_mutation_failure_restores_side_effect() {
@@ -889,17 +1298,30 @@ test_alternate_reachable_commit_with_same_subject_aborts
 test_later_non_payload_commit_in_target_state_aborts
 test_unreachable_target_aborts_before_mutation
 test_dirty_repo_is_preserved_while_deploying_checked_target
+test_shell_apply_launcher_uses_systemd_unit
+test_apply_restarts_bar_in_own_systemd_unit
+test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails
+test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit
+test_progress_success_complete_and_ack
+test_progress_panel_visibility_survives_phase_writes
+test_complete_progress_requires_target_marker_match
+test_recent_running_progress_blocks_second_apply
+test_stale_running_progress_can_be_replaced
+test_progress_failure_in_checking_phase
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy
 test_invalid_import_fails_smoke_and_keeps_old_deploy
 test_bad_local_import_fails_smoke_and_keeps_old_deploy
 test_missing_component_fails_smoke_and_keeps_old_deploy
 test_qs_module_import_passes_smoke
+test_successful_smoke_exits_without_timeout
 test_qs_module_with_qmldir_smoke_does_not_execute_side_effect
 test_qs_module_without_qmldir_fails_before_side_effect
 test_manifest_does_not_restore_whole_systemd_wants_dir
 test_companion_manifest_is_required
 test_real_post_update_refreshes_installed_post_boot_hook_only
+test_legacy_post_update_missing_post_boot_source_keeps_installed_hook
+test_strict_post_update_missing_post_boot_source_fails
 test_missing_post_boot_source_rolls_back_and_preserves_pending_state
 test_companion_failure_keeps_old_deploy_and_pending_state
 test_companion_mutation_failure_restores_side_effect

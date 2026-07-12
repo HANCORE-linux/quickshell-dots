@@ -32,11 +32,22 @@ PanelWindow {
     property var    networks: []    // [{conn, ssid, sec, sig}]
     property var    known:   []     // known ssids
 
+    property string nmPasswordSsid: ""
+    property string nmPasswordText: ""
+    property var    nmPasswordNetwork: null
+    property string nmConnectionError: ""
+    property bool   nmConnecting: false
+
     // ── wifi radio ──
     property bool   wifiBlocked: false
 
     // ── link speed (negotiated connection rate) ──
     property string linkSpeed:   ""
+
+    readonly property bool nmAdapterReady: root.useNM
+        && nmAdapter.status === Loader.Ready
+        && nmAdapter.item !== null
+        && nmAdapter.item.available
 
     function flagForCountry(code) {
         var value = (code || "").toUpperCase()
@@ -90,6 +101,16 @@ PanelWindow {
     readonly property bool speedRunOk: speedTest.running || speedTest.phase === "success"
 
     function toggleWifi() {
+        if (nmAdapterReady) {
+            nmAdapter.item.toggleWifi()
+            return
+        }
+        if (root.useNM) {
+            root.networkVisible = false
+            openWifiSettings()
+            return
+        }
+
         var wasBlocked = netPanel.wifiBlocked
         rfkillToggle.command = ["bash", "-c", wasBlocked ? "rfkill unblock wifi" : "rfkill block wifi"]
         rfkillToggle.running = false; rfkillToggle.running = true
@@ -102,14 +123,24 @@ PanelWindow {
     }
 
     function scan() {
-        if (scanning || wifiBlocked || root.useNM) return   // NM: no iwctl scan
+        if (nmAdapterReady) {
+            nmAdapter.item.scan()
+            return
+        }
+        if (scanning || wifiBlocked || root.useNM) return   // NM fallback: no iwctl scan
         scanning = true
         scanProc.running = false
         scanProc.running = true
         scanWatchdog.restart()        // never stay stuck in "scanning"
     }
 
-    function connectTo(ssid, sec) {
+    function connectTo(entryOrSsid, sec) {
+        if (nmAdapterReady) {
+            nmAdapter.item.connectTo(entryOrSsid)
+            return
+        }
+
+        var ssid = typeof entryOrSsid === "object" && entryOrSsid !== null ? entryOrSsid.ssid : entryOrSsid
         var isKnown = known.indexOf(ssid) >= 0
         if (sec === "open" || isKnown) {
             if (!netPanel.wdev) return
@@ -125,6 +156,77 @@ PanelWindow {
             wifiRunner.running = false
             wifiRunner.running = true
         }
+    }
+
+    function openWifiSettings() {
+        wifiRunner.running = false
+        wifiRunner.running = true
+    }
+
+    function refreshNmNetworks() {
+        if (nmAdapterReady)
+            nmAdapter.item.syncNetworks()
+    }
+
+    function beginNmPassword(entry) {
+        if (!entry || !entry.network)
+            return
+
+        nmPasswordSsid = entry.ssid || ""
+        nmPasswordNetwork = entry.network
+        nmPasswordText = ""
+        nmConnectionError = ""
+        nmConnecting = false
+        nmConnectTimeout.stop()
+        Qt.callLater(function() {
+            if (nmPasswordInput.visible)
+                nmPasswordInput.forceActiveFocus()
+        })
+    }
+
+    function clearNmPassword() {
+        nmPasswordSsid = ""
+        nmPasswordText = ""
+        nmPasswordNetwork = null
+        nmConnectionError = ""
+        nmConnecting = false
+        nmConnectTimeout.stop()
+    }
+
+    function submitNmPassword() {
+        if (!nmAdapterReady || !nmPasswordNetwork || nmPasswordText === "" || nmConnecting)
+            return
+
+        nmConnectionError = ""
+        nmConnecting = true
+        nmConnectTimeout.restart()
+        nmAdapter.item.connectWithPsk(nmPasswordNetwork, nmPasswordText)
+    }
+
+    function handleNmConnected(network) {
+        if (!network)
+            return
+
+        var name = network.name || ""
+        if (name === nmPasswordSsid)
+            clearNmPassword()
+    }
+
+    function handleNmConnectionFailed(network, reason) {
+        if (!network)
+            return
+
+        var name = network.name || ""
+        if (name !== nmPasswordSsid)
+            return
+
+        nmConnecting = false
+        nmConnectTimeout.stop()
+        nmConnectionError = "Connection failed"
+        Qt.callLater(function() {
+            if (nmPasswordInput.visible)
+                nmPasswordInput.forceActiveFocus()
+        })
     }
 
     property real reveal: root.networkVisible ? 1 : 0
@@ -439,7 +541,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 16
-                visible: netPanel.hasWifi && !netPanel.wifiBlocked && !root.useNM
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked && (!root.useNM || netPanel.nmAdapterReady)
                 UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "AVAILABLE NETWORKS"
@@ -461,7 +563,7 @@ PanelWindow {
                 height: Math.min(netList.implicitHeight, 180)
                 contentHeight: netList.implicitHeight
                 clip: true
-                visible: netPanel.hasWifi && !netPanel.wifiBlocked && !root.useNM
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked && (!root.useNM || netPanel.nmAdapterReady)
                 boundsBehavior: Flickable.StopAtBounds
 
                 Column {
@@ -480,6 +582,22 @@ PanelWindow {
                             border.color: (nma.containsMouse || modelData.conn) ? root.seal : root.sep
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Connections {
+                                target: root.useNM && modelData.network ? modelData.network : null
+                                function onConnectedChanged() {
+                                    if (modelData.network && modelData.network.connected)
+                                        netPanel.handleNmConnected(modelData.network)
+                                    netPanel.refreshNmNetworks()
+                                }
+                                function onKnownChanged() { netPanel.refreshNmNetworks() }
+                                function onStateChangingChanged() { netPanel.refreshNmNetworks() }
+                                function onSignalStrengthChanged() { netPanel.refreshNmNetworks() }
+                                function onConnectionFailed(reason) {
+                                    netPanel.handleNmConnectionFailed(modelData.network, reason)
+                                    netPanel.refreshNmNetworks()
+                                }
+                            }
 
                             Row {
                                 anchors.left: parent.left; anchors.leftMargin: 8
@@ -531,7 +649,7 @@ PanelWindow {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: netPanel.connectTo(modelData.ssid, modelData.sec)
+                                onClicked: netPanel.connectTo(modelData, modelData.sec)
                             }
                         }
                     }
@@ -546,12 +664,133 @@ PanelWindow {
                 }
             }
 
+            Rectangle {
+                width: parent.width
+                height: visible ? 92 : 0
+                visible: root.useNM && netPanel.nmAdapterReady && netPanel.nmPasswordSsid !== ""
+                radius: root.tileRadius
+                color: root.fillIdle
+                border.color: netPanel.nmConnectionError !== "" ? root.sealRaw : root.seal
+                border.width: 1
+                clip: true
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 6
+
+                    UiText {
+                        width: parent.width
+                        text: netPanel.nmConnectionError !== ""
+                            ? netPanel.nmConnectionError
+                            : "Password for " + netPanel.nmPasswordSsid
+                        color: netPanel.nmConnectionError !== "" ? root.sealRaw : root.ink
+                        font.family: root.mono
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 24
+                        radius: root.tileRadius
+                        color: root.bg
+                        border.color: nmPasswordInput.activeFocus ? root.seal : root.sep
+                        border.width: 1
+
+                        TextInput {
+                            id: nmPasswordInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: TextInput.AlignVCenter
+                            text: netPanel.nmPasswordText
+                            echoMode: TextInput.Password
+                            color: root.ink
+                            selectionColor: root.seal
+                            selectedTextColor: root.paper
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            clip: true
+                            enabled: !netPanel.nmConnecting
+                            onTextChanged: netPanel.nmPasswordText = text
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    netPanel.submitNmPassword()
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Escape) {
+                                    netPanel.clearNmPassword()
+                                    event.accepted = true
+                                }
+                            }
+                        }
+                    }
+
+                    Row {
+                        width: parent.width
+                        height: 22
+                        spacing: 6
+
+                        Rectangle {
+                            width: (parent.width - 6) / 2
+                            height: parent.height
+                            radius: root.tileRadius
+                            color: passwordSubmitMa.enabled
+                                ? (passwordSubmitMa.containsMouse ? root.fillPrimaryHover : root.seal)
+                                : root.fillIdle
+                            border.color: passwordSubmitMa.enabled ? root.seal : root.sep
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            UiText {
+                                anchors.centerIn: parent
+                                text: netPanel.nmConnecting ? "connecting…" : "connect"
+                                color: passwordSubmitMa.enabled ? root.paper : root.sumi
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+                            MouseArea {
+                                id: passwordSubmitMa
+                                anchors.fill: parent
+                                enabled: netPanel.nmPasswordText !== "" && !netPanel.nmConnecting
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: netPanel.submitNmPassword()
+                            }
+                        }
+
+                        Rectangle {
+                            width: (parent.width - 6) / 2
+                            height: parent.height
+                            radius: root.tileRadius
+                            color: passwordCancelMa.containsMouse ? root.fillHover : root.fillIdle
+                            border.color: passwordCancelMa.containsMouse ? root.seal : root.sep
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            UiText {
+                                anchors.centerIn: parent
+                                text: "cancel"
+                                color: passwordCancelMa.containsMouse ? root.seal : root.sumi
+                                font.family: root.mono
+                                font.pixelSize: 10
+                            }
+                            MouseArea {
+                                id: passwordCancelMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: netPanel.clearNmPassword()
+                            }
+                        }
+                    }
+                }
+            }
+
             // NetworkManager (Omarchy 4.0): the iwctl scan/connect don't apply here →
-            // show an nmtui shortcut instead of an empty list
+            // show an nmtui shortcut if the Quickshell.Networking adapter is unavailable.
             Rectangle {
                 width: parent.width
                 height: 52; radius: 6
-                visible: root.useNM && netPanel.hasWifi
+                visible: root.useNM && netPanel.hasWifi && !netPanel.nmAdapterReady
                 color: nmMa.containsMouse ? root.fillHover : root.fillIdle
                 border.color: nmMa.containsMouse ? root.seal : root.sep; border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -571,7 +810,7 @@ PanelWindow {
                 MouseArea {
                     id: nmMa
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: { root.networkVisible = false; wifiRunner.running = false; wifiRunner.running = true }
+                    onClicked: { root.networkVisible = false; netPanel.openWifiSettings() }
                 }
             }
 
@@ -587,9 +826,20 @@ PanelWindow {
                 MouseArea {
                     id: netSetMa
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: { root.networkVisible = false; wifiRunner.running = false; wifiRunner.running = true }
+                    onClicked: { root.networkVisible = false; netPanel.openWifiSettings() }
                 }
             }
+        }
+    }
+
+    Loader {
+        id: nmAdapter
+        active: root.useNM
+        source: "NetworkManagerAdapter.qml"
+        onLoaded: {
+            item.panel = netPanel
+            item.panelOpen = Qt.binding(function() { return root.networkVisible })
+            item.refresh()
         }
     }
 
@@ -697,6 +947,21 @@ PanelWindow {
     Timer { id: rescanTimer; interval: 1500; onTriggered: { netData.running = false; netData.running = true; netPanel.scan() } }
     // safety: if a scan hangs, don't block future rescans forever
     Timer { id: scanWatchdog; interval: 8000; onTriggered: netPanel.scanning = false }
+    Timer {
+        id: nmConnectTimeout
+        interval: 20000
+        onTriggered: {
+            if (!netPanel.nmConnecting)
+                return
+
+            netPanel.nmConnecting = false
+            netPanel.nmConnectionError = "Connection timed out"
+            Qt.callLater(function() {
+                if (nmPasswordInput.visible)
+                    nmPasswordInput.forceActiveFocus()
+            })
+        }
+    }
 
     // ── wifi radio (rfkill) ──
     Process {
@@ -741,12 +1006,18 @@ PanelWindow {
 
     onVisibleChanged: {
         if (visible) {
-            rfkillState.running = false; rfkillState.running = true
+            if (!root.useNM) {
+                rfkillState.running = false; rfkillState.running = true
+            } else if (nmAdapterReady) {
+                nmAdapter.item.refresh()
+            }
             netData.running = false; netData.running = true
             devProbe.running = false; devProbe.running = true
             speedProc.running = false; speedProc.running = true
-        } else if (speedTest.running) {
-            speedTest.cancel()
+        } else {
+            if (speedTest.running)
+                speedTest.cancel()
+            clearNmPassword()
         }
     }
 }
