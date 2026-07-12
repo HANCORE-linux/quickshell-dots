@@ -312,7 +312,7 @@ Item {
                     return
                 }
             } else if (operationMode === "eject") {
-                stopQueue = models.map(function(m) { return m.name })
+                stopQueue = OllamaDataLogic.ejectQueue(models, pendingModel)
                 if (stopQueue.length > 0) {
                     stopNextModel()
                     return
@@ -441,7 +441,7 @@ Item {
     }
 
     function openConfiguration() {}
-    function reloadConfiguration() {}
+    function reloadConfiguration() { runtimeConfigFile.reload() }
 
     function applyRuntimeConfigFile() {
         var text = String(runtimeConfigFile.text() || "").trim()
@@ -679,23 +679,27 @@ Item {
     FileView {
         id: runtimeConfigFile
         path: runtimeConfigPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: runtimeConfigFile.reload()
         onLoaded: ollama.applyRuntimeConfigFile()
     }
 
     function openRuntimeConfig() {
-        var editor = Quickshell.env("EDITOR") || "nvim"
-        runtimeConfigEditProc.command = [
-            "omarchy-launch-floating-terminal-with-presentation",
-            editor + " " + shellQuote(runtimeConfigPath)
-        ]
+        var parsed = OllamaDataLogic.parseEditorCommand(Quickshell.env("EDITOR") || "nvim")
+        if (!parsed.valid) {
+            actionError = parsed.error
+            return
+        }
+        runtimeConfigEditProc.command = ["omarchy-launch-floating-terminal-with-presentation"]
+            .concat(parsed.argv, [runtimeConfigPath])
         runtimeConfigEditProc.running = true
     }
 
-    function shellQuote(value) {
-        return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
+    Process {
+        id: runtimeConfigEditProc
+        onExited: ollama.reloadConfiguration()
     }
-
-    Process { id: runtimeConfigEditProc }
 
     function pullModel(name) {
         if (controlsLocked || !name) return

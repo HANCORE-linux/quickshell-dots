@@ -3,9 +3,11 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="$(mktemp)"
-trap 'rm -f "$output"' EXIT
+home="$(mktemp -d)"
+mkdir -p "$home/.cache"
+trap 'rm -f "$output"; rm -rf "$home"' EXIT
 
-if timeout --kill-after=1s 2s env QT_QPA_PLATFORM=offscreen \
+if timeout --kill-after=1s 2s env HOME="$home" EDITOR=true QT_QPA_PLATFORM=offscreen \
     qs --no-color -p "$repo_root/versions/V1/OllamaDataSmoke.qml" >"$output" 2>&1; then
     status=0
 else

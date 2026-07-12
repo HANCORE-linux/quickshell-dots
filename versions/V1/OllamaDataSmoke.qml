@@ -11,6 +11,15 @@ ShellRoot {
         if (!condition) failures.push(message)
     }
 
+    function finish() {
+        if (failures.length > 0) {
+            console.error("OLLAMA_DATA_NATIVE_FAIL: " + failures.join(", "))
+        } else {
+            console.log("OLLAMA_DATA_NATIVE_PASS")
+        }
+        Qt.callLater(Qt.quit)
+    }
+
     OllamaData {
         id: data
         enabled: false
@@ -116,11 +125,19 @@ ShellRoot {
         data.applyLoaded(badLoaded, epoch)
         check(data.loadedConnected === false, "loadedConnected false after malformed loaded")
 
-        if (failures.length > 0) {
-            console.error("OLLAMA_DATA_NATIVE_FAIL: " + failures.join(", "))
-        } else {
-            console.log("OLLAMA_DATA_NATIVE_PASS")
+        data.setKeepAlive("30m")
+        data.selectedKeepAlive = "5m"
+        data.openRuntimeConfig()
+        configReloadTimer.start()
+    }
+
+    Timer {
+        id: configReloadTimer
+        interval: 100
+        repeat: false
+        onTriggered: {
+            check(data.selectedKeepAlive === "30m", "runtime config reload")
+            finish()
         }
-        Qt.callLater(Qt.quit)
     }
 }

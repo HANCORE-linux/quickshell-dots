@@ -142,6 +142,35 @@ TestCase {
                 JSON.stringify(["qwen3:8b", "gemma3:Q8_0"]))
     }
 
+    function test_ejectsOnlyTheSelectedLoadedModel() {
+        var queue = OllamaDataLogic.ejectQueue([
+            { name: "qwen3:8b" },
+            { name: "gemma3:4b" }
+        ], "qwen3:8b")
+        compare(JSON.stringify(queue), JSON.stringify(["qwen3:8b"]))
+    }
+
+    function test_rejectsEjectForModelThatIsNotLoaded() {
+        var queue = OllamaDataLogic.ejectQueue([{ name: "gemma3:4b" }], "qwen3:8b")
+        compare(JSON.stringify(queue), JSON.stringify([]))
+    }
+
+    function test_parsesSafeEditorCommands() {
+        var nvim = OllamaDataLogic.parseEditorCommand("nvim")
+        verify(nvim.valid)
+        compare(JSON.stringify(nvim.argv), JSON.stringify(["nvim"]))
+
+        var code = OllamaDataLogic.parseEditorCommand("code --wait")
+        verify(code.valid)
+        compare(JSON.stringify(code.argv), JSON.stringify(["code", "--wait"]))
+    }
+
+    function test_rejectsEditorShellMetacharacters() {
+        var parsed = OllamaDataLogic.parseEditorCommand("nvim; rm -rf /")
+        verify(!parsed.valid)
+        verify(parsed.error.length > 0)
+    }
+
     function test_preservesInheritedPropertyModelNames() {
         var entries = [
             { name: "constructor" },

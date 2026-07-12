@@ -146,6 +146,26 @@ function conflictingModelNames(entries, selectedName) {
     return result
 }
 
+function ejectQueue(entries, selectedName) {
+    var selected = String(selectedName || "")
+    if (!selected) return []
+    for (var i = 0; i < entries.length; i++) {
+        if (String(entries[i].name || "") === selected) return [selected]
+    }
+    return []
+}
+
+function parseEditorCommand(editor) {
+    var value = String(editor || "").trim()
+    if (!value) return { valid: false, argv: [], error: "EDITOR is empty" }
+    if (/[;&|`$<>(){}\[\]\\'"\n\r]/.test(value)) {
+        return { valid: false, argv: [], error: "EDITOR contains unsafe shell syntax" }
+    }
+    var argv = value.split(/\s+/)
+    if (!argv[0]) return { valid: false, argv: [], error: "EDITOR is empty" }
+    return { valid: true, argv: argv, error: "" }
+}
+
 function exclusiveLoadState(entries, selectedName) {
     var selected = String(selectedName || "")
     if (entries.length === 1 && String(entries[0].name || "") === selected)
