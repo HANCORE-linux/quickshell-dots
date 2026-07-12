@@ -77,5 +77,6 @@ ShellRoot {
         } else {
             console.log("OLLAMA_DATA_NATIVE_PASS")
         }
+        Qt.callLater(Qt.quit)
     }
 }

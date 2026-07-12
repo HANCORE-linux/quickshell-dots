@@ -427,7 +427,7 @@ Item {
     function reloadConfiguration() {}
 
     function applyRuntimeConfigFile() {
-        var text = String(runtimeConfigFile.text || "").trim()
+        var text = String(runtimeConfigFile.text() || "").trim()
         if (!text) return
         var state = OllamaDataLogic.runtimeConfigState(text)
         if (!state.valid) return
@@ -653,7 +653,6 @@ Item {
         id: runtimeConfigFile
         path: runtimeConfigPath
         onLoaded: ollama.applyRuntimeConfigFile()
-        onLoadFailed: ollama.applyRuntimeConfigFile()
     }
 
     function openRuntimeConfig() {

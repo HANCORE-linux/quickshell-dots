@@ -19,13 +19,10 @@ if grep -Fq "OLLAMA_DATA_NATIVE_FAIL" "$output" \
     exit 1
 fi
 
-case "$status" in
-    0|124|137) ;;
-    *)
-        command cat "$output"
-        exit "$status"
-        ;;
-esac
+if [[ "$status" -ne 0 ]]; then
+    command cat "$output"
+    exit "$status"
+fi
 
 command cat "$output"
 printf '%s\n' "OllamaData native component test: PASS"
