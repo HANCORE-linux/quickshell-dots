@@ -10,6 +10,7 @@ ShellRoot {
     property bool cancelRequested: false
     property bool sawFinalizing: false
     property bool retryStarted: false
+    property double cancelledAt: 0
     property bool finished: false
 
     function fail(message) {
@@ -50,6 +51,21 @@ ShellRoot {
                     && data.pullState === "cancelled") {
                 if (data.pullBusy) testRoot.fail("cancelled attempt remains busy")
                 else testRoot.pass()
+            }
+
+            if (testRoot.testCase === "stale" && data.pullState === "reconciling"
+                    && data.pullReconcileAttempts > 0 && !testRoot.cancelRequested) {
+                testRoot.cancelRequested = true
+                data.cancelPull()
+            }
+            if (testRoot.testCase === "stale" && testRoot.cancelRequested
+                    && data.pullState === "cancelled") {
+                if (testRoot.cancelledAt === 0) testRoot.cancelledAt = Date.now()
+                else if (Date.now() - testRoot.cancelledAt > 600) {
+                    if (data.installedModels.length !== 0 || data.tagsConnected)
+                        testRoot.fail("cancelled reconciliation changed tags state")
+                    else testRoot.pass()
+                }
             }
 
             if ((testRoot.testCase === "delayed" || testRoot.testCase === "success")

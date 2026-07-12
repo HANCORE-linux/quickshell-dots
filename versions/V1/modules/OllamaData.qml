@@ -129,8 +129,10 @@ Item {
         versionError = state.lastError
     }
 
-    function applyTags(raw, requestEpoch) {
+    function applyTags(raw, requestEpoch, requestPullAttempt) {
         if (requestEpoch !== refreshEpoch) return
+        if (requestPullAttempt !== undefined && requestPullAttempt !== 0
+                && (requestPullAttempt !== pullAttempt || pullState !== "reconciling")) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
             tagsConnected = false
@@ -529,7 +531,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 tagsProc.streamDone = true
-                ollama.applyTags(this.text, tagsProc.refreshEpoch)
+                ollama.applyTags(this.text, tagsProc.refreshEpoch, tagsProc.pullAttempt)
                 ollama.handlePullTags(tagsProc.pullAttempt, this.text)
             }
         }

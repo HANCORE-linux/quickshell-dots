@@ -56,6 +56,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         tags += 1
         log("tags")
+        if mode == "stale":
+            time.sleep(0.4)
+            self.reply('{"models":[{"name":"stale:model","details":{}}]}')
+            return
         visible = mode in ("success", "retry") or (mode == "delayed" and tags >= 3)
         self.reply(json.dumps({"models": [{"name": "fixture:model", "details": {}}] if visible else []}))
 
@@ -74,13 +78,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.flush()
         if mode == "cancel" or (mode == "retry" and pulls == 1):
             try:
-                time.sleep(0.25)
-                ready, _, _ = select.select([self.connection], [], [], 0)
-                if ready and not self.connection.recv(1):
-                    log("disconnect")
-                    return
-                self.wfile.write(b'{"status":"success"}\n')
-                self.wfile.flush()
+                for _ in range(100):
+                    time.sleep(0.05)
+                    ready, _, _ = select.select([self.connection], [], [], 0)
+                    if ready and not self.connection.recv(1):
+                        log("disconnect")
+                        return
+                    self.wfile.write(b'\n')
+                    self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 log("disconnect")
             return
@@ -126,6 +131,7 @@ run_case() {
 
     if [[ "$mode" == "cancel" ]]; then
         grep -Fxq pull "$fixture_log"
+        grep -Fxq disconnect "$fixture_log"
         ! grep -Fxq tags "$fixture_log"
     fi
     kill "$fixture_pid" 2>/dev/null || true
@@ -139,4 +145,5 @@ run_case success
 run_case delayed
 run_case timeout
 run_case retry
+run_case stale
 printf '%s\n' "ollama pull integration: PASS"
