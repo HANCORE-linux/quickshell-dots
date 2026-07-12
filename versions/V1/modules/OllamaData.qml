@@ -31,6 +31,8 @@ Item {
     property string operationMode: ""
     property int operationId: 0
     property int refreshEpoch: 0
+    property bool tagsRefreshPending: false
+    property bool loadedRefreshPending: false
     property var stopQueue: []
     property int verificationAttempts: 0
     property string verificationKind: ""
@@ -182,14 +184,16 @@ Item {
     }
 
     function refreshTags() {
-        if (operationInProgress || tagsProc.running) return
+        if (operationInProgress) return
+        if (tagsProc.running) { tagsRefreshPending = true; return }
         tagsProc.refreshEpoch = refreshEpoch
         tagsProc.command = buildRequest("GET", "/api/tags")
         tagsProc.running = true
     }
 
     function refreshLoaded() {
-        if (operationInProgress || loadedProc.running) return
+        if (operationInProgress) return
+        if (loadedProc.running) { loadedRefreshPending = true; return }
         loadedProc.refreshEpoch = refreshEpoch
         loadedProc.command = buildRequest("GET", "/api/ps")
         loadedProc.running = true
@@ -411,6 +415,7 @@ Item {
         beginActionState(actionName, name)
         operationError = ""
         actionError = ""
+        refreshEpoch += 1
         actionProc.command = buildRequest("DELETE", "/api/delete", { model: name }, "30")
         actionProc.running = true
     }
@@ -510,6 +515,12 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: ollama.applyTags(this.text, tagsProc.refreshEpoch)
         }
+        onExited: {
+            if (ollama.tagsRefreshPending) {
+                ollama.tagsRefreshPending = false
+                ollama.refreshTags()
+            }
+        }
     }
 
     Process {
@@ -517,6 +528,12 @@ Item {
         property int refreshEpoch: -1
         stdout: StdioCollector {
             onStreamFinished: ollama.applyLoaded(this.text, loadedProc.refreshEpoch)
+        }
+        onExited: {
+            if (ollama.loadedRefreshPending) {
+                ollama.loadedRefreshPending = false
+                ollama.refreshLoaded()
+            }
         }
     }
 
