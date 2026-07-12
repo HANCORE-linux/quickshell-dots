@@ -253,10 +253,10 @@ load_progress_for_run() {
       ((.startedEpoch // 0) | tostring),
       (.screenName // ""),
       (if (.panelOpen | type == "boolean") then (.panelOpen | tostring) else "true" end)
-    ] | @tsv else empty end
+    ] | join("\u001f") else empty end
   ' "$PROGRESS_STATE" 2>/dev/null)" || return 1
   [ -n "$row" ] || return 1
-  IFS=$'\t' read -r progress_run_id progress_state progress_phase progress_step progress_target progress_started_epoch progress_screen progress_panel_open <<< "$row"
+  IFS=$'\x1f' read -r progress_run_id progress_state progress_phase progress_step progress_target progress_started_epoch progress_screen progress_panel_open <<< "$row"
   [ -n "$progress_run_id" ]
 }
 

@@ -730,6 +730,19 @@ test_shell_apply_launcher_uses_systemd_unit() {
   assert_not_contains '"setsid"' "$file" "shell apply launcher still uses setsid"
 }
 
+test_shell_apply_ui_requires_checked_target_and_dismisses_failure() {
+  local file="$REPO_ROOT/versions/V1/panels/ShellUpdateTab.qml"
+  assert_contains 'readonly property bool canApply: root.shellUpdateBehind > 0' "$file" "shell apply UI does not require an available update"
+  assert_contains '&& root.shellUpdateRepository !== ""' "$file" "shell apply UI does not require the checked repository"
+  assert_contains '&& root.shellUpdateUpstreamRef !== ""' "$file" "shell apply UI does not require the checked upstream ref"
+  assert_contains '&& root.shellUpdateBaseCommit !== ""' "$file" "shell apply UI does not require the checked base commit"
+  assert_contains '&& root.shellUpdateTargetCommit !== ""' "$file" "shell apply UI does not require the checked target commit"
+  assert_contains 'if (!canApply) return' "$file" "shell apply launcher is not guarded against incomplete state"
+  assert_contains 'label: "Dismiss"' "$file" "failed shell progress has no dismiss action"
+  assert_contains 'root.ackShellProgress()' "$file" "failed shell progress dismiss does not acknowledge the terminal state"
+  assert_contains 'buttonEnabled: tab.canApply' "$file" "shell apply buttons do not share the checked-target guard"
+}
+
 test_apply_restarts_bar_in_own_systemd_unit() {
   local root="$WORK/restart-systemd-unit"
   init_fixture "$root"
@@ -927,12 +940,17 @@ test_stale_running_progress_can_be_replaced() {
 test_progress_failure_in_checking_phase() {
   local root="$WORK/progress-checking-fail"
   init_fixture "$root"
+  local run
 
   if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
     fail "apply succeeded with no pending state"
   fi
 
   assert_progress_state "$root" failed checking 1 "checking failure did not write failed checking status"
+  run="$(progress_run_id "$root")"
+  run_progress_command "$root" --ack-progress "$run"
+  assert_progress_state "$root" idle "" 0 "checking failure could not be acknowledged with an empty target commit"
+  assert_eq true "$(jq -r '.acknowledged' "$(progress_file "$root")")" "acknowledged failure did not persist acknowledgement"
 }
 
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
@@ -1299,6 +1317,7 @@ test_later_non_payload_commit_in_target_state_aborts
 test_unreachable_target_aborts_before_mutation
 test_dirty_repo_is_preserved_while_deploying_checked_target
 test_shell_apply_launcher_uses_systemd_unit
+test_shell_apply_ui_requires_checked_target_and_dismisses_failure
 test_apply_restarts_bar_in_own_systemd_unit
 test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails
 test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit

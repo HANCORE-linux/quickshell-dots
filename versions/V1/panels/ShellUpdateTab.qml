@@ -16,6 +16,13 @@ Column {
     readonly property bool progressCompleted: root.shellProgressCompleted
     readonly property int progressStep: Math.max(1, Math.min(root.shellProgressStep || 1, root.shellProgressTotalSteps || 5))
     readonly property int totalSteps: root.shellProgressTotalSteps || 5
+    readonly property bool canApply: root.shellUpdateBehind > 0
+        && root.shellUpdateRepository !== ""
+        && root.shellUpdateUpstreamRef !== ""
+        && root.shellUpdateBaseCommit !== ""
+        && root.shellUpdateTargetCommit !== ""
+        && !root.shellUpdateChecking
+        && !progressRunning
     readonly property var phaseLabels: [
         "Check for updates",
         "Validate payload",
@@ -96,6 +103,7 @@ Column {
     }
 
     function startApply() {
+        if (!canApply) return
         root.setShellProgressPanelOpen(true)
         var cmd = [
             "systemd-run",
@@ -381,7 +389,7 @@ Column {
             width: (parent.width - 8) / 2
             label: "Update & restart"
             primary: true
-            buttonEnabled: root.shellUpdateBehind > 0 && !root.shellUpdateChecking
+            buttonEnabled: tab.canApply
             onClicked: tab.startApply()
         }
     }
@@ -405,13 +413,17 @@ Column {
         spacing: 8
         ActionButton {
             width: (parent.width - 8) / 2
-            label: "Close"
-            onClicked: root.closeArchUpdatesPanel()
+            label: "Dismiss"
+            onClicked: {
+                root.ackShellProgress()
+                root.archVisible = false
+            }
         }
         ActionButton {
             width: (parent.width - 8) / 2
             label: "Retry"
             primary: true
+            buttonEnabled: tab.canApply
             onClicked: tab.startApply()
         }
     }
