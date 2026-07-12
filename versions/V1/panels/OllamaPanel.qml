@@ -763,10 +763,12 @@ PanelWindow {
                 // ── CONFIGURATION (collapsible) ──
                 Rectangle {
                     width: parent.width
-                    height: 25
+                    height: 28
                     radius: root.tileRadius
-                    color: configToggleMa.containsMouse ? root.fillHover : root.fillIdle
-                    border.color: configToggleMa.containsMouse ? root.seal : root.sep
+                    color: !configToggleMa.enabled ? root.fillIdle
+                        : configToggleMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: !configToggleMa.enabled ? root.sep
+                        : configToggleMa.containsMouse ? root.seal : root.sep
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -775,15 +777,17 @@ PanelWindow {
                         anchors.left: parent.left
                         anchors.leftMargin: 8
                         text: ollamaPanel.configOpen ? "Configuration  ▾" : "Configuration  ▸"
-                        color: configToggleMa.containsMouse ? root.seal : root.ink
+                        color: !configToggleMa.enabled ? root.sumi
+                            : configToggleMa.containsMouse ? root.seal : root.ink
                         font.family: root.mono
                         font.pixelSize: 11
                     }
                     MouseArea {
                         id: configToggleMa
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: !root.ollama.controlsLocked
+                        hoverEnabled: enabled
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
                     }
                 }
@@ -795,7 +799,7 @@ PanelWindow {
 
                 Row {
                     width: parent.width
-                    height: 24
+                    height: 28
                     spacing: 6
 
                     UiText {
@@ -815,24 +819,42 @@ PanelWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
+                            property bool selected: root.ollama.selectedKeepAlive === modelData.value
+                            property bool chipEnabled: !root.ollama.controlsLocked
                             width: 36
-                            height: 22
+                            height: 28
                             radius: root.tileRadius
-                            color: root.ollama.selectedKeepAlive === modelData.value ? root.seal : root.fillIdle
-                            border.color: root.sep
+                            color: !chipEnabled ? root.fillIdle
+                                : selected ? root.seal
+                                : keepAliveMa.containsMouse ? root.fillHover : root.fillIdle
+                            border.color: !chipEnabled ? root.sep
+                                : selected || keepAliveMa.containsMouse ? root.seal : root.sep
                             border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
 
                             UiText {
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                color: root.ollama.selectedKeepAlive === modelData.value ? root.paper : root.ink
+                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
                                 font.family: root.mono
-                                font.pixelSize: 10
+                                font.pixelSize: modelData.value === -1 ? 14 : 10
                             }
                             MouseArea {
+                                id: keepAliveMa
                                 anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
+                                enabled: chipEnabled
+                                hoverEnabled: enabled
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onEntered: keepAliveTip.show()
+                                onExited: keepAliveTip.hide()
+                                onEnabledChanged: if (!enabled) keepAliveTip.hide()
                                 onClicked: ollamaPanel.setKeepAlive(modelData.value)
+                            }
+                            TooltipMixin {
+                                id: keepAliveTip
+                                root: ollamaPanel.root
+                                owner: parent
+                                text: modelData.value === -1 ? "Keep model loaded indefinitely" : ""
                             }
                         }
                     }
@@ -866,18 +888,23 @@ PanelWindow {
                             property bool selected: isCustom
                                 ? root.ollama.selectedNumCtx !== null && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
                                 : root.ollama.selectedNumCtx === modelData.value
-                            width: isCustom ? Math.max(52, customInput.contentWidth + 20) : 40
-                            height: 22
+                            property bool chipEnabled: !root.ollama.controlsLocked
+                            width: isCustom ? 52 : 40
+                            height: 28
                             radius: root.tileRadius
-                            color: selected ? root.seal : root.fillIdle
-                            border.color: root.sep
+                            color: !chipEnabled ? root.fillIdle
+                                : selected ? root.seal
+                                : contextChipMa.containsMouse ? root.fillHover : root.fillIdle
+                            border.color: !chipEnabled ? root.sep
+                                : selected || contextChipMa.containsMouse ? root.seal : root.sep
                             border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
 
                             UiText {
                                 visible: !isCustom
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                color: selected ? root.paper : root.ink
+                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
                                 font.family: root.mono
                                 font.pixelSize: 10
                             }
@@ -889,9 +916,10 @@ PanelWindow {
                                 anchors.leftMargin: 6
                                 anchors.rightMargin: 6
                                 verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 font.family: root.mono
                                 font.pixelSize: 10
-                                enabled: !root.ollama.controlsLocked && isCustom
+                                enabled: chipEnabled && isCustom
                                 color: enabled ? root.ink : root.sumi
                                 clip: true
                                 selectByMouse: true
@@ -913,17 +941,19 @@ PanelWindow {
                                 visible: isCustom && (!selected || customInput.text === "")
                                     && !customInput.activeFocus
                                 anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 6
+                                anchors.horizontalCenter: parent.horizontalCenter
                                 text: "Custom"
-                                color: selected ? root.paper : root.ink
+                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
                                 font.family: root.mono
                                 font.pixelSize: 10
                             }
 
                             MouseArea {
+                                id: contextChipMa
                                 anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked && !isCustom
+                                enabled: chipEnabled && !isCustom
+                                hoverEnabled: enabled
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
                                     ollamaPanel.setContext(modelData.value)
                                 }
