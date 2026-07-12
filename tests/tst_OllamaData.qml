@@ -189,6 +189,18 @@ TestCase {
         verify(parsed.error.length > 0)
     }
 
+    function test_rejectsEditorDotBuiltin() {
+        var parsed = OllamaDataLogic.parseEditorCommand(".")
+        verify(!parsed.valid)
+        verify(parsed.error.length > 0)
+    }
+
+    function test_quotesEditorArgumentsAndHostileRuntimePath() {
+        var command = OllamaDataLogic.buildEditorShellCommand(
+            ["code", "--wait"], "/tmp/home space;$(touch injected)/qs config.json")
+        compare(command, "'code' '--wait' '/tmp/home space;$(touch injected)/qs config.json'")
+    }
+
     function test_preservesInheritedPropertyModelNames() {
         var entries = [
             { name: "constructor" },

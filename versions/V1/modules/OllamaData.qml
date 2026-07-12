@@ -701,8 +701,10 @@ Item {
             actionError = parsed.error
             return
         }
-        runtimeConfigEditProc.command = ["omarchy-launch-floating-terminal-with-presentation"]
-            .concat(parsed.argv, [runtimeConfigPath])
+        runtimeConfigEditProc.command = [
+            "omarchy-launch-floating-terminal-with-presentation",
+            OllamaDataLogic.buildEditorShellCommand(parsed.argv, runtimeConfigPath)
+        ]
         runtimeConfigEditProc.running = true
     }
 

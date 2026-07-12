@@ -162,11 +162,10 @@ function parseEditorCommand(editor) {
         return { valid: false, argv: [], error: "EDITOR contains unsafe shell syntax" }
     }
     var argv = value.split(/\s+/)
-    if (!/^[A-Za-z0-9_.+/:-]+$/.test(argv[0]) || argv[0].charAt(0) === "-") {
+    if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(argv[0])) {
         return { valid: false, argv: [], error: "EDITOR must start with an executable" }
     }
-    var executable = argv[0].split("/").pop()
-    if (/^(alias|bash|builtin|cd|command|dash|declare|env|eval|exec|export|fish|function|local|readonly|set|sh|source|typeset|unalias|unset|zsh)$/.test(executable)) {
+    if (/^(alias|bash|bg|bind|break|builtin|caller|case|cd|command|compgen|complete|compopt|continue|coproc|dash|declare|dirs|disown|do|done|echo|elif|else|enable|env|esac|eval|exec|exit|export|false|fc|fg|fi|fish|for|function|getopts|hash|help|history|if|in|jobs|kill|let|local|logout|mapfile|popd|printf|pushd|pwd|read|readarray|readonly|return|select|set|sh|shift|shopt|source|suspend|test|then|time|times|trap|true|type|typeset|ulimit|umask|unalias|unset|until|wait|while|zsh)$/.test(argv[0])) {
         return { valid: false, argv: [], error: "EDITOR cannot run a shell" }
     }
     for (var i = 1; i < argv.length; i++) {
@@ -175,6 +174,17 @@ function parseEditorCommand(editor) {
         }
     }
     return { valid: true, argv: argv, error: "" }
+}
+
+function shellQuote(value) {
+    return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
+}
+
+function buildEditorShellCommand(argv, runtimeConfigPath) {
+    var command = []
+    for (var i = 0; i < argv.length; i++) command.push(shellQuote(argv[i]))
+    command.push(shellQuote(runtimeConfigPath))
+    return command.join(" ")
 }
 
 function exclusiveLoadState(entries, selectedName) {
