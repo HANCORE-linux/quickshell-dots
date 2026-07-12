@@ -650,23 +650,21 @@ Item {
         id: gpuProc
         command: [
             "bash", "-c",
-            "if command -v nvidia-smi &>/dev/null; then "
-            + "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1; "
-            + "else "
+            "{ command -v nvidia-smi &>/dev/null && "
+            + "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null; } ; "
             + "for card in /sys/class/drm/card[0-9]*/device/gpu_busy_percent; do "
-            + "[ -f \"$card\" ] && { cat \"$card\"; exit 0; }; "
+            + "[ -r \"$card\" ] && cat \"$card\"; "
             + "done; "
             + "for hwmon in /sys/class/hwmon/hwmon[0-9]*/device/gpu_busy_percent; do "
-            + "[ -f \"$hwmon\" ] && { cat \"$hwmon\"; exit 0; }; "
-            + "done; "
-            + "echo -1; fi"
+            + "[ -r \"$hwmon\" ] && cat \"$hwmon\"; "
+            + "done"
         ]
         stdout: StdioCollector {
             onStreamFinished: {
-                var value = parseInt(this.text.trim())
-                ollama.gpuPercent = isNaN(value) ? -1 : value
+                var value = OllamaDataLogic.maxGpuPercent(this.text)
+                ollama.gpuPercent = value
                 var h = ollama.gpuHistory.slice()
-                h.push(isNaN(value) ? 0 : value / 100)
+                h.push(value < 0 ? 0 : value / 100)
                 if (h.length > ollama.gpuMaxSamples) h.shift()
                 ollama.gpuHistory = h
             }

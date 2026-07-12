@@ -142,6 +142,8 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Open Ollama config file"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.openRuntimeConfig()'
 assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running'
+assert_contains versions/V1/modules/OllamaData.qml 'OllamaDataLogic.maxGpuPercent'
+assert_contains versions/V1/modules/OllamaWidget.qml 'text: "GPU max"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'enabled: !root.ollama.refreshRunning'
 assert_contains versions/V1/panels/OllamaPanel.qml 'opacity: refreshMa.enabled ? 1 : 0.35'
 assert_contains versions/V1/panels/OllamaPanel.qml 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor'

@@ -293,3 +293,15 @@ function aggregateError(actionError, versionError, tagsError, loadedError) {
 function aggregateConnected(versionConnected, tagsConnected, loadedConnected) {
     return Boolean(versionConnected || tagsConnected || loadedConnected)
 }
+
+function maxGpuPercent(raw) {
+    var lines = String(raw || "").split("\n")
+    var max = -1
+    for (var i = 0; i < lines.length; i++) {
+        var value = parseInt(lines[i].trim(), 10)
+        if (!isNaN(value) && value >= 0 && value <= 100) {
+            if (value > max) max = value
+        }
+    }
+    return max
+}

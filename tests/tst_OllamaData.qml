@@ -62,6 +62,9 @@ TestCase {
         function aggregateConnected(vConn, tConn, lConn) {
             return OllamaDataLogic.aggregateConnected(vConn, tConn, lConn)
         }
+        function maxGpuPercent(raw) {
+            return OllamaDataLogic.maxGpuPercent(raw)
+        }
         function sumLoadedVram(entries) { return OllamaDataLogic.sumLoadedVram(entries) }
         function errorMessage(response, fallback) { return OllamaDataLogic.errorMessage(response, fallback) }
         function successful(response) { return OllamaDataLogic.successful(response) }
@@ -382,5 +385,25 @@ TestCase {
 
     function test_aggregateConnectedAllFalse() {
         verify(!data.aggregateConnected(false, false, false))
+    }
+
+    function test_maxGpuReturnsMaxOfMultiple() {
+        compare(data.maxGpuPercent("12\n87\n44"), 87)
+    }
+
+    function test_maxGpuIgnoresInvalidLines() {
+        compare(data.maxGpuPercent("N/A\n55\nbad"), 55)
+    }
+
+    function test_maxGpuRejectsOutOfRange() {
+        compare(data.maxGpuPercent("150\n-5\n30"), 30)
+    }
+
+    function test_maxGpuEmptyInputReturnsMinusOne() {
+        compare(data.maxGpuPercent(""), -1)
+    }
+
+    function test_maxGpuAllInvalidReturnsMinusOne() {
+        compare(data.maxGpuPercent("N/A\nfoo"), -1)
     }
 }

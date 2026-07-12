@@ -57,7 +57,7 @@ Item {
         UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: !root.compactOllama
-            text: "GPU"
+            text: "GPU max"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
