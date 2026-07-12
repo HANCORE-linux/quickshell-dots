@@ -52,9 +52,7 @@ Item {
     readonly property var models: reconcileModels(installedModels, loadedModels)
     readonly property string runtimeConfigPath:
         Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
-    readonly property string pullOutputRoot:
-        Quickshell.env("XDG_RUNTIME_DIR") || Quickshell.env("HOME") + "/.cache"
-    property string pullOutputPath: ""
+    property string pullLastLine: ""
     readonly property int effectiveContextLength: loadedModels.length === 1
         ? loadedModels[0].contextLength : 0
     readonly property string keepAliveStatus: {
@@ -707,25 +705,17 @@ Item {
         pullPercent = 0
         pullStatus = "Connecting..."
         pullError = ""
-        pullOutputPath = pullOutputRoot + "/qs-ollama-pull-"
-            + Date.now().toString(36) + "-"
-            + Math.floor(Math.random() * 1000000000).toString(36) + ".jsonl"
+        pullLastLine = ""
         pullProc.command = [
-            "bash", "-c",
-            "set -o noclobber; : > \"$2\" || exit 73; " +
-            "curl -sS --fail-with-body --no-buffer -X POST " +
-            "-H 'Content-Type: application/json' -H 'Accept: application/json' " +
-            "-d \"$1\" \"$3\" -o \"$2\" " +
-            "--max-time 3600 --connect-timeout 3; " +
-            "code=$?; last=$(tail -n 1 \"$2\" 2>/dev/null || true); " +
-            "rm -f \"$2\"; printf '%s\\n%s\\n' \"$code\" \"$last\"",
-            "bash",
-            JSON.stringify({model: cleanName, stream: true}),
-            pullOutputPath,
+            "curl", "-sS", "--fail-with-body", "--no-buffer",
+            "--connect-timeout", "3", "--max-time", "3600",
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-H", "Accept: application/json",
+            "--data-binary", JSON.stringify({ model: cleanName, stream: true }),
             baseUrl + "/api/pull"
         ]
         pullProc.running = true
-        pullProgressTimer.running = true
     }
 
     function applyPullProgress(raw) {
@@ -741,13 +731,8 @@ Item {
         } catch (e) {}
     }
 
-    function finishPull(raw) {
-        pullProgressTimer.running = false
-        var text = String(raw || "").trim()
-        var separator = text.indexOf("\n")
-        var exitCode = parseInt(separator < 0 ? text : text.slice(0, separator))
-        var lastLine = separator < 0 ? "" : text.slice(separator + 1).trim()
-        var state = OllamaDataLogic.pullResultState(exitCode, lastLine)
+    function finishPull(exitCode) {
+        var state = OllamaDataLogic.pullResultState(exitCode, pullLastLine)
         if (state.valid) {
             pullProgress = 1
             pullStatus = "Done"
@@ -762,31 +747,27 @@ Item {
 
     Process {
         id: pullProc
-        property bool _streamFinished: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                ollama.finishPull(this.text)
-                pullProc._streamFinished = true
+        property int _exitCode: -1
+        property bool _exited: false
+        stdout: SplitParser {
+            onRead: function(line) {
+                var text = String(line || "").trim()
+                if (!text) return
+                ollama.pullLastLine = text
+                ollama.applyPullProgress(text)
             }
+        }
+        onExited: function(code) {
+            _exitCode = code
+            _exited = true
+            if (ollama.pullBusy) ollama.finishPull(code)
         }
         onRunningChanged: {
-            if (running) {
-                _streamFinished = false
-                pullProgressTimer.running = true
-                return
+            if (running) { _exited = false; _exitCode = -1; return }
+            if (!_exited && ollama.pullBusy) {
+                ollama.pullError = "Download failed"
+                ollama.pullBusy = false
             }
-            if (_streamFinished) { _streamFinished = false; return }
-            if (!ollama.pullBusy) return
-            ollama.pullError = "Download failed"
-            ollama.pullBusy = false
-            pullProgressTimer.running = false
-        }
-    }
-
-    Process {
-        id: progressReaderProc
-        stdout: StdioCollector {
-            onStreamFinished: ollama.applyPullProgress(this.text)
         }
     }
 
@@ -812,18 +793,5 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: ollama.refreshGpu()
-    }
-
-    Timer {
-        id: pullProgressTimer
-        interval: 500
-        running: false
-        repeat: true
-        onTriggered: {
-            if (!progressReaderProc.running) {
-                progressReaderProc.command = ["tail", "-n", "1", ollama.pullOutputPath]
-                progressReaderProc.running = true
-            }
-        }
     }
 }

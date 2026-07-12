@@ -96,9 +96,15 @@ assert_contains versions/V1/modules/OllamaData.qml 'if (ok) operationError = ""'
 assert_contains versions/V1/modules/OllamaData.qml 'function loadModel(name) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function runModelAction(name, keepAlive, actionName) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function pullModel(name) {'
-assert_contains versions/V1/modules/OllamaData.qml 'property string pullOutputPath: ""'
-assert_contains versions/V1/modules/OllamaData.qml 'pullOutputPath = pullOutputRoot'
+assert_contains versions/V1/modules/OllamaData.qml 'property string pullLastLine: ""'
 assert_contains versions/V1/modules/OllamaData.qml '--fail-with-body'
+assert_contains versions/V1/modules/OllamaData.qml 'stdout: SplitParser {'
+assert_contains versions/V1/modules/OllamaData.qml 'ollama.applyPullProgress(text)'
+
+if grep -Fq 'pullOutputPath\|pullProgressTimer\|progressReaderProc' "$repo_root/versions/V1/modules/OllamaData.qml"; then
+    printf 'pull must not use file polling or pullProgressTimer\n' >&2
+    exit 1
+fi
 
 if grep -Fq '/tmp/ollama_pull_output' "$repo_root/versions/V1/modules/OllamaData.qml"; then
     printf 'pull progress must not use a shared predictable /tmp file\n' >&2
