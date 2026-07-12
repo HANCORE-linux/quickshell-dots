@@ -126,6 +126,7 @@ Item {
         if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
+            tagsConnected = false
             tagsError = errorMessage(response, "Unable to list Ollama models")
             return
         }
@@ -134,6 +135,7 @@ Item {
             tagsConnected = true
             tagsError = ""
         } catch (error) {
+            tagsConnected = false
             tagsError = "Invalid Ollama model response"
         }
     }
@@ -142,6 +144,7 @@ Item {
         if (requestEpoch !== refreshEpoch) return
         var response = decodeResponse(raw)
         if (!successful(response)) {
+            loadedConnected = false
             loadedError = errorMessage(response, "Unable to read loaded Ollama models")
             return
         }
@@ -150,6 +153,7 @@ Item {
             loadedConnected = true
             loadedError = ""
         } catch (error) {
+            loadedConnected = false
             loadedError = "Invalid Ollama loaded-model response"
         }
     }
@@ -277,6 +281,7 @@ Item {
             models = operationModels(raw)
             loadedConnected = true
         } catch (error) {
+            loadedConnected = false
             if (purpose === "failureRefresh") {
                 finishExclusiveLoad(false, null)
             } else {
