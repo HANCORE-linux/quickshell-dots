@@ -47,6 +47,9 @@ Item {
     property var selectedKeepAlive: "5m"
     property var selectedNumCtx: null
     property bool configDirty: false
+    property bool _runtimeConfigEditorExited: false
+    signal runtimeConfigLoaded()
+    signal runtimeConfigReloaded()
 
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
@@ -682,7 +685,14 @@ Item {
         watchChanges: true
         printErrors: false
         onFileChanged: runtimeConfigFile.reload()
-        onLoaded: ollama.applyRuntimeConfigFile()
+        onLoaded: {
+            ollama.applyRuntimeConfigFile()
+            ollama.runtimeConfigLoaded()
+            if (ollama._runtimeConfigEditorExited) {
+                ollama._runtimeConfigEditorExited = false
+                ollama.runtimeConfigReloaded()
+            }
+        }
     }
 
     function openRuntimeConfig() {
@@ -698,7 +708,10 @@ Item {
 
     Process {
         id: runtimeConfigEditProc
-        onExited: ollama.reloadConfiguration()
+        onExited: {
+            ollama._runtimeConfigEditorExited = true
+            ollama.reloadConfiguration()
+        }
     }
 
     function pullModel(name) {

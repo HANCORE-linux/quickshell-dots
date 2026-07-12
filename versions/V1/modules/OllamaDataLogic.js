@@ -162,7 +162,18 @@ function parseEditorCommand(editor) {
         return { valid: false, argv: [], error: "EDITOR contains unsafe shell syntax" }
     }
     var argv = value.split(/\s+/)
-    if (!argv[0]) return { valid: false, argv: [], error: "EDITOR is empty" }
+    if (!/^[A-Za-z0-9_.+/:-]+$/.test(argv[0]) || argv[0].charAt(0) === "-") {
+        return { valid: false, argv: [], error: "EDITOR must start with an executable" }
+    }
+    var executable = argv[0].split("/").pop()
+    if (/^(alias|bash|builtin|cd|command|dash|declare|env|eval|exec|export|fish|function|local|readonly|set|sh|source|typeset|unalias|unset|zsh)$/.test(executable)) {
+        return { valid: false, argv: [], error: "EDITOR cannot run a shell" }
+    }
+    for (var i = 1; i < argv.length; i++) {
+        if (!/^--?[A-Za-z0-9][A-Za-z0-9._-]*$/.test(argv[i])) {
+            return { valid: false, argv: [], error: "EDITOR arguments must be options" }
+        }
+    }
     return { valid: true, argv: argv, error: "" }
 }
 

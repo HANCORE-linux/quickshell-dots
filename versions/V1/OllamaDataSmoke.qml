@@ -6,6 +6,9 @@ ShellRoot {
     id: testRoot
 
     property var failures: []
+    property bool smokeReady: false
+    property bool runtimeConfigLoaded: false
+    property bool runtimeConfigReloadStarted: false
 
     function check(condition, message) {
         if (!condition) failures.push(message)
@@ -20,9 +23,24 @@ ShellRoot {
         Qt.callLater(Qt.quit)
     }
 
+    function startRuntimeConfigReload() {
+        if (!smokeReady || !runtimeConfigLoaded || runtimeConfigReloadStarted) return
+        runtimeConfigReloadStarted = true
+        data.selectedKeepAlive = "5m"
+        data.openRuntimeConfig()
+    }
+
     OllamaData {
         id: data
         enabled: false
+        onRuntimeConfigLoaded: {
+            testRoot.runtimeConfigLoaded = true
+            testRoot.startRuntimeConfigReload()
+        }
+        onRuntimeConfigReloaded: {
+            check(data.selectedKeepAlive === "30m", "runtime config reload")
+            finish()
+        }
     }
 
     Component.onCompleted: {
@@ -125,19 +143,7 @@ ShellRoot {
         data.applyLoaded(badLoaded, epoch)
         check(data.loadedConnected === false, "loadedConnected false after malformed loaded")
 
-        data.setKeepAlive("30m")
-        data.selectedKeepAlive = "5m"
-        data.openRuntimeConfig()
-        configReloadTimer.start()
-    }
-
-    Timer {
-        id: configReloadTimer
-        interval: 100
-        repeat: false
-        onTriggered: {
-            check(data.selectedKeepAlive === "30m", "runtime config reload")
-            finish()
-        }
+        smokeReady = true
+        data.reloadConfiguration()
     }
 }

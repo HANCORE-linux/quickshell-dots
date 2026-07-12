@@ -171,6 +171,24 @@ TestCase {
         verify(parsed.error.length > 0)
     }
 
+    function test_rejectsEditorAssignmentWords() {
+        var parsed = OllamaDataLogic.parseEditorCommand("BASH_ENV=/tmp/payload bash")
+        verify(!parsed.valid)
+        verify(parsed.error.length > 0)
+    }
+
+    function test_rejectsEditorShellExecutables() {
+        var parsed = OllamaDataLogic.parseEditorCommand("bash -c")
+        verify(!parsed.valid)
+        verify(parsed.error.length > 0)
+    }
+
+    function test_rejectsEditorShellBuiltins() {
+        var parsed = OllamaDataLogic.parseEditorCommand("command --version")
+        verify(!parsed.valid)
+        verify(parsed.error.length > 0)
+    }
+
     function test_preservesInheritedPropertyModelNames() {
         var entries = [
             { name: "constructor" },

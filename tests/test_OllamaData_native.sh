@@ -4,10 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="$(mktemp)"
 home="$(mktemp -d)"
+launcher_dir="$(mktemp -d)"
 mkdir -p "$home/.cache"
-trap 'rm -f "$output"; rm -rf "$home"' EXIT
+ln -s "$(type -P true)" "$launcher_dir/omarchy-launch-floating-terminal-with-presentation"
+printf '%s\n' '{"keepAlive":"30m","numCtx":null,"dirty":true}' > "$home/.cache/qs-ollama-config.json"
+trap 'rm -f "$output"; rm -rf "$home" "$launcher_dir"' EXIT
 
-if timeout --kill-after=1s 2s env HOME="$home" EDITOR=true QT_QPA_PLATFORM=offscreen \
+if timeout --kill-after=1s 2s env HOME="$home" EDITOR=true PATH="$launcher_dir:$PATH" QT_QPA_PLATFORM=offscreen \
     qs --no-color -p "$repo_root/versions/V1/OllamaDataSmoke.qml" >"$output" 2>&1; then
     status=0
 else
