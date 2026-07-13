@@ -144,9 +144,12 @@ sudo pacman -S wireplumber libpulse pamixer brightnessctl upower power-profiles-
 
 Notes:
 
-- The native Bluetooth panel requires **Quickshell 0.3.0 or newer**. It uses
-  adapter-scoped Quickshell devices for state and normal actions; `bluez-utils`
-  provides the interactive `bluetoothctl` agent used only for PIN/passkey pairing.
+- The Bluetooth panel prefers the **native Quickshell 0.3.0+** implementation
+  (adapter-scoped Quickshell devices for state and normal actions; `bluez-utils`
+  provides the interactive `bluetoothctl` agent used only for PIN/passkey pairing).
+  It loads that implementation lazily and, on an older Quickshell where the native
+  Bluetooth API is unavailable, falls back automatically to a `bluetoothctl`-only
+  panel — so the shell keeps loading regardless of Quickshell version.
 - `wireplumber` provides `wpctl`; `libpulse` provides `pactl` for the audio panel.
 - `voxtype` is optional for the Voxtype widget.
 - The install script checks required tools and warns about missing optional tools.
