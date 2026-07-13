@@ -17,6 +17,15 @@ assert_contains() {
     }
 }
 
+assert_not_contains() {
+    local file="$repo_root/$1"
+    local text="$2"
+    ! grep -Fq -- "$text" "$file" || {
+        printf 'unexpected %s in %s\n' "$text" "$file" >&2
+        exit 1
+    }
+}
+
 assert_matches() {
     local pattern="$1"
     grep -Eq "$pattern" "$theme" || {
@@ -167,7 +176,7 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Delete " + ollamaPane
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Cancel"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Delete model"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.deleteModel(ollamaPanel.confirmDeleteModel)'
-assert_contains versions/V1/panels/OllamaPanel.qml 'function onModelsChanged() { ollamaPanel.clearDeleteConfirmation() }'
+assert_not_contains versions/V1/panels/OllamaPanel.qml 'function onModelsChanged() { ollamaPanel.clearDeleteConfirmation() }'
 assert_contains versions/V1/panels/OllamaPanel.qml 'function clearDeleteConfirmation()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'function confirmDelete(name)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'owner: refreshButton'

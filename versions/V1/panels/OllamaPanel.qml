@@ -47,11 +47,6 @@ PanelWindow {
     }
 
     Connections {
-        target: root.ollama
-        function onModelsChanged() { ollamaPanel.clearDeleteConfirmation() }
-    }
-
-    Connections {
         target: root
         function onOllamaVisibleChanged() {
             if (!root.ollamaVisible) ollamaPanel.clearDeleteConfirmation()
