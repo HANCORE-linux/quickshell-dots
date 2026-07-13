@@ -395,8 +395,9 @@ PanelWindow {
                         Rectangle {
                             id: modelDelete
                             anchors.right: modelReload.visible ? modelReload.left : modelAction.left
-                            anchors.rightMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.rightMargin: 8
+                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
+                                : Math.round((parent.height - height) / 2)
                             width: 28
                             height: 28
                             radius: root.tileRadius
@@ -437,8 +438,9 @@ PanelWindow {
                             id: modelReload
                             visible: modelData.loaded
                             anchors.right: modelAction.left
-                            anchors.rightMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.rightMargin: 8
+                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
+                                : Math.round((parent.height - height) / 2)
                             width: 28
                             height: 28
                             radius: root.tileRadius
@@ -481,7 +483,8 @@ PanelWindow {
                             id: modelAction
                             anchors.right: parent.right
                             anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
+                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
+                                : Math.round((parent.height - height) / 2)
                             width: 50
                             height: 28
                             radius: root.tileRadius
