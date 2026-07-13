@@ -839,6 +839,7 @@ Item {
 
     // ── Control center state ──
     property bool controlVisible: false
+    property string controlOpenSubmenu: ""
     onControlVisibleChanged: {
         popupOpened("controlVisible")
         if (!controlVisible) { splitsSubVisible = false; wwSubVisible = false }
