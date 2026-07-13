@@ -158,7 +158,18 @@ This bar is built for classic Omarchy setups where Waybar is the stock bar. The 
 <details>
 <summary>Omarchy 4 / omarchy-shell note</summary>
 
-On **Omarchy 4.0 / omarchy-shell**, this setup is not tested yet. Omarchy 4 already ships its own Quickshell shell, so running both shells at the same time may create duplicate bars or conflicting keybinds. Use this on Omarchy 4 only if you know how to disable or separate the built-in shell.
+Rise supports Omarchy 4's native Quickshell backends for NetworkManager,
+Bluetooth and PipeWire. Its embedded Omarchy control menu reads the installed
+`omarchy-menu.jsonc`, so actions follow the routes shipped by that Omarchy
+version instead of a copied command table.
+
+This remains a **replacement-shell configuration**, not an `omarchy-shell`
+plugin. Do not run both complete shells at the same time: each provides global
+desktop services, including a freedesktop notification server, and only one
+process can own those D-Bus names. Omarchy 4 keybindings that call
+`omarchy-shell` also remain owned by the official shell and must be adapted
+when Rise replaces it. Plugin-mode integration is tracked as separate future
+work.
 
 </details>
 

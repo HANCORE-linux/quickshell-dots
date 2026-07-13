@@ -14,6 +14,115 @@ Item {
     property alias searchInput: searchInput
     signal closeRequested()   // Escape en la raíz → el host cierra su ventana
 
+    // Omarchy 4 owns its menu definition as JSONC. Consume that file directly
+    // instead of copying routes: actions stay aligned with the installed
+    // Omarchy version while the legacy table below remains the Omarchy 3
+    // fallback. Running omarchy-menu routes is intentionally avoided on v4,
+    // because its IPC wrapper would auto-start a second Quickshell shell.
+    readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH")
+        || (Quickshell.env("HOME") + "/.local/share/omarchy")
+    readonly property string officialMenuPath: omarchyPath + "/default/omarchy/omarchy-menu.jsonc"
+    property bool officialMenuLoaded: false
+    property var officialAllItems: []
+    property var officialSubmenus: ({})
+
+    function stripJsonc(raw) {
+        return String(raw || "")
+            .replace(/^\s*\/\/[^\n]*(\n|$)/gm, "")
+            .replace(/,(\s*[}\]])/g, "$1")
+    }
+
+    function luaQuote(value) {
+        return "\"" + String(value || "")
+            .replace(/\\/g, "\\\\")
+            .replace(/\"/g, "\\\"")
+            .replace(/\n/g, "\\n") + "\""
+    }
+
+    function officialActionCommand(action) {
+        return ["hyprctl", "dispatch", "hl.dsp.exec_cmd(" + luaQuote(action) + ")"]
+    }
+
+    function loadOfficialMenu(raw) {
+        var parsed
+        try {
+            parsed = JSON.parse(stripJsonc(raw))
+        } catch (error) {
+            officialMenuLoaded = false
+            return
+        }
+        var source = parsed && parsed.items ? parsed.items : parsed
+        if (!source || typeof source !== "object") {
+            officialMenuLoaded = false
+            return
+        }
+
+        var all = []
+        var groups = ({})
+        var ids = Object.keys(source)
+        for (var i = 0; i < ids.length; i++) {
+            var id = ids[i]
+            var entry = source[id]
+            if (!entry || typeof entry !== "object")
+                continue
+            // The official Apps action summons omarchy.launcher and therefore
+            // starts omarchy-shell. Rise is the active shell in this mode, so
+            // exposing that row would create two competing shell instances.
+            if (id === "apps")
+                continue
+            if (id === "system.hibernate" && !canHibernate)
+                continue
+
+            var dot = id.lastIndexOf(".")
+            var parent = entry.parent !== undefined ? entry.parent
+                : (dot >= 0 ? id.substring(0, dot) : "")
+            var row = {
+                icon: entry.icon || "",
+                label: entry.label || id,
+                key: id,
+                category: parent,
+                action: entry.action || "",
+                target: entry.target || "",
+                provider: entry.provider || "",
+                danger: id === "system.logout" || id === "system.restart" || id === "system.shutdown",
+                sep: id === "system.logout"
+            }
+            all.push(row)
+            if (!groups[parent]) groups[parent] = []
+            groups[parent].push(row)
+        }
+
+        // Provider-only leaves (currently the dynamic font chooser) need the
+        // official shell's request/response UI. Hide them in replacement mode
+        // instead of presenting a row that silently starts a second shell or
+        // cannot complete.
+        var filtered = []
+        var filteredGroups = ({})
+        for (var j = 0; j < all.length; j++) {
+            var candidate = all[j]
+            if (candidate.provider && !candidate.action
+                    && (!groups[candidate.key] || groups[candidate.key].length === 0))
+                continue
+            filtered.push(candidate)
+            if (!filteredGroups[candidate.category]) filteredGroups[candidate.category] = []
+            filteredGroups[candidate.category].push(candidate)
+        }
+
+        officialAllItems = filtered
+        officialSubmenus = filteredGroups
+        officialMenuLoaded = filtered.length > 0
+        rebuildDisplay()
+    }
+
+    FileView {
+        id: officialMenuFile
+        path: view.officialMenuPath
+        watchChanges: true
+        printErrors: false
+        onLoaded: view.loadOfficialMenu(text())
+        onLoadFailed: view.officialMenuLoaded = false
+    }
+
     // ── menu data (idéntico a OmarchyMenuPanel; NO editar aquí sin sincronizar) ──
     function cp(n) { return String.fromCodePoint(n) }
 
@@ -26,34 +135,35 @@ Item {
         running: true
         onExited: (exitCode) => view.canHibernate = exitCode === 0
     }
+    onCanHibernateChanged: officialMenuFile.reload()
 
     readonly property var submenus: ({
         "style": [
-            { icon: cp(0xF0E0C), label: "Tema",          key: "style-theme" },
+            { icon: cp(0xF0E0C), label: "Theme",          key: "style-theme" },
             { icon: cp(0xF07F5), label: "Unlock",         key: "style-unlock" },
-            { icon: cp(0xE659),  label: "Fuente",         key: "style-font" },
-            { icon: cp(0xF03E),  label: "Fondo",          key: "style-wallpaper" },
-            { icon: cp(0xF0607), label: "Esquinas",       key: "style-corners" },
+            { icon: cp(0xE659),  label: "Font",         key: "style-font" },
+            { icon: cp(0xF03E),  label: "Background",          key: "style-wallpaper" },
+            { icon: cp(0xF0607), label: "Corners",       key: "style-corners" },
             { icon: cp(0xF359),  label: "Hyprland",       key: "style-hyprland" },
-            { icon: cp(0xF1104), label: "Salvapantallas", key: "style-screensaver" },
-            { icon: cp(0xEA74),  label: "Acerca de",      key: "style-about" },
+            { icon: cp(0xF1104), label: "Screensaver", key: "style-screensaver" },
+            { icon: cp(0xEA74),  label: "About",      key: "style-about" },
         ],
         "style-corners": [
-            { icon: cp(0xF08FC), label: "Rectas",       key: "style-corners-sharp" },
-            { icon: cp(0xF0607), label: "Redondeadas",  key: "style-corners-round" },
+            { icon: cp(0xF08FC), label: "Sharp",       key: "style-corners-sharp" },
+            { icon: cp(0xF0607), label: "Rounded",  key: "style-corners-round" },
         ],
         "style-screensaver": [
-            { icon: cp(0xF044),  label: "Editar texto", key: "style-screensaver-text" },
-            { icon: cp(0xF03E),  label: "Desde imagen", key: "style-screensaver-image" },
-            { icon: cp(0xF0E2),  label: "Restaurar",    key: "style-screensaver-reset" },
+            { icon: cp(0xF044),  label: "Edit text", key: "style-screensaver-text" },
+            { icon: cp(0xF03E),  label: "From image", key: "style-screensaver-image" },
+            { icon: cp(0xF0E2),  label: "Restore",    key: "style-screensaver-reset" },
         ],
         "style-about": [
-            { icon: cp(0xF044),  label: "Editar texto", key: "style-about-text" },
-            { icon: cp(0xF03E),  label: "Desde imagen", key: "style-about-image" },
-            { icon: cp(0xF0E2),  label: "Restaurar",    key: "style-about-reset" },
+            { icon: cp(0xF044),  label: "Edit text", key: "style-about-text" },
+            { icon: cp(0xF03E),  label: "From image", key: "style-about-image" },
+            { icon: cp(0xF0E2),  label: "Restore",    key: "style-about-reset" },
         ],
         "learn": [
-            { icon: cp(0xF11C),  label: "Atajos de teclado", key: "learn-keybindings" },
+            { icon: cp(0xF11C),  label: "Keybindings", key: "learn-keybindings" },
             { icon: cp(0xF489),  label: "Tmux",             key: "learn-tmux" },
             { icon: cp(0xF405),  label: "Omarchy",          key: "learn-omarchy" },
             { icon: cp(0xF359),  label: "Hyprland",         key: "learn-hyprland" },
@@ -62,67 +172,67 @@ Item {
             { icon: cp(0xF1183), label: "Bash",             key: "learn-bash" },
         ],
         "trigger": [
-            { icon: cp(0xF051B), label: "Recordatorio",   key: "reminder" },
-            { icon: cp(0xF030),  label: "Captura",         key: "capture" },
-            { icon: cp(0xF09F8), label: "Transcodificar",  key: "trigger-transcode" },
-            { icon: cp(0xF50E),  label: "Compartir",       key: "share" },
-            { icon: cp(0xF050E), label: "Alternar",        key: "toggle" },
+            { icon: cp(0xF051B), label: "Reminder",   key: "reminder" },
+            { icon: cp(0xF030),  label: "Capture",         key: "capture" },
+            { icon: cp(0xF09F8), label: "Transcode",  key: "trigger-transcode" },
+            { icon: cp(0xF50E),  label: "Share",       key: "share" },
+            { icon: cp(0xF050E), label: "Toggle",        key: "toggle" },
             { icon: cp(0xEF70),  label: "Hardware",        key: "hardware" },
         ],
         "reminder": [
-            { icon: cp(0xF051B), label: "Crear",           key: "reminder-create" },
-            { icon: cp(0xF051B), label: "Mostrar todos",   key: "reminder-show" },
-            { icon: cp(0xF051B), label: "Borrar todos",    key: "reminder-clear" },
+            { icon: cp(0xF051B), label: "Create",           key: "reminder-create" },
+            { icon: cp(0xF051B), label: "Show all",   key: "reminder-show" },
+            { icon: cp(0xF051B), label: "Clear all",    key: "reminder-clear" },
         ],
         "capture": [
-            { icon: cp(0xF030),  label: "Captura de pantalla",  key: "capture-screenshot" },
-            { icon: cp(0xF03D),  label: "Grabación de pantalla",key: "capture-screenrecord" },
-            { icon: cp(0xF0D11), label: "Extraer texto (OCR)",  key: "capture-ocr" },
-            { icon: cp(0xF00C9), label: "Selector de color",    key: "capture-color" },
+            { icon: cp(0xF030),  label: "Screenshot",  key: "capture-screenshot" },
+            { icon: cp(0xF03D),  label: "Screen recording",key: "capture-screenrecord" },
+            { icon: cp(0xF0D11), label: "Extract text (OCR)",  key: "capture-ocr" },
+            { icon: cp(0xF00C9), label: "Color picker",    key: "capture-color" },
         ],
         "capture-screenrecord": [
-            { icon: cp(0xF03D),  label: "Parar grabación",      key: "screenrecord-stop" },
-            { icon: cp(0xF03D),  label: "Sin audio",            key: "screenrecord-noaudio" },
-            { icon: cp(0xE638),  label: "Audio del sistema",    key: "screenrecord-audio" },
-            { icon: cp(0xF036E), label: "Sistema + micrófono",  key: "screenrecord-micaudio" },
+            { icon: cp(0xF03D),  label: "Stop recording",      key: "screenrecord-stop" },
+            { icon: cp(0xF03D),  label: "No audio",            key: "screenrecord-noaudio" },
+            { icon: cp(0xE638),  label: "Desktop audio",    key: "screenrecord-audio" },
+            { icon: cp(0xF036E), label: "Desktop + microphone",  key: "screenrecord-micaudio" },
         ],
         "share": [
-            { icon: cp(0xF0786), label: "Portapapeles",    key: "share-clipboard" },
-            { icon: cp(0xF0214), label: "Archivo",         key: "share-file" },
-            { icon: cp(0xF024B), label: "Carpeta",         key: "share-folder" },
-            { icon: cp(0xF0966), label: "Recibir",         key: "share-receive" },
+            { icon: cp(0xF0786), label: "Clipboard",    key: "share-clipboard" },
+            { icon: cp(0xF0214), label: "File",         key: "share-file" },
+            { icon: cp(0xF024B), label: "Folder",         key: "share-folder" },
+            { icon: cp(0xF0966), label: "Receive",         key: "share-receive" },
         ],
         "toggle": [
-            { icon: cp(0xF1104), label: "Salvapantallas",  key: "toggle-screensaver" },
-            { icon: cp(0xF050E), label: "Luz nocturna",    key: "toggle-nightlight" },
-            { icon: cp(0xF16D6), label: "Bloqueo inactivo",key: "toggle-idle" },
-            { icon: cp(0xF009B), label: "Notificaciones",  key: "toggle-notifications" },
-            { icon: cp(0xF102C), label: "Layout workspace",key: "toggle-layout" },
-            { icon: cp(0xF0B3E), label: "Huecos ventanas", key: "toggle-gaps" },
-            { icon: cp(0xF09AA), label: "Ratio ventana",   key: "toggle-ratio" },
-            { icon: cp(0xF0379), label: "Escala monitor",  key: "toggle-scaling" },
-            { icon: cp(0xF072E), label: "Arranque directo",key: "toggle-directboot" },
-            { icon: cp(0xF07F5), label: "Sudo sin pass",   key: "toggle-sudo" },
+            { icon: cp(0xF1104), label: "Screensaver",  key: "toggle-screensaver" },
+            { icon: cp(0xF050E), label: "Night light",    key: "toggle-nightlight" },
+            { icon: cp(0xF16D6), label: "Idle lock",key: "toggle-idle" },
+            { icon: cp(0xF009B), label: "Notifications",  key: "toggle-notifications" },
+            { icon: cp(0xF102C), label: "Workspace layout",key: "toggle-layout" },
+            { icon: cp(0xF0B3E), label: "Window gaps", key: "toggle-gaps" },
+            { icon: cp(0xF09AA), label: "Window ratio",   key: "toggle-ratio" },
+            { icon: cp(0xF0379), label: "Display scale",  key: "toggle-scaling" },
+            { icon: cp(0xF072E), label: "Direct boot",key: "toggle-directboot" },
+            { icon: cp(0xF07F5), label: "Passwordless sudo",   key: "toggle-sudo" },
         ],
         "hardware": [
-            { icon: cp(0xF0663), label: "Pantalla portátil", key: "hardware-screen" },
-            { icon: cp(0xF0379), label: "Espejo pantalla",   key: "hardware-mirror" },
-            { icon: cp(0xF01C5), label: "GPU híbrida",       key: "hardware-gpu" },
+            { icon: cp(0xF0663), label: "Laptop display", key: "hardware-screen" },
+            { icon: cp(0xF0379), label: "Mirror display",   key: "hardware-mirror" },
+            { icon: cp(0xF01C5), label: "Hybrid GPU",       key: "hardware-gpu" },
             { icon: cp(0xF07F8), label: "Touchpad",          key: "hardware-touchpad" },
-            { icon: cp(0xF01BD), label: "Pantalla táctil",   key: "hardware-touchscreen" },
+            { icon: cp(0xF01BD), label: "Touchscreen",   key: "hardware-touchscreen" },
         ],
         "install": [
-            { icon: cp(0xF08C7), label: "Paquete",        key: "install-package" },
+            { icon: cp(0xF08C7), label: "Package",        key: "install-package" },
             { icon: cp(0xF08C7), label: "AUR",            key: "install-aur" },
-            { icon: cp(0xF268),  label: "App Web",        key: "install-webapp" },
+            { icon: cp(0xF268),  label: "Web App",        key: "install-webapp" },
             { icon: cp(0xF489),  label: "TUI",            key: "install-tui" },
-            { icon: cp(0xF487),  label: "Servicio",       key: "install-service" },
-            { icon: cp(0xEBCF),  label: "Estilo",         key: "install-style" },
-            { icon: cp(0xF0D6E), label: "Desarrollo",     key: "install-dev" },
+            { icon: cp(0xF487),  label: "Service",       key: "install-service" },
+            { icon: cp(0xEBCF),  label: "Style",         key: "install-style" },
+            { icon: cp(0xF0D6E), label: "Development",     key: "install-dev" },
             { icon: cp(0xF15C),  label: "Editor",         key: "install-editor" },
             { icon: cp(0xF489),  label: "Terminal",       key: "install-terminal" },
-            { icon: cp(0xF268),  label: "Navegador",      key: "install-browser" },
-            { icon: cp(0xF16A4), label: "IA",             key: "install-ai" },
+            { icon: cp(0xF268),  label: "Browser",      key: "install-browser" },
+            { icon: cp(0xF16A4), label: "AI",             key: "install-ai" },
             { icon: cp(0xF11B),  label: "Gaming",         key: "install-gaming" },
             { icon: cp(0xF0372), label: "VM Windows",     key: "install-windows" },
         ],
@@ -133,12 +243,12 @@ Item {
             { icon: cp(0xF03D6), label: "ONCE",            key: "install-serv-once" },
             { icon: cp(0x2600),  label: "Sunshine",        key: "install-serv-sunshine" },
             { icon: cp(0xF07F5), label: "Bitwarden",       key: "install-serv-bitwarden" },
-            { icon: cp(0xE7F0),  label: "Cuenta Chromium", key: "install-serv-chromium" },
+            { icon: cp(0xE7F0),  label: "Chromium account", key: "install-serv-chromium" },
         ],
         "install-style": [
-            { icon: cp(0xF0E0C), label: "Instalar tema",  key: "install-style-theme" },
-            { icon: cp(0xF03E),  label: "Fondo",          key: "install-style-wallpaper" },
-            { icon: cp(0xE659),  label: "Fuente",         key: "install-style-font" },
+            { icon: cp(0xF0E0C), label: "Install theme",  key: "install-style-theme" },
+            { icon: cp(0xF03E),  label: "Background",          key: "install-style-wallpaper" },
+            { icon: cp(0xE659),  label: "Font",         key: "install-style-font" },
         ],
         "install-dev": [
             { icon: cp(0xF0ACF), label: "Ruby on Rails",  key: "install-dev-rails" },
@@ -212,17 +322,17 @@ Item {
             { icon: cp(0xF14DF), label: "Heroic",         key: "install-gaming-heroic" },
         ],
         "remove": [
-            { icon: cp(0xF08C7), label: "Paquete",        key: "remove-package" },
-            { icon: cp(0xF268),  label: "App Web",        key: "remove-webapp" },
+            { icon: cp(0xF08C7), label: "Package",        key: "remove-package" },
+            { icon: cp(0xF268),  label: "Web App",        key: "remove-webapp" },
             { icon: cp(0xF489),  label: "TUI",            key: "remove-tui" },
-            { icon: cp(0xF0D6E), label: "Desarrollo",     key: "remove-dev" },
-            { icon: cp(0xF0E0C), label: "Remover tema",   key: "remove-theme" },
-            { icon: cp(0xF268),  label: "Navegador",      key: "remove-browser" },
+            { icon: cp(0xF0D6E), label: "Development",     key: "remove-dev" },
+            { icon: cp(0xF0E0C), label: "Remove theme",   key: "remove-theme" },
+            { icon: cp(0xF268),  label: "Browser",      key: "remove-browser" },
             { icon: cp(0xEC12),  label: "Voice Typing",   key: "remove-voicetyping" },
             { icon: cp(0xF11B),  label: "Gaming",         key: "remove-gaming" },
             { icon: cp(0xF0372), label: "VM Windows",     key: "remove-windows" },
-            { icon: cp(0xF03D3), label: "Pre-instalados", key: "remove-preinstalls" },
-            { icon: cp(0xEB11),  label: "Seguridad",      key: "remove-security" },
+            { icon: cp(0xF03D3), label: "Preinstalls", key: "remove-preinstalls" },
+            { icon: cp(0xEB11),  label: "Security",      key: "remove-security" },
         ],
         "remove-browser": [
             { icon: cp(0xF268),  label: "Chrome",         key: "remove-browser-chrome" },
@@ -273,20 +383,20 @@ Item {
             { icon: cp(0xF14DF), label: "Phoenix",   key: "remove-dev-elixir-phoenix" },
         ],
         "remove-security": [
-            { icon: cp(0xF0237), label: "Huella dactilar",key: "remove-sec-fingerprint" },
+            { icon: cp(0xF0237), label: "Fingerprint",key: "remove-sec-fingerprint" },
             { icon: cp(0xEB11),  label: "Fido2",          key: "remove-sec-fido2" },
         ],
         "update": [
             { icon: cp(0xE900),  label: "Omarchy",        key: "update-omarchy", iconFont: "omarchy", iconSize: 14 },
-            { icon: cp(0xF052B), label: "Canal",          key: "update-channel" },
+            { icon: cp(0xF052B), label: "Channel",          key: "update-channel" },
             { icon: cp(0xE615),  label: "Config",         key: "update-config" },
-            { icon: cp(0xF0E0C), label: "Actualizar temas", key: "update-themes" },
-            { icon: cp(0xEBA2),  label: "Procesos",       key: "update-processes" },
+            { icon: cp(0xF0E0C), label: "Update themes", key: "update-themes" },
+            { icon: cp(0xEBA2),  label: "Processes",       key: "update-processes" },
             { icon: cp(0xEF70),  label: "Hardware",       key: "update-hardware" },
             { icon: cp(0xF01C5), label: "Firmware",       key: "update-firmware" },
-            { icon: cp(0xF023),  label: "Contraseña",     key: "update-password" },
-            { icon: cp(0xF017),  label: "Zona horaria",   key: "update-timezone" },
-            { icon: cp(0xF017),  label: "Hora",           key: "update-time" },
+            { icon: cp(0xF023),  label: "Password",     key: "update-password" },
+            { icon: cp(0xF017),  label: "Timezone",   key: "update-timezone" },
+            { icon: cp(0xF017),  label: "Time",           key: "update-time" },
         ],
         "update-channel": [
             { icon: cp(0x1F7E2), label: "Stable",         key: "update-channel-stable" },
@@ -315,25 +425,25 @@ Item {
             { icon: cp(0xF002),  label: "Walker",         key: "update-cfg-walker" },
         ],
         "update-password": [
-            { icon: cp(0xF023),  label: "Cifrado disco",  key: "update-pass-disk" },
-            { icon: cp(0xF004),  label: "Usuario",        key: "update-pass-user" },
+            { icon: cp(0xF023),  label: "Drive encryption",  key: "update-pass-disk" },
+            { icon: cp(0xF004),  label: "User",        key: "update-pass-user" },
         ],
         "setup": [
             { icon: cp(0xE638),  label: "Audio",             key: "setup-audio" },
             { icon: cp(0xF1EB),  label: "WiFi",              key: "setup-wifi" },
             { icon: cp(0xF00AF), label: "Bluetooth",         key: "setup-bt" },
-            { icon: cp(0xF14DB), label: "Perfil energía",    key: "power" },
-            { icon: cp(0xEBA2),  label: "Config suspensión", key: "setup-suspend" },
-            { icon: cp(0xF0379), label: "Monitores",         key: "setup-monitors" },
-            { icon: cp(0xF11C),  label: "Atajos",            key: "setup-keybindings" },
-            { icon: cp(0xF488),  label: "Entrada",           key: "setup-input" },
-            { icon: cp(0xF488),  label: "Predeterminados",   key: "setup-defaults" },
+            { icon: cp(0xF14DB), label: "Power profile",    key: "power" },
+            { icon: cp(0xEBA2),  label: "Suspend settings", key: "setup-suspend" },
+            { icon: cp(0xF0379), label: "Monitors",         key: "setup-monitors" },
+            { icon: cp(0xF11C),  label: "Keybindings",            key: "setup-keybindings" },
+            { icon: cp(0xF488),  label: "Input",           key: "setup-input" },
+            { icon: cp(0xF488),  label: "Defaults",   key: "setup-defaults" },
             { icon: cp(0xF059B), label: "DNS",               key: "setup-dns" },
-            { icon: cp(0xEB11),  label: "Seguridad",         key: "setup-security" },
-            { icon: cp(0xE615),  label: "Archivos config",   key: "setup-configfiles" },
+            { icon: cp(0xEB11),  label: "Security",         key: "setup-security" },
+            { icon: cp(0xE615),  label: "Config files",   key: "setup-configfiles" },
         ],
         "setup-security": [
-            { icon: cp(0xF0237), label: "Huella dactilar",key: "setup-sec-fingerprint" },
+            { icon: cp(0xF0237), label: "Fingerprint",key: "setup-sec-fingerprint" },
             { icon: cp(0xEB11),  label: "Fido2",          key: "setup-sec-fido2" },
         ],
         "setup-configfiles": [
@@ -345,28 +455,30 @@ Item {
             { icon: cp(0xF0785), label: "XCompose",       key: "setup-arch-xcompose" },
         ],
         "system": [
-            { icon: cp(0xF1104), label: "Salvapantallas", key: "system-screensaver" },
-            { icon: cp(0xF023),  label: "Bloquear",       key: "system-lock" },
-            { icon: cp(0xF04B2), label: "Suspender",      key: "system-suspend" },
-            { icon: cp(0xF0901), label: "Hibernar",       key: "system-hibernate", show: view.canHibernate },
-            { icon: cp(0xF0343), label: "Cerrar sesión",  key: "system-logout",   sep: true, danger: true },
-            { icon: cp(0xF0709), label: "Reiniciar",      key: "system-reboot",   danger: true },
-            { icon: cp(0xF0425), label: "Apagar",         key: "system-shutdown", danger: true },
+            { icon: cp(0xF1104), label: "Screensaver", key: "system-screensaver" },
+            { icon: cp(0xF023),  label: "Lock",       key: "system-lock" },
+            { icon: cp(0xF04B2), label: "Suspend",      key: "system-suspend" },
+            { icon: cp(0xF0901), label: "Hibernate",       key: "system-hibernate", show: view.canHibernate },
+            { icon: cp(0xF0343), label: "Log out",  key: "system-logout",   sep: true, danger: true },
+            { icon: cp(0xF0709), label: "Restart",      key: "system-reboot",   danger: true },
+            { icon: cp(0xF0425), label: "Shut down",         key: "system-shutdown", danger: true },
         ].filter(it => it.show === undefined || it.show),
     })
 
     readonly property var allItems: [
         { icon: cp(0xF003B), label: "Apps",       key: "apps",    category: "" },
-        { icon: cp(0xF09D1), label: "Aprender",   key: "learn",   category: "" },
-        { icon: cp(0xF14DE), label: "Acciones",   key: "trigger", category: "" },
-        { icon: cp(0xEBCF),  label: "Estilo",     key: "style",   category: "" },
+        { icon: cp(0xF09D1), label: "Learn",   key: "learn",   category: "" },
+        { icon: cp(0xF14DE), label: "Actions",   key: "trigger", category: "" },
+        { icon: cp(0xEBCF),  label: "Style",     key: "style",   category: "" },
         { icon: cp(0xE615),  label: "Config",     key: "setup",   category: "" },
-        { icon: cp(0xF0249), label: "Instalar",   key: "install", category: "" },
-        { icon: cp(0xF0B4C), label: "Eliminar",   key: "remove",  category: "" },
-        { icon: cp(0xF021),  label: "Actualizar", key: "update",  category: "" },
-        { icon: cp(0xEA74),  label: "Acerca de",  key: "about",   category: "" },
-        { icon: cp(0xF011),  label: "Sistema",    key: "system",  category: "" },
+        { icon: cp(0xF0249), label: "Install",   key: "install", category: "" },
+        { icon: cp(0xF0B4C), label: "Remove",   key: "remove",  category: "" },
+        { icon: cp(0xF021),  label: "Update", key: "update",  category: "" },
+        { icon: cp(0xEA74),  label: "About",  key: "about",   category: "" },
+        { icon: cp(0xF011),  label: "System",    key: "system",  category: "" },
     ]
+    readonly property var effectiveAllItems: officialMenuLoaded ? officialAllItems : allItems
+    readonly property var effectiveSubmenus: officialMenuLoaded ? officialSubmenus : submenus
 
     // ── navigation state ──
     property var navStack: []
@@ -385,10 +497,10 @@ Item {
         var menu = navStack.length > 0 ? navStack[navStack.length - 1] : ""
         var result
         if (q !== "") {
-            var pool = allItems.slice()
-            var skeys = Object.keys(submenus)
+            var pool = effectiveAllItems.slice()
+            var skeys = Object.keys(effectiveSubmenus)
             for (var si = 0; si < skeys.length; si++) {
-                var sub = submenus[skeys[si]]
+                var sub = effectiveSubmenus[skeys[si]]
                 for (var sj = 0; sj < sub.length; sj++) pool.push(sub[sj])
             }
             var seen = {}
@@ -397,10 +509,10 @@ Item {
                 seen[it.key] = true
                 return it.label.toLowerCase().split(/\s+/).some(function(w) { return w.indexOf(q) === 0 })
             })
-        } else if (menu !== "" && submenus[menu]) {
-            result = submenus[menu]
+        } else if (menu !== "" && effectiveSubmenus[menu]) {
+            result = effectiveSubmenus[menu]
         } else {
-            result = allItems.filter(function(it) { return it.category === "" })
+            result = effectiveAllItems.filter(function(it) { return it.category === "" })
         }
         displayItems = result
         displayTick++
@@ -415,26 +527,32 @@ Item {
         if (navStack.length > 1) navStack = navStack.slice(0, navStack.length - 1)
         else navStack = []
     }
-    function hasSubmenu(key) { return submenus.hasOwnProperty(key) }
+    function hasSubmenu(key) { return effectiveSubmenus.hasOwnProperty(key) && effectiveSubmenus[key].length > 0 }
     function menuLabel(key) {
-        for (var i = 0; i < allItems.length; i++)
-            if (allItems[i].key === key) return allItems[i].label
+        for (var i = 0; i < effectiveAllItems.length; i++)
+            if (effectiveAllItems[i].key === key) return effectiveAllItems[i].label
         return key
     }
     function activateIndex(i) {
         var it = displayItems[i]
         if (!it) return
-        if (hasSubmenu(it.key)) { navigate(it.key); searchInput.text = "" }
-        else handleAction(it.key)
+        var target = it.target || it.key
+        if (hasSubmenu(target)) { navigate(target); searchInput.text = "" }
+        else handleAction(it)
     }
     // resetea a la raíz (lo llama el host al abrir / cambiar de pestaña)
     function resetToRoot() { navStack = []; query = ""; searchInput.text = ""; rebuildDisplay() }
 
     // endpoints IDÉNTICOS al OmarchyMenuPanel.handleAction (misma acción por key)
-    function handleAction(k) {
+    function handleAction(item) {
         view.closeRequested()
         Qt.callLater(function() {
-            Quickshell.execDetached(["omarchy-menu", k])
+            if (view.officialMenuLoaded) {
+                if (item.action)
+                    Quickshell.execDetached(view.officialActionCommand(item.action))
+            } else {
+                Quickshell.execDetached(["omarchy-menu", item.key])
+            }
         })
     }
 

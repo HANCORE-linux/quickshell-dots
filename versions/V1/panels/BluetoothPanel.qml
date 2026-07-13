@@ -1,6 +1,7 @@
 import QtQuick
 import "../modules"
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
 import Quickshell.Wayland
 import "../IconMap.js" as IconMap
@@ -20,9 +21,35 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    property bool btOn: false
-    property bool scanning: false
-    property var devices: []   // [{name, mac, connected, paired, icon, rssi, battery}]
+    readonly property var adapter: Bluetooth.defaultAdapter
+    readonly property bool btOn: adapter !== null && adapter.enabled
+    readonly property bool scanning: adapter !== null && adapter.discovering
+    readonly property var nativeDevices: Bluetooth.devices ? Bluetooth.devices.values : []
+    readonly property var devices: {
+        var rows = []
+        for (var i = 0; i < nativeDevices.length; i++) {
+            var device = nativeDevices[i]
+            if (!device || !device.address)
+                continue
+            rows.push({
+                ref: device,
+                name: device.name || device.deviceName || device.address,
+                mac: device.address,
+                connected: !!device.connected,
+                paired: !!(device.paired || device.bonded || device.trusted),
+                icon: device.icon || "",
+                rssi: null,
+                battery: device.batteryAvailable ? Math.round(device.battery * 100) : -1
+            })
+        }
+        rows.sort(function(a, b) {
+            var ra = a.connected ? 0 : a.paired ? 1 : 2
+            var rb = b.connected ? 0 : b.paired ? 1 : 2
+            if (ra !== rb) return ra - rb
+            return a.name.localeCompare(b.name)
+        })
+        return rows
+    }
     property bool savedOnly: false
     property string selectedMac: ""
     property int keyboardIndex: -1
@@ -37,41 +64,63 @@ PanelWindow {
         for (var i = 0; i < devices.length; i++) if (devices[i].connected) n++
         return n
     }
-    property string connCmd: ""
-
-    function refresh() { btData.running = false; btData.running = true }
-
     function activateDevice(device) {
-        if (!device)
+        if (!device || !device.ref)
             return
 
         if (device.connected) {
-            connCmd = "bluetoothctl disconnect " + device.mac
             busyLabel = "Disconnecting…"
+            device.ref.disconnect()
         } else if (device.paired) {
-            connCmd = "bluetoothctl trust " + device.mac + " && bluetoothctl connect " + device.mac
             busyLabel = "Connecting…"
+            device.ref.trusted = true
+            device.ref.connect()
         } else {
-            connCmd = "bluetoothctl trust " + device.mac
-                + " && bluetoothctl pair " + device.mac
-                + " && bluetoothctl connect " + device.mac
             busyLabel = "Pairing…"
+            device.ref.trusted = true
+            device.ref.pair()
         }
         busyMac = device.mac
-        connProc.running = false
-        connProc.running = true
+        busyTimeout.restart()
     }
 
     function forgetDevice(device) {
-        if (!device)
+        if (!device || !device.ref)
             return
         selectedMac = ""
         busyMac = device.mac
         busyLabel = "Forgetting…"
-        connCmd = "bluetoothctl remove " + device.mac
-        connProc.running = false
-        connProc.running = true
+        device.ref.forget()
+        busyTimeout.restart()
     }
+
+    function syncBusyState() {
+        if (busyMac === "")
+            return
+        var device = null
+        for (var i = 0; i < devices.length; i++) {
+            if (devices[i].mac === busyMac) {
+                device = devices[i]
+                break
+            }
+        }
+        if (busyLabel === "Pairing…" && device && device.paired && !device.connected) {
+            busyLabel = "Connecting…"
+            device.ref.connect()
+            busyTimeout.restart()
+            return
+        }
+        var finished = (busyLabel === "Connecting…" && device && device.connected)
+            || (busyLabel === "Disconnecting…" && device && !device.connected)
+            || (busyLabel === "Forgetting…" && (!device || !device.paired))
+        if (finished) {
+            busyMac = ""
+            busyLabel = ""
+            busyTimeout.stop()
+        }
+    }
+
+    onDevicesChanged: syncBusyState()
 
     onSavedOnlyChanged: {
         keyboardIndex = -1
@@ -201,7 +250,7 @@ PanelWindow {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: { powerProc.running = false; powerProc.running = true }
+                            onClicked: if (btPanel.adapter) btPanel.adapter.enabled = !btPanel.adapter.enabled
                         }
                     }
                     UiText {
@@ -259,8 +308,10 @@ PanelWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 btPanel.savedOnly = modelData.saved
-                                if (!modelData.saved && !scanProc.running)
-                                    scanProc.running = true
+                                if (!modelData.saved && btPanel.adapter) {
+                                    btPanel.adapter.discovering = true
+                                    scanTimeout.restart()
+                                }
                             }
                         }
                     }
@@ -449,66 +500,18 @@ PanelWindow {
         }
     }
 
-    // One BlueZ ObjectManager snapshot replaces one bluetoothctl info process
-    // per device and also exposes icon, RSSI and battery metadata.
-    Process {
-        id: btData
-        command: [Quickshell.shellPath("scripts/qs-bt-devices")]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var snapshot
-                try {
-                    snapshot = JSON.parse(this.text)
-                } catch (error) {
-                    btPanel.btOn = false
-                    btPanel.devices = []
-                    return
-                }
-                btPanel.btOn = snapshot.powered === true
-                var devs = snapshot.devices || []
-                devs.sort(function(a, b) {
-                    var ra = a.connected ? 0 : a.paired ? 1 : 2
-                    var rb = b.connected ? 0 : b.paired ? 1 : 2
-                    if (ra !== rb) return ra - rb
-                    var ar = a.rssi === null || a.rssi === undefined ? -999 : a.rssi
-                    var br = b.rssi === null || b.rssi === undefined ? -999 : b.rssi
-                    return br - ar
-                })
-                btPanel.devices = devs
-            }
-        }
-    }
-
-    // ── power on/off ──
-    Process {
-        id: powerProc
-        command: ["bash", "-c", "bluetoothctl power " + (btPanel.btOn ? "off" : "on")]
-        running: false
-        onExited: btPanel.refresh()
-    }
-
-    // ── timed discovery scan ──
-    Process {
-        id: scanProc
-        command: ["bash", "-c", "bluetoothctl --timeout 10 scan on >/dev/null 2>&1"]
-        running: false
-        onRunningChanged: { btPanel.scanning = running; if (!running) btPanel.refresh() }
-    }
     Timer {
-        interval: 1500; repeat: true
-        running: btPanel.scanning && btPanel.visible
-        onTriggered: btPanel.refresh()
+        id: scanTimeout
+        interval: 10000
+        onTriggered: if (btPanel.adapter) btPanel.adapter.discovering = false
     }
 
-    // ── connect / disconnect / pair ──
-    Process {
-        id: connProc
-        command: ["bash", "-c", btPanel.connCmd]
-        running: false
-        onExited: {
+    Timer {
+        id: busyTimeout
+        interval: 8000
+        onTriggered: {
             btPanel.busyMac = ""
-            btPanel.refresh()
+            btPanel.busyLabel = ""
         }
     }
 
@@ -516,7 +519,6 @@ PanelWindow {
 
     onVisibleChanged: {
         keyboardIndex = -1
-        if (visible) btPanel.refresh()
-        else selectedMac = ""
+        if (!visible) selectedMac = ""
     }
 }
