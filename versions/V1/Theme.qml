@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.UPower
+import Quickshell.Services.Notifications
 import "Palette.js" as Palette
 
 Item {
@@ -944,6 +945,188 @@ Item {
     property bool _idleOmarchyShellBackend: false
     readonly property string idleStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/indicators/stay-awake"
     property bool notifSilenced: false        // notification do-not-disturb mode
+    // toast en la píldora del reloj (estilo Dynamic Island): NotificationPanel
+    // (el server) emite notifyToast(n); aquí viven la cola y el ciclo de vida;
+    // G8 en BarSlot solo pinta toastCurrent y llama toastInvoke/toastClose
+    signal notifyToast(var notification)
+    property var toastQueue: []
+    property var toastCurrent: null    // {n, appName, summary, icon, critical, timeout}
+    property bool toastHovered: false
+    property int toastRemaining: 0
+    readonly property int toastQueueLimit: 10
+    readonly property int toastBurstWindow: 700
+    // `notify-send` is the generic client used by Omarchy's screenshot tool.
+    // Give that one notification a meaningful label without relabelling other
+    // notifications sent from a terminal.
+    function notificationAppName(n) {
+        if ((n.appName || "") === "notify-send"
+                && (n.summary || "") === "Screenshot saved to clipboard and file")
+            return "SCREENSHOT"
+        return n.appName || "App"
+    }
+    onNotifyToast: function(n) {
+        // icono: imagen adjunta > icono de la app resuelto del tema > inicial
+        var icon = n.image || ""
+        if (icon === "" && n.appIcon) {
+            var appIcon = String(n.appIcon)
+            // notify-send también acepta rutas absolutas. No pasarlas por
+            // iconPath: se interpretarían como un nombre de tema y Qt acabaría
+            // mostrando la textura magenta de recurso ausente.
+            if (appIcon.indexOf("/") === 0) icon = "file://" + appIcon
+            else if (appIcon.indexOf("file:") === 0) icon = appIcon
+            else icon = Quickshell.iconPath(appIcon, true)
+        }
+        var appName = notificationAppName(n)
+        var summary = n.summary || ""
+        // Los iconos simbólicos heredados de Yaru-yellow no siempre atraviesan
+        // correctamente el image provider de Qt. Para nuestros estados de micro
+        // usar la misma fuente Material Symbols que el resto de la barra.
+        var isMicState = appName.toLowerCase() === "audio"
+            && (summary === "Microphone active" || summary === "Microphone muted")
+        var materialGlyph = isMicState
+            ? (summary === "Microphone muted" ? "\uE02B" : "\uE029")
+            : ""
+        if (isMicState) icon = ""
+        var hints = n.hints || ({})
+        var groupHint = hints["x-canonical-private-synchronous"]
+            || hints["x-dunst-stack-tag"] || hints["synchronous"] || ""
+        if (typeof groupHint !== "string" && typeof groupHint !== "number") groupHint = ""
+        groupHint = String(groupHint).slice(0, 128)
+        var actions = n.actions
+        var t = { n: n, appName: appName, summary: summary,
+                  icon: icon, critical: n.urgency === NotificationUrgency.Critical,
+                  osd: isMicState, osdKind: isMicState ? "status" : "",
+                  materialGlyph: materialGlyph,
+                  materialGlyphMuted: summary === "Microphone muted",
+                  groupKey: groupHint === "" ? "" : appName.toLowerCase() + "|" + groupHint,
+                  burstSignature: toastBurstSignature(appName, summary),
+                  hasActions: !!(actions && actions.length > 0),
+                  receivedAt: Date.now(),
+                  timeout: n.expireTimeout > 0 ? n.expireTimeout : 5000 }
+        // si la app la cierra (o la cerramos nosotros) sale de cola/píldora;
+        // la conexión muere con el objeto
+        n.closed.connect(function() { theme.toastDrop(n) })
+        enqueueToast(t)
+    }
+    function toastBurstSignature(appName, summary) {
+        var app = String(appName || "").toLowerCase().trim()
+        var text = String(summary || "").toLowerCase()
+            .replace(/\d+/g, "#").replace(/\s+/g, " ").trim()
+        return app === "" || text === "" ? "" : app + "|" + text
+    }
+    function toastCanReplace(previous, next) {
+        if (!previous || !next) return false
+        if (next.groupKey && previous.groupKey === next.groupKey) return true
+        if (previous.critical || next.critical || previous.hasActions || next.hasActions) return false
+        return next.burstSignature !== ""
+            && previous.burstSignature === next.burstSignature
+            && next.receivedAt - previous.receivedAt <= toastBurstWindow
+    }
+    function releaseReplacedToast(t) {
+        if (t && t.n) t.n.expire()
+    }
+    function enqueueToast(t) {
+        if (!t.receivedAt) t.receivedAt = Date.now()
+        if (!t.burstSignature)
+            t.burstSignature = toastBurstSignature(t.appName, t.summary)
+
+        // Status OSDs are confirmations, not pending work: never queue them
+        // behind an actionable notification, and keep only the newest status.
+        if (t.osd) {
+            if (toastCurrent && !toastCurrent.osd) {
+                releaseReplacedToast(t)
+                return
+            }
+            var previousStatus = toastCurrent
+            toastShow(t)
+            if (previousStatus) releaseReplacedToast(previousStatus)
+            return
+        }
+
+        if (toastCanReplace(toastCurrent, t)) {
+            var previous = toastCurrent
+            toastShow(t)
+            releaseReplacedToast(previous)
+            return
+        }
+
+        var q = toastQueue.slice()
+        for (var i = q.length - 1; i >= 0; i--) {
+            if (!toastCanReplace(q[i], t)) continue
+            var queuedPrevious = q[i]
+            q[i] = t
+            toastQueue = q
+            releaseReplacedToast(queuedPrevious)
+            return
+        }
+
+        if (!toastCurrent) { toastShow(t); return }
+        q.push(t)
+        if (q.length > toastQueueLimit) {
+            var removeAt = -1
+            for (var j = 0; j < q.length; j++) {
+                if (!q[j].critical) { removeAt = j; break }
+            }
+            if (removeAt < 0) removeAt = 0
+            var removed = q.splice(removeAt, 1)[0]
+            releaseReplacedToast(removed)
+        }
+        toastQueue = q
+    }
+    function toastShow(t) { toastRemaining = t.timeout; toastCurrent = t }
+    function toastAdvance() {
+        if (toastQueue.length === 0) { toastCurrent = null; return }
+        var q = toastQueue.slice()
+        var t = q.shift()
+        toastQueue = q
+        toastShow(t)
+    }
+    function toastDrop(n) {
+        if (toastCurrent && toastCurrent.n === n) { toastAdvance(); return }
+        var q = []
+        for (var i = 0; i < toastQueue.length; i++)
+            if (toastQueue[i].n !== n) q.push(toastQueue[i])
+        if (q.length !== toastQueue.length) toastQueue = q
+    }
+    function toastClose(mode) {
+        var t = toastCurrent
+        if (!t) return
+        if (!t.n) { toastAdvance(); return }
+        if (mode === "expire") t.n.expire(); else t.n.dismiss()   // closed → toastDrop
+    }
+    function toastInvoke() {
+        var t = toastCurrent
+        if (!t) return
+        if (!t.n) {
+            if (t.callback) t.callback()                      // acción interna de la barra
+            else if (t.action) Quickshell.execDetached(t.action) // acción externa (descargas)
+            toastAdvance(); return
+        }
+        var acts = t.n.actions
+        if (acts && acts.length > 0) {
+            var a = acts[0]
+            for (var i = 0; i < acts.length; i++)
+                if (acts[i].identifier === "default") { a = acts[i]; break }
+            a.invoke()
+            if (toastCurrent === t && t.n && !t.n.resident) t.n.dismiss()
+        } else t.n.dismiss()
+    }
+    function showUpdatesToast(summary) {
+        if (notifSilenced) return
+        var toast = { n: null, osd: false, osdKind: "updates", appName: "UPDATES",
+                      glyph: String.fromCodePoint(0xf4d7), // nf-md-package_variant_closed
+                      summary: summary, icon: "", critical: false, timeout: 6000,
+                      callback: function() { theme.archVisible = true } }
+        enqueueToast(toast)
+    }
+    Timer {   // cuenta atrás del toast; pausada con hover; críticas no expiran
+        interval: 100; repeat: true
+        running: theme.toastCurrent !== null && !theme.toastCurrent.critical && !theme.toastHovered
+        onTriggered: {
+            theme.toastRemaining -= 100
+            if (theme.toastRemaining <= 0) theme.toastClose("expire")
+        }
+    }
     property bool _notifBackendChecked: false
     property bool _notifOmarchyShellBackend: false
     readonly property string notificationsStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/notifications.json"

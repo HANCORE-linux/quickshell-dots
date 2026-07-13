@@ -576,6 +576,9 @@ PanelWindow {
                     var j = JSON.parse(raw)
                     for (var i = 0; i < j.length; i++) {
                         var s = j[i], p = s.properties || {}
+                        var role = String(p["media.role"] || "").toLowerCase()
+                        var binary = String(p["application.process.binary"] || "").toLowerCase()
+                        if (role === "event" || binary === "canberra-gtk-play") continue
                         var nm = p["application.name"] || p["media.name"] || p["application.process.binary"] || "App"
                         var vk = Object.keys(s.volume || {})
                         var vp = vk.length ? String(s.volume[vk[0]].value_percent) : "0%"

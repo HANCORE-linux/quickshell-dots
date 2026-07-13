@@ -294,7 +294,54 @@ PanelWindow {
         id: compCenter                                   // G8: weather·clock·date·indicators
         Item {
             id: g8
-            implicitWidth: Math.round(centerRow.implicitWidth) + 18
+            // ── toast en la píldora (Dynamic Island): la hora se funde y el
+            //    pill crece con la notificación; cola y acciones en Theme.toast* ──
+            readonly property var notif: barSlot.root.toastCurrent
+            readonly property bool notifActive: notif !== null
+            property var lastNotif: null
+            onNotifChanged: if (notif !== null) lastNotif = notif
+            // Retain the last payload during the closing phase so text can fade
+            // out before the capsule starts to contract.
+            readonly property var renderedNotif: notifActive ? notif : lastNotif
+            // The volume OSD reserves its widest label up front so 100% ↔ 90%
+            // never makes the Dynamic Island breathe horizontally.
+            TextMetrics {
+                id: osdVolumeMetrics
+                font.family: barSlot.root.mono
+                font.pixelSize: 11
+                font.weight: Font.Medium
+                text: "100%"
+            }
+            // G8 owns a single morph progress. Width grows first; notification
+            // content follows only after there is room, then leaves before the
+            // capsule contracts. This avoids the old text-first expansion jump.
+            readonly property real normalPillW: Math.round(centerRow.implicitWidth) + 18
+            // Un toast nunca encoge la píldora normal. El contenido queda además
+            // limitado a 440px para no invadir los grupos laterales.
+            readonly property real toastPillW: Math.max(normalPillW,
+                                                        Math.min(440, notifRow.implicitWidth + 22))
+            property real toastMorph: notifActive ? 1 : 0
+            // Asimétrico estilo Dynamic Island: abre con spring (overshoot suave
+            // = "pop" de la cápsula al crecer), cierra más rápido y sin rebote.
+            // El overshoot >1 solo sobrepasa el ancho unos px (contentSwap y
+            // widthMorph de cierre van clampados).
+            Behavior on toastMorph {
+                NumberAnimation {
+                    duration: g8.notifActive ? 380 : 240
+                    easing.type: g8.notifActive ? Easing.OutBack : Easing.OutCubic
+                    easing.overshoot: 1.0
+                }
+            }
+            // On close, hold the full capsule while the text fades, then shrink.
+            readonly property real widthMorph: notifActive ? toastMorph : Math.min(1, toastMorph / 0.65)
+            property real pillW: normalPillW + (toastPillW - normalPillW) * widthMorph
+            // Rodillo de contenido: la hora sale hacia ARRIBA mientras el toast
+            // entra desde ABAJO (y al revés al cerrar). El movimiento direccional
+            // es lo que hace leer "la píldora se transforma" y no "hay otra encima".
+            readonly property real contentSwap: Math.max(0, Math.min(1, (toastMorph - 0.34) / 0.38))
+            readonly property real toastRise: 6 * (1 - contentSwap)
+            readonly property real clockRise: -6 * Math.max(0, Math.min(1, (toastMorph - 0.08) / 0.28))
+            implicitWidth: Math.round(pillW)
             implicitHeight: 28
 
             // ── responsive stage (narrow-monitor overlap fix) ──
@@ -346,14 +393,34 @@ PanelWindow {
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.implicitWidth; height: barSlot.root.pillH; radius: barSlot.root.pillRadius
-                color: barSlot.root.pill; border.color: barSlot.root.pillBorder; border.width: barSlot.root.pillBorderW
+                antialiasing: true
+                color: barSlot.root.pill
+                border.color: (g8.notifActive && g8.notif.critical) ? barSlot.root.seal : barSlot.root.pillBorder
+                border.width: barSlot.root.pillBorderW
+                Behavior on border.color { ColorAnimation { duration: 160 } }
                 PillShadow { theme: barSlot.root }
+
+                Rectangle {   // vida del toast; en OSD de volumen muestra el NIVEL
+                    anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter }
+                    anchors.bottomMargin: 3
+                    height: 2; radius: 1
+                    // los OSD llevan ahora la pista inline; el subrayado queda solo
+                    // como cuenta atrás de notificaciones normales
+                    width: (g8.notifActive && !g8.notif.osd && !g8.notif.critical)
+                           ? (parent.width - 28) * Math.max(0, barSlot.root.toastRemaining) / g8.notif.timeout
+                           : 0
+                    color: barSlot.root.seal
+                    opacity: 0.45
+                    Behavior on width { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                }
             }
             Row {
                 id: centerRow
                 anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: g8.clockRise
                 x: Math.round((parent.width - width) / 2)   // integer center → sharp text
                 spacing: 8
+                opacity: 1 - Math.max(0, Math.min(1, (g8.toastMorph - 0.08) / 0.28))
                 Item {                                   // weather wrapper (stage-gated)
                     visible: width > 0.5
                     width: g8.showWeather ? weather.implicitWidth : 0
@@ -366,6 +433,7 @@ PanelWindow {
                         id: weather
                         anchors.fill: parent
                         root: barSlot.root
+                        tipAnchor: g8
                     }
                 }
                 ClockWidget   { id: clock;   root: barSlot.root }
@@ -436,6 +504,132 @@ PanelWindow {
                             Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         }
                     }
+                }
+            }
+
+            Item {  // contenido del toast — reemplaza a la hora durante la notificación
+                id: notifRow
+                implicitWidth: notifTextRow.implicitWidth + 48
+                implicitHeight: 28
+                width: implicitWidth
+                height: implicitHeight
+                clip: true
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: g8.toastRise
+                // El texto se ancla al centro real; el icono se coloca a su izquierda.
+                opacity: g8.notifActive
+                    ? Math.max(0, Math.min(1, (g8.toastMorph - 0.34) / 0.38))
+                    : Math.max(0, Math.min(1, (g8.toastMorph - 0.60) / 0.40))
+                visible: opacity > 0.01
+
+                Item {   // icono de app: imagen > inicial ("!" si crítica)
+                    width: 16; height: 16
+                    x: Math.round(notifTextRow.x - width - 7)
+                    anchors.verticalCenter: parent.verticalCenter
+                    Image {
+                        id: notifIcon
+                        anchors.fill: parent
+                        source: g8.renderedNotif ? g8.renderedNotif.icon : ""
+                        sourceSize: Qt.size(32, 32)
+                        asynchronous: true
+                        visible: status === Image.Ready
+                    }
+                    IconText {
+                        anchors.centerIn: parent
+                        visible: g8.renderedNotif
+                            && (g8.renderedNotif.materialGlyph || "") !== ""
+                        text: visible ? g8.renderedNotif.materialGlyph : ""
+                        font.pixelSize: 15
+                        fill: 0
+                        color: g8.renderedNotif && g8.renderedNotif.materialGlyphMuted
+                            ? barSlot.root.seal : barSlot.root.sumiHi
+                    }
+                    UiText {
+                        anchors.centerIn: parent
+                        // La inicial comparte la línea óptica de app y mensaje.
+                        anchors.verticalCenterOffset: 0
+                        visible: notifIcon.status !== Image.Ready
+                            && (!g8.renderedNotif
+                                || (g8.renderedNotif.materialGlyph || "") === "")
+                        text: !g8.renderedNotif ? ""
+                              : g8.renderedNotif.glyph ? g8.renderedNotif.glyph
+                              : g8.renderedNotif.critical ? "!"
+                              : (g8.renderedNotif.appName || "?").charAt(0).toUpperCase()
+                        font.family: barSlot.root.mono
+                        font.pixelSize: g8.renderedNotif && g8.renderedNotif.glyph ? 14 : 12
+                        font.weight: Font.Bold
+                        color: (g8.renderedNotif && g8.renderedNotif.critical) ? barSlot.root.seal : barSlot.root.sumiHi
+                    }
+                }
+                Row {
+                    id: notifTextRow
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 7
+
+                UiText {
+                    // sin rótulo en los OSD (volumen nunca; media manda appName vacío —
+                    // ocultarlo evita que la Row meta su spacing por un item de ancho 0)
+                    visible: text !== "" && !(g8.renderedNotif && g8.renderedNotif.osdKind === "volume")
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: g8.renderedNotif ? g8.renderedNotif.appName : ""
+                    font.family: barSlot.root.mono
+                    font.pixelSize: 9
+                    font.letterSpacing: 1
+                    font.capitalization: Font.AllUppercase
+                    color: (g8.renderedNotif && g8.renderedNotif.critical) ? barSlot.root.seal : barSlot.root.sumiHi
+                    width: Math.min(implicitWidth, 88)
+                    elide: Text.ElideRight
+                }
+                Item {   // pista de nivel inline — solo OSD de volumen
+                    visible: g8.renderedNotif && g8.renderedNotif.osdKind === "volume"
+                    width: 72; height: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    Rectangle {   // carril
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width; height: 4; radius: 2
+                        color: Qt.rgba(barSlot.root.ink.r, barSlot.root.ink.g, barSlot.root.ink.b, 0.16)
+                    }
+                    Rectangle {   // relleno: se desliza al objetivo, no salta
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width * (g8.renderedNotif ? (g8.renderedNotif.level || 0) : 0)
+                        height: 4; radius: 2
+                        color: barSlot.root.seal
+                        Behavior on width { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                    }
+                }
+                UiText {
+                    visible: text !== ""   // media OSD va sin texto: solo el glифо
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: 1   // tinta 1px alta (ver glifo)
+                    text: g8.renderedNotif ? g8.renderedNotif.summary : ""
+                    font.family: barSlot.root.mono
+                    font.pixelSize: 11
+                    font.weight: Font.Medium
+                    color: barSlot.root.ink
+                    elide: Text.ElideRight
+                    // volumen: caja fija del ancho de "100%" con el valor centrado —
+                    // "Mute" (4 chars) también cabe, así que el ancho NUNCA cambia
+                    readonly property bool volBox: g8.renderedNotif
+                        && g8.renderedNotif.osdKind === "volume"
+                    horizontalAlignment: volBox ? Text.AlignHCenter : Text.AlignLeft
+                    width: volBox ? osdVolumeMetrics.width : Math.min(implicitWidth, 275)
+                }
+                }
+            }
+
+            MouseArea {   // por encima de las MAs de hora/fecha mientras hay toast
+                anchors.centerIn: parent
+                width: parent.implicitWidth; height: 28
+                visible: g8.notifActive
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                cursorShape: Qt.PointingHandCursor
+                onContainsMouseChanged: barSlot.root.toastHovered = containsMouse
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton) barSlot.root.toastClose("dismiss")
+                    else barSlot.root.toastInvoke()
                 }
             }
         }

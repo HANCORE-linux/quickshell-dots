@@ -3,6 +3,7 @@ import "../modules"
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Services.Notifications
 
 PanelWindow {
     id: notifPanel
@@ -19,26 +20,30 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    // ── quickshell-owned notification history ────────────────────────────────
-    // Mako's history is capped (default max-history 5), so polling it and
-    // REPLACING our list each time loses everything older. Instead we MERGE each
-    // poll into our own retained history (capped 50) and persist it, so entries
-    // survive both mako dropping them and a quickshell restart.
-    //
-    // Identity: mako ids are a per-session counter that RESETS on a mako restart,
-    // so a bare id is ambiguous across restarts. We derive a session token
-    // (boot-id + mako pid + proc start-time) once per poll; when it changes we
-    // bump `generation`, and every entry is keyed "generation:id". Old entries
-    // (gen 0) and reused new ids (gen 1) therefore never collide. The bare id is
-    // used ONLY for makoctl dismiss/invoke operations.
+    AudioData { id: notificationAudio }
 
-    property var recent: []             // [{key,id,gen,appName,summary,body,firstSeen,active}]
+    // Quickshell is the notification server. History is retained locally so it
+    // survives reloads without polling an external notification daemon.
+    property var recent: []             // [{key,id,appName,summary,body,firstSeen,active,notification}]
+    readonly property int historyLimit: 10
     property var dismissed: ({})         // composite-key -> true (persisted)
-    property string sessionToken: ""
-    property int generation: 0
     property int seq: 0                  // monotonic first-seen counter (ordering)
     property bool cacheLoaded: false
     property string lastSaved: ""
+    property string pendingSave: ""
+    property bool cacheWritePending: false
+    // Notifications can arrive as soon as the D-Bus service is owned, before
+    // FileView finishes its first read. Keep their live objects until history
+    // is ready instead of silently dropping that small startup window.
+    property var earlyNotifications: []
+    property double lastSoundAt: 0
+    property string queuedSound: ""
+    property bool queuedSoundCritical: false
+    readonly property int soundGap: 220
+    readonly property int earlyLimit: 32
+    readonly property int appNameLimit: 128
+    readonly property int summaryLimit: 512
+    readonly property int bodyLimit: 4096
 
     // pending = not dismissed → drives both the list and the badge
     readonly property var pending: {
@@ -61,185 +66,282 @@ PanelWindow {
         onLoaded: {
             try {
                 var j = JSON.parse(cacheFile.text())
-                notifPanel.sessionToken = j.token || ""
-                notifPanel.generation   = j.generation || 0
-                notifPanel.seq          = j.seq || 0
-                notifPanel.recent       = Array.isArray(j.recent) ? j.recent : []
-                notifPanel.dismissed    = (j.dismissed && typeof j.dismissed === "object") ? j.dismissed : ({})
+                var parsedSeq = Number(j.seq)
+                notifPanel.seq = isFinite(parsedSeq) && parsedSeq >= 0
+                    ? Math.floor(parsedSeq) : 0
+                notifPanel.recent = notifPanel.normalizeCachedRows(j.recent)
+                var cachedDismissed = (j.dismissed && typeof j.dismissed === "object")
+                    ? j.dismissed : ({})
+                notifPanel.dismissed = notifPanel.compactDismissed(
+                    notifPanel.recent, cachedDismissed)
                 notifPanel.lastSaved    = cacheFile.text()
             } catch (e) {
-                notifPanel.recent = []; notifPanel.dismissed = ({})
+                notifPanel.seq = 0; notifPanel.recent = []; notifPanel.dismissed = ({})
             }
             notifPanel.cacheLoaded = true
-            notifPanel.poll()
+            notifPanel.saveCache()      // persiste también el recorte de un historial antiguo
+            notifPanel.drainEarlyNotifications()
         }
         onLoadFailed: {                  // first run: no cache yet
             notifPanel.cacheLoaded = true
-            notifPanel.poll()
+            notifPanel.drainEarlyNotifications()
+        }
+        onSaved: {
+            notifPanel.lastSaved = notifPanel.pendingSave
+            notifPanel.pendingSave = ""
+            notifPanel.cacheWritePending = false
+            if (notifPanel.cacheState() !== notifPanel.lastSaved)
+                cacheSaveDebounce.restart()
+        }
+        onSaveFailed: function(error) {
+            notifPanel.pendingSave = ""
+            notifPanel.cacheWritePending = false
         }
     }
     // force the initial load (don't rely on implicit auto-load) — the whole panel
     // is gated on cacheLoaded, so a missed load would mean no notifications ever
     Component.onCompleted: cacheFile.reload()
 
-    function saveCache() {
-        if (!notifPanel.cacheLoaded) return
-        var state = JSON.stringify({
-            token: notifPanel.sessionToken,
-            generation: notifPanel.generation,
-            seq: notifPanel.seq,
-            recent: notifPanel.recent,
-            dismissed: notifPanel.dismissed
+    function boundedText(value, limit) {
+        if (value === undefined || value === null) return ""
+        var s = String(value)
+        if (s.length <= limit) return s
+        return s.slice(0, Math.max(0, limit - 1)) + "…"
+    }
+
+    function normalizeCachedRows(value) {
+        if (!Array.isArray(value)) return []
+        var out = [], seen = ({})
+        for (var i = 0; i < value.length && out.length < notifPanel.historyLimit; i++) {
+            var row = value[i]
+            if (!row || typeof row !== "object") continue
+            var key = notifPanel.boundedText(row.key, 128)
+            if (key === "" || seen[key]) continue
+            seen[key] = true
+            var firstSeen = Number(row.firstSeen)
+            if (!isFinite(firstSeen) || firstSeen < 0) firstSeen = 0
+            out.push({ key: key, id: row.id,
+                       appName: notifPanel.boundedText(row.appName, notifPanel.appNameLimit),
+                       summary: notifPanel.boundedText(row.summary, notifPanel.summaryLimit),
+                       body: notifPanel.boundedText(row.body, notifPanel.bodyLimit),
+                       firstSeen: Math.floor(firstSeen), active: false,
+                       notification: null })
+        }
+        return out
+    }
+
+    function compactDismissed(rows, source) {
+        var out = ({})
+        if (!source || typeof source !== "object") return out
+        for (var i = 0; i < rows.length; i++)
+            if (source[rows[i].key]) out[rows[i].key] = true
+        return out
+    }
+
+    function cacheState() {
+        notifPanel.dismissed = notifPanel.compactDismissed(
+            notifPanel.recent, notifPanel.dismissed)
+        var rows = notifPanel.recent.map(function(entry) {
+            return { key: entry.key, id: entry.id, appName: entry.appName,
+                     summary: entry.summary, body: entry.body,
+                     firstSeen: entry.firstSeen, active: false }
         })
-        if (state === notifPanel.lastSaved) return   // no real change → no write
-        notifPanel.lastSaved = state
+        return JSON.stringify({ seq: notifPanel.seq, recent: rows,
+                                dismissed: notifPanel.dismissed })
+    }
+
+    function saveCache() {
+        if (notifPanel.cacheLoaded) cacheSaveDebounce.restart()
+    }
+
+    function flushCache() {
+        var state = notifPanel.cacheState()
+        if (state === notifPanel.lastSaved) return
+        if (notifPanel.cacheWritePending) {
+            cacheSaveDebounce.restart()
+            return
+        }
+        notifPanel.pendingSave = state
+        notifPanel.cacheWritePending = true
         cacheFile.setText(state)
     }
 
-    // pid-guarded: with an empty pid, /proc//stat collapses to /proc/stat (a
-    // multi-line file) and awk would inject raw newlines into the token → broken
-    // JSON. So build the token ONLY when mako's pid is known; else token="" (the
-    // merge then keeps the current generation untouched — a safe no-op).
-    readonly property string pollScript: "pid=$(pidof mako 2>/dev/null | awk '{print $1}'); if [ -n \"$pid\" ]; then bid=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(awk '{print $22}' /proc/$pid/stat 2>/dev/null); tok=\"$bid-$pid-$st\"; else tok=\"\"; fi; lst=$(makoctl list -j 2>/dev/null); [ -z \"$lst\" ] && lst='[]'; his=$(makoctl history -j 2>/dev/null); [ -z \"$his\" ] && his='[]'; printf '{\"token\":\"%s\",\"list\":%s,\"history\":%s}' \"$tok\" \"$lst\" \"$his\""
-
-    Process {
-        id: pollProc
-        command: ["bash", "-c", notifPanel.pollScript]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var d
-                try { d = JSON.parse(this.text) } catch (e) { return }
-                notifPanel.merge(d.token || "", d.list || [], d.history || [])
-            }
-        }
-    }
-    function poll() {
-        if (!notifPanel.cacheLoaded) return
-        pollProc.running = false; pollProc.running = true
+    // Collapse a burst into one atomic FileView write. This avoids spawning an
+    // operation for every D-Bus event while preserving the newest state.
+    Timer {
+        id: cacheSaveDebounce
+        interval: 80
+        repeat: false
+        onTriggered: notifPanel.flushCache()
     }
 
-    // merge this poll's active(list) + history into our retained history
-    function merge(token, listArr, histArr) {
-        // session / generation
-        if (token !== "" && token !== notifPanel.sessionToken) {
-            if (notifPanel.sessionToken !== "") notifPanel.generation += 1
-            notifPanel.sessionToken = token
+    // At most one sound every 220 ms. A burst keeps only its newest sound,
+    // while a critical event takes priority over a normal one.
+    Timer {
+        id: soundThrottle
+        interval: notifPanel.soundGap
+        repeat: false
+        onTriggered: {
+            var sound = notifPanel.queuedSound
+            notifPanel.queuedSound = ""
+            notifPanel.queuedSoundCritical = false
+            if (sound !== "" && !root.notifSilenced)
+                notifPanel.playNotificationSoundNow(sound)
         }
-        var gen = notifPanel.generation
+    }
 
-        // incoming this poll (current generation), by bare id; active = in `list`
-        var incoming = {}
-        for (var i = 0; i < listArr.length; i++) {
-            var n = listArr[i]
-            incoming[n.id] = { appName: n.app_name || "", summary: n.summary || "", body: n.body || "", active: true }
+    function playNotificationSoundNow(sound) {
+        notifPanel.lastSoundAt = Date.now()
+        var sink = notificationAudio.sink
+        var props = sink ? (sink.properties || ({})) : ({})
+        var output = sink ? [sink.name || "", sink.description || "", sink.nickname || "",
+                             props["device.form_factor"] || "", props["device.icon-name"] || ""]
+                              .join(" ").toLowerCase() : ""
+        // Event gain only: do not alter the user's master volume. Headphones
+        // need extra attenuation because a full-scale desktop chime is harsh
+        // at close range (Barracuda and common headset labels are detected).
+        var gain = /(headphone|headset|auricular|earbud|airpod|barracuda|\bbuds\b)/.test(output)
+                   ? "-12.0" : "-5.0"
+        Quickshell.execDetached(["canberra-gtk-play", "-i", sound,
+                                 "-V", gain, "-d", "Desktop notification"])
+    }
+
+    function queueNotificationSound(notification) {
+        if (root.notifSilenced || notification.urgency === NotificationUrgency.Low) return
+
+        var hints = notification.hints || ({})
+        var suppress = hints["suppress-sound"]
+        if (suppress === true || suppress === 1
+                || (typeof suppress === "string"
+                    && suppress.toLowerCase() !== "false"
+                    && suppress !== "0" && suppress !== "")) return
+
+        var requested = hints["sound-name"] || ""
+        // Sound names are theme identifiers, never shell input or paths.
+        if (typeof requested !== "string" || !/^[A-Za-z0-9._-]{1,80}$/.test(requested)
+                || requested.toLowerCase() === "none") requested = ""
+        var critical = notification.urgency === NotificationUrgency.Critical
+        var sound = requested !== "" ? requested
+                    : (critical ? "dialog-warning" : "message")
+
+        var elapsed = Date.now() - notifPanel.lastSoundAt
+        if (!soundThrottle.running && elapsed >= notifPanel.soundGap) {
+            notifPanel.playNotificationSoundNow(sound)
+            return
         }
-        for (var j = 0; j < histArr.length; j++) {
-            var h = histArr[j]
-            if (incoming[h.id] === undefined)
-                incoming[h.id] = { appName: h.app_name || "", summary: h.summary || "", body: h.body || "", active: false }
+        // Never let a later normal event downgrade a queued critical alert.
+        if (notifPanel.queuedSound === "" || !notifPanel.queuedSoundCritical || critical) {
+            notifPanel.queuedSound = sound
+            notifPanel.queuedSoundCritical = critical
         }
+        soundThrottle.interval = Math.max(1, notifPanel.soundGap - elapsed)
+        soundThrottle.restart()
+    }
 
-        // existing entries by composite key
-        var byKey = {}
-        for (var k = 0; k < notifPanel.recent.length; k++) byKey[notifPanel.recent[k].key] = notifPanel.recent[k]
-
-        // update-or-create current-gen entries; oldest id first so newest gets the largest seq
-        var ids = []
-        for (var idk in incoming) ids.push(parseInt(idk))
-        ids.sort(function(a, b) { return a - b })
-        for (var m = 0; m < ids.length; m++) {
-            var id = ids[m]
-            var key = gen + ":" + id
-            var src = incoming[id]
-            if (byKey[key] !== undefined) {
-                var e = byKey[key]
-                e.appName = src.appName; e.summary = src.summary; e.body = src.body
-            } else {
-                byKey[key] = { key: key, id: id, gen: gen,
-                    appName: src.appName, summary: src.summary, body: src.body,
-                    firstSeen: (++notifPanel.seq) }
-            }
-        }
-
-        // recompute the (transient) active flag for ALL entries, build a NEW array
-        var out = []
-        for (var ek in byKey) {
-            var ee = byKey[ek]
-            ee.active = (ee.gen === gen && incoming[ee.id] !== undefined && incoming[ee.id].active === true)
-            out.push(ee)
-        }
-        out.sort(function(a, b) { return b.firstSeen - a.firstSeen })
-        if (out.length > 50) out = out.slice(0, 50)
-
-        // prune dismissed keys no longer present (bounds the set)
-        var present = {}
-        for (var o = 0; o < out.length; o++) present[out[o].key] = true
-        var nd = {}, changed = false
-        for (var dk in notifPanel.dismissed) {
-            if (present[dk]) nd[dk] = true; else changed = true
-        }
-
-        notifPanel.recent = out                  // reassign → bindings fire
-        if (changed) notifPanel.dismissed = nd
+    function acceptNotification(notification) {
+        var entry = { key: "qs:" + (++notifPanel.seq), id: notification.id,
+                      appName: notifPanel.boundedText(root.notificationAppName(notification), notifPanel.appNameLimit),
+                      summary: notifPanel.boundedText(notification.summary, notifPanel.summaryLimit),
+                      body: notifPanel.boundedText(notification.body, notifPanel.bodyLimit),
+                      firstSeen: notifPanel.seq,
+                      active: true, notification: notification }
+        var rows = [entry].concat(notifPanel.recent)
+        if (rows.length > notifPanel.historyLimit) rows = rows.slice(0, notifPanel.historyLimit)
+        notifPanel.recent = rows
+        notifPanel.dismissed = notifPanel.compactDismissed(rows, notifPanel.dismissed)
         notifPanel.saveCache()
+
+        // Toast + sound only outside DND. In DND the strings remain in history,
+        // but a notification retained during startup can now be released.
+        if (root.notifSilenced) {
+            notification.tracked = false
+            return
+        }
+        notification.tracked = true
+        notifPanel.queueNotificationSound(notification)
+        root.notifyToast(notification)
+    }
+
+    function drainEarlyNotifications() {
+        if (!notifPanel.cacheLoaded || notifPanel.earlyNotifications.length === 0) return
+        var queued = notifPanel.earlyNotifications.slice()
+        notifPanel.earlyNotifications = []
+        for (var i = 0; i < queued.length; i++) notifPanel.acceptNotification(queued[i])
+    }
+
+    NotificationServer {
+        id: notificationServer
+        // false: mantenerlas re-entregaba las vivas en cada reload (historial
+        // duplicado); los toasts tampoco deben sobrevivir un reload
+        keepOnReload: false
+        actionsSupported: true
+        bodyMarkupSupported: true
+        bodyImagesSupported: true
+        onNotification: function(notification) {
+            // regla heredada de mako user-rules.ini: warnings Wayland de fcitx5
+            // son ruido conocido (ver memoria fcitx5_wayland_warnings)
+            if ((notification.appName || "") === "Fcitx"
+                    && /Wayland/.test(notification.summary || "")) {
+                notification.dismiss()
+                return
+            }
+            if (!notifPanel.cacheLoaded) {
+                // Retainable: without tracked=true Quickshell may discard the
+                // object before FileView completes and the queue is drained.
+                notification.tracked = true
+                var early = notifPanel.earlyNotifications.concat([notification])
+                if (early.length > notifPanel.earlyLimit) {
+                    var released = early.shift()
+                    released.tracked = false
+                }
+                notifPanel.earlyNotifications = early
+                return
+            }
+            notifPanel.acceptNotification(notification)
+        }
     }
 
     // ── actions ──
-    Process { id: actionProc; command: ["bash", "-c", "true"] }
-    function runMako(cmd) {
-        actionProc.command = ["bash", "-c", cmd + " 2>/dev/null || true"]
-        actionProc.running = false; actionProc.running = true
-    }
-
     function dismissOne(entry) {
         var nd = {}
         for (var k in notifPanel.dismissed) nd[k] = true
         nd[entry.key] = true
         notifPanel.dismissed = nd                // reassign → bindings update
-        var id = parseInt(entry.id)              // normalize before it touches a shell
-        if (entry.active && id > 0) notifPanel.runMako("makoctl dismiss -h -n " + id)
+        if (entry.notification) entry.notification.dismiss()
         notifPanel.saveCache()
     }
 
     function dismissAll() {
-        var nd = {}
-        for (var k in notifPanel.dismissed) nd[k] = true
-        for (var i = 0; i < notifPanel.recent.length; i++) nd[notifPanel.recent[i].key] = true
-        notifPanel.dismissed = nd
-        notifPanel.recent = []                   // clear own history; re-merged entries stay dismissed-filtered
-        notifPanel.runMako("makoctl dismiss -h --all")   // -h: don't re-add to mako history (next poll won't re-see them)
+        for (var i = 0; i < notifPanel.recent.length; i++)
+            if (notifPanel.recent[i].notification) notifPanel.recent[i].notification.dismiss()
+        notifPanel.recent = []
+        notifPanel.dismissed = ({})
         notifPanel.saveCache()
     }
 
     function openNotification(entry) {
-        var id = parseInt(entry.id)              // normalize before it touches a shell
-        if (entry.active && id > 0) notifPanel.runMako("makoctl invoke -n " + id)
-        // history/cache-only entries are no longer active → do nothing (never `restore`)
         root.notifVisible = false
-    }
-
-    // ── poll cadence: fast while open, much slower when closed.
-    // Opening the panel still triggers an immediate refresh below; the closed
-    // cadence only keeps the badge/history roughly warm without parsing mako
-    // JSON every few seconds in idle.
-    Timer {
-        interval: notifPanel.visible ? 1500 : 10000
-        running: notifPanel.cacheLoaded; repeat: true; triggeredOnStart: true
-        onTriggered: notifPanel.poll()
     }
 
     property real reveal: root.notifVisible ? 1 : 0
     Behavior on reveal {
         NumberAnimation {
-            duration: root.notifVisible ? 160 : 120
+            duration: root.notifVisible ? 200 : 140
+            easing.type: root.notifVisible ? Easing.OutCubic : Easing.InCubic
+        }
+    }
+    // receta popover macOS: movimiento+escala en reloj aparte y más largo
+    // que el fade (320 vs ~200ms) — entra desde la barra y asienta suave
+    property real slide: root.notifVisible ? 1 : 0
+    Behavior on slide {
+        NumberAnimation {
+            duration: root.notifVisible ? 320 : 140
             easing.type: root.notifVisible ? Easing.OutCubic : Easing.InCubic
         }
     }
     visible: reveal > 0.001
     WlrLayershell.keyboardFocus: root.notifVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    onVisibleChanged: { if (visible) notifPanel.poll() }
 
     MouseArea {
         anchors.fill: parent
@@ -259,6 +361,9 @@ PanelWindow {
         x: Math.round(Math.max(6, Math.min(root.notifBarX, parent.width - width - 6)))
         y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
         opacity: notifPanel.reveal
+        transform: Translate { y: (1 - notifPanel.slide) * (notifPanel.root.barPosition === "bottom" ? 10 : -10) }
+        scale: 0.97 + 0.03 * notifPanel.slide
+        transformOrigin: notifPanel.root.barPosition === "bottom" ? Item.Bottom : Item.Top
         focus: root.notifVisible
 
         Keys.onPressed: function(event) {
@@ -283,27 +388,12 @@ PanelWindow {
                 UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: notifPanel.unreadCount > 0 ? "Notifications · " + notifPanel.unreadCount : "Notifications"
+                    text: notifPanel.unreadCount > 0 ? "Notificaciones · " + notifPanel.unreadCount : "Notificaciones"
                     color: root.ink
                     font.family: root.mono
                     font.pixelSize: 13
                     font.letterSpacing: 2
                     font.weight: Font.Medium
-                }
-                UiText {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "✕"
-                    color: closeMa.containsMouse ? root.seal : root.sumi
-                    font.pixelSize: 12
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    MouseArea {
-                        id: closeMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.notifVisible = false
-                    }
                 }
             }
 
@@ -412,7 +502,7 @@ PanelWindow {
                         visible: notifPanel.pending.length === 0
                         width: listCol.width
                         horizontalAlignment: Text.AlignHCenter
-                        text: "No notifications"
+                        text: "Sin notificaciones"
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
                         font.family: root.mono
                         font.pixelSize: 11
@@ -432,7 +522,7 @@ PanelWindow {
                 Behavior on color { ColorAnimation { duration: 120 } }
                 UiText {
                     anchors.centerIn: parent
-                    text: "Clear all"
+                    text: "Borrar todo"
                     color: clearMa.containsMouse ? root.seal : root.sumi
                     font.family: root.mono; font.pixelSize: 11
                 }
