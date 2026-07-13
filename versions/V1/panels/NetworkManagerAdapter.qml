@@ -35,8 +35,38 @@ Item {
         return Math.max(1, Math.min(4, Math.ceil(percent / 25)))
     }
 
+    // Classify the AP security so the panel can pick the right join flow. Collapsing every
+    // non-open type to "psk" (as before) sent enterprise/WEP/OWE/unknown networks through the
+    // inline passphrase prompt, which cannot actually authenticate them.
     function securityName(network) {
-        return network && network.security === WifiSecurityType.Open ? "open" : "psk"
+        if (!network)
+            return "unknown"
+        switch (network.security) {
+        case WifiSecurityType.Open:
+            return "open"
+        case WifiSecurityType.WpaPsk:
+        case WifiSecurityType.Wpa2Psk:
+        case WifiSecurityType.Sae:          // WPA/WPA2/WPA3-Personal: a single passphrase
+            return "psk"
+        case WifiSecurityType.Owe:
+            return "owe"                     // enhanced-open: no passphrase, needs NM to negotiate
+        case WifiSecurityType.StaticWep:
+        case WifiSecurityType.DynamicWep:
+            return "wep"                     // legacy key, not a wpa-psk secret
+        case WifiSecurityType.Wpa2Eap:
+        case WifiSecurityType.WpaEap:
+        case WifiSecurityType.Wpa3SuiteB192:
+        case WifiSecurityType.Leap:
+            return "enterprise"              // 802.1X: identity/cert, never a bare passphrase
+        default:
+            return "unknown"
+        }
+    }
+
+    // Only WPA-Personal passphrase types can be joined via network.connectWithPsk(psk).
+    // Everything else must go through the full NetworkManager settings flow.
+    function supportsInlinePsk(sec) {
+        return sec === "psk"
     }
 
     function syncNetworks() {
@@ -144,8 +174,18 @@ Item {
             return
         }
 
-        if (panel && panel.root) {
-            panel.beginNmPassword(entry)
+        // Only WPA-Personal networks can be joined with an inline passphrase; enterprise, WEP,
+        // OWE and unknown types would get an incorrect PSK prompt, so hand them to NM settings.
+        if (supportsInlinePsk(entry.sec)) {
+            if (panel && panel.root)
+                panel.beginNmPassword(entry)
+            return
+        }
+
+        if (panel) {
+            panel.networkActionError = "This network type needs Wi-Fi settings to connect"
+            if (typeof panel.openWifiSettings === "function")
+                panel.openWifiSettings()
         }
     }
 
