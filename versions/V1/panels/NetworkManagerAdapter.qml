@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Networking
+import Quickshell.Io
 
 Item {
     id: adapter
@@ -15,6 +16,7 @@ Item {
     readonly property bool wifiBlocked: !Networking.wifiEnabled
 
     property var networks: []
+    property var savedProfiles: []
     property bool scanning: false
 
     function findDevice(type) {
@@ -51,8 +53,38 @@ Item {
                 known: !!network.known,
                 ssid: network.name || "",
                 sec: securityName(network),
-                sig: signalBars(network.signalStrength)
+                sig: signalBars(network.signalStrength),
+                visible: true,
+                profileUuid: ""
             })
+        }
+
+
+        for (var p = 0; p < savedProfiles.length; p++) {
+            var profile = savedProfiles[p]
+            var represented = false
+            for (var n = 0; n < nets.length; n++) {
+                if (nets[n].ssid === profile.name) {
+                    represented = true
+                    if (!nets[n].known) {
+                        nets[n].known = true
+                        nets[n].profileUuid = profile.uuid
+                    }
+                    break
+                }
+            }
+            if (!represented) {
+                nets.push({
+                    network: null,
+                    conn: false,
+                    known: true,
+                    ssid: profile.name,
+                    sec: "saved",
+                    sig: 0,
+                    visible: false,
+                    profileUuid: profile.uuid
+                })
+            }
         }
 
         nets.sort(function(a, b) {
@@ -96,7 +128,14 @@ Item {
     }
 
     function connectTo(entry) {
-        if (!entry || !entry.network)
+        if (!entry)
+            return
+
+        if (!entry.network && entry.profileUuid) {
+            runProfileAction("connect", entry)
+            return
+        }
+        if (!entry.network)
             return
 
         if (entry.sec === "open" || entry.known || entry.conn) {
@@ -110,6 +149,29 @@ Item {
         }
     }
 
+    function forgetNetwork(entry) {
+        if (!entry || !entry.known)
+            return
+        if (entry.network && (entry.network.known || !entry.profileUuid)) {
+            entry.network.forget()
+            refreshAfterAction.restart()
+        } else if (entry.profileUuid) {
+            runProfileAction("forget", entry)
+        }
+    }
+
+    function runProfileAction(action, entry) {
+        if (!entry || !entry.profileUuid || profileAction.running)
+            return
+        if (panel)
+            panel.networkActionError = ""
+        profileAction.action = action
+        profileAction.command = action === "connect"
+            ? ["nmcli", "--wait", "20", "connection", "up", "uuid", entry.profileUuid]
+            : ["nmcli", "--wait", "20", "connection", "delete", "uuid", entry.profileUuid]
+        profileAction.running = true
+    }
+
     function connectWithPsk(network, psk) {
         if (!network || psk === "")
             return
@@ -121,6 +183,8 @@ Item {
     function refresh() {
         if (wifiDevice)
             wifiDevice.scannerEnabled = panelOpen && !wifiBlocked
+        if (!profileList.running)
+            profileList.running = true
         syncNetworks()
     }
 
@@ -143,6 +207,53 @@ Item {
         onTriggered: {
             adapter.scanning = false
             adapter.syncPanel()
+        }
+    }
+
+    Process {
+        id: profileList
+        // Quickshell exposes saved settings only through currently visible
+        // WifiNetwork objects. Query NetworkManager for the missing profiles,
+        // using the actual 802.11 SSID rather than the editable connection id.
+        command: ["bash", "-c",
+            "nmcli -t -f UUID,TYPE connection show | while IFS=: read -r uuid type; do " +
+            "case \"$type\" in 802-11-wireless|wifi) ;; *) continue ;; esac; " +
+            "ssid=$(nmcli --escape no -g 802-11-wireless.ssid connection show uuid \"$uuid\" | head -n 1); " +
+            "[ -n \"$ssid\" ] || continue; " +
+            "printf '%s\\t%s\\n' \"$uuid\" \"$ssid\"; done"]
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var profiles = []
+                var lines = text.trim().split("\n")
+                for (var i = 0; i < lines.length; i++) {
+                    if (lines[i] === "")
+                        continue
+                    var fields = lines[i].split("\t")
+                    if (fields.length >= 2)
+                        profiles.push({ uuid: fields[0], name: fields.slice(1).join("\t") })
+                }
+                adapter.savedProfiles = profiles
+                adapter.syncNetworks()
+            }
+        }
+    }
+
+    Process {
+        id: profileAction
+        property string action: ""
+        stdout: StdioCollector { id: profileActionOut; waitForEnd: true }
+        stderr: StdioCollector { id: profileActionErr; waitForEnd: true }
+        onExited: function(exitCode) {
+            if (exitCode !== 0 && adapter.panel) {
+                var message = profileActionErr.text.trim()
+                adapter.panel.networkActionError = message !== ""
+                    ? message.split("\n")[0]
+                    : (action === "connect" ? "Connection failed" : "Could not forget network")
+            }
+            profileList.running = false
+            profileList.running = true
+            refreshAfterAction.restart()
         }
     }
 

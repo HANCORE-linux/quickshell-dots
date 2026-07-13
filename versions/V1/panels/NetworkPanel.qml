@@ -31,12 +31,25 @@ PanelWindow {
     property bool   scanning: false
     property var    networks: []    // [{conn, ssid, sec, sig}]
     property var    known:   []     // known ssids
+    property bool   savedOnly: false
+    property string selectedSsid: ""
+    property int    keyboardIndex: -1
+    readonly property var shownNetworks: networks.filter(function(entry) {
+        return savedOnly ? entry.known === true : entry.visible !== false
+    })
+    readonly property int savedCount: {
+        var count = 0
+        for (var i = 0; i < networks.length; i++)
+            if (networks[i].known === true) count++
+        return count
+    }
 
     property string nmPasswordSsid: ""
     property string nmPasswordText: ""
     property var    nmPasswordNetwork: null
     property string nmConnectionError: ""
     property bool   nmConnecting: false
+    property string networkActionError: ""
 
     // ── wifi radio ──
     property bool   wifiBlocked: false
@@ -158,6 +171,70 @@ PanelWindow {
         }
     }
 
+    function activateNetwork(entry) {
+        if (!entry)
+            return
+
+        networkActionError = ""
+
+        if (entry.conn) {
+            if (nmAdapterReady && entry.network)
+                entry.network.disconnect()
+            else if (wdev !== "") {
+                connectProc.command = ["iwctl", "station", wdev, "disconnect"]
+                connectProc.running = false
+                connectProc.running = true
+            }
+            rescanTimer.restart()
+            return
+        }
+
+        connectTo(entry, entry.sec)
+    }
+
+    function forgetNetwork(entry) {
+        if (!entry || !entry.known)
+            return
+
+        selectedSsid = ""
+        if (nmAdapterReady) {
+            nmAdapter.item.forgetNetwork(entry)
+            refreshNmNetworks()
+        } else {
+            forgetProc.command = ["iwctl", "known-networks", entry.ssid, "forget"]
+            forgetProc.running = false
+            forgetProc.running = true
+        }
+    }
+
+    function selectNetwork(entry) {
+        if (!entry)
+            return
+        selectedSsid = selectedSsid === entry.ssid ? "" : entry.ssid
+    }
+
+    function resetNetworkSelection() {
+        selectedSsid = ""
+        keyboardIndex = -1
+    }
+
+    function ensureKeyboardNetworkVisible() {
+        if (keyboardIndex < 0 || keyboardIndex >= networkRepeater.count)
+            return
+        var item = networkRepeater.itemAt(keyboardIndex)
+        if (!item)
+            return
+        var top = item.y
+        var bottom = top + item.height
+        if (top < networkFlick.contentY)
+            networkFlick.contentY = top
+        else if (bottom > networkFlick.contentY + networkFlick.height)
+            networkFlick.contentY = Math.min(networkFlick.contentHeight - networkFlick.height,
+                                            bottom - networkFlick.height)
+    }
+
+    onSavedOnlyChanged: resetNetworkSelection()
+
     function openWifiSettings() {
         wifiRunner.running = false
         wifiRunner.running = true
@@ -257,7 +334,43 @@ PanelWindow {
         focus: root.networkVisible
 
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape) { root.networkVisible = false; event.accepted = true }
+            if (event.key === Qt.Key_Escape) {
+                if (netPanel.selectedSsid !== "")
+                    netPanel.selectedSsid = ""
+                else
+                    root.networkVisible = false
+                event.accepted = true
+                return
+            }
+
+            if (netPanel.nmPasswordSsid !== "")
+                return
+
+            var entries = netPanel.shownNetworks
+            if (entries.length === 0)
+                return
+
+            if (event.key === Qt.Key_Down) {
+                netPanel.keyboardIndex = (netPanel.keyboardIndex + 1) % entries.length
+                Qt.callLater(netPanel.ensureKeyboardNetworkVisible)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+                netPanel.keyboardIndex = netPanel.keyboardIndex <= 0
+                    ? entries.length - 1 : netPanel.keyboardIndex - 1
+                Qt.callLater(netPanel.ensureKeyboardNetworkVisible)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Right) {
+                if (netPanel.keyboardIndex >= 0)
+                    netPanel.selectedSsid = entries[netPanel.keyboardIndex].ssid
+                event.accepted = true
+            } else if (event.key === Qt.Key_Left) {
+                netPanel.selectedSsid = ""
+                event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (netPanel.keyboardIndex >= 0)
+                    netPanel.activateNetwork(entries[netPanel.keyboardIndex])
+                event.accepted = true
+            }
         }
 
         MouseArea { anchors.fill: parent; onClicked: {} }
@@ -537,18 +650,64 @@ PanelWindow {
                 }
             }
 
-            // ── available networks ──
+            // Available / saved profiles. Both views use the native
+            // NetworkManager objects on Omarchy 4 and the iwctl snapshot on
+            // legacy installations.
+            Row {
+                width: parent.width
+                height: 28
+                spacing: 6
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked && (!root.useNM || netPanel.nmAdapterReady)
+
+                Repeater {
+                    model: [
+                        { label: "Available", saved: false },
+                        { label: "Saved" + (netPanel.savedCount > 0 ? " (" + netPanel.savedCount + ")" : ""), saved: true }
+                    ]
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: (parent.width - 6) / 2
+                        height: 28
+                        radius: root.tileRadius
+                        readonly property bool active: netPanel.savedOnly === modelData.saved
+                        color: active ? root.fillActive : tabMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: active || tabMa.containsMouse ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        UiText {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: parent.active ? root.seal : root.ink
+                            font.family: root.mono
+                            font.pixelSize: 10
+                        }
+                        MouseArea {
+                            id: tabMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                netPanel.savedOnly = modelData.saved
+                                if (!modelData.saved) netPanel.scan()
+                            }
+                        }
+                    }
+                }
+            }
+
             Item {
                 width: parent.width
                 height: 16
                 visible: netPanel.hasWifi && !netPanel.wifiBlocked && (!root.useNM || netPanel.nmAdapterReady)
                 UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                    text: "AVAILABLE NETWORKS"
+                    text: netPanel.savedOnly ? "SAVED NETWORKS" : "AVAILABLE NETWORKS"
                     color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                 }
                 UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    visible: !netPanel.savedOnly
                     text: netPanel.scanning ? "scanning…" : "rescan"
                     color: rescanMa.containsMouse ? root.fillPrimaryHover : root.seal
                     font.family: root.mono; font.pixelSize: 10
@@ -559,6 +718,7 @@ PanelWindow {
 
             // scrollable network list
             Flickable {
+                id: networkFlick
                 width: parent.width
                 height: Math.min(netList.implicitHeight, 180)
                 contentHeight: netList.implicitHeight
@@ -572,16 +732,16 @@ PanelWindow {
                     spacing: 4
 
                     Repeater {
-                        model: netPanel.networks
-                        delegate: Rectangle {
+                        id: networkRepeater
+                        model: netPanel.shownNetworks
+                        delegate: Column {
+                            id: netTile
                             required property var modelData
+                            required property int index
                             width: netList.width
-                            height: 30; radius: root.tileRadius
-                            color: modelData.conn ? root.fillActive
-                                   : nma.containsMouse ? root.fillHover : root.fillIdle
-                            border.color: (nma.containsMouse || modelData.conn) ? root.seal : root.sep
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            spacing: 4
+                            readonly property bool expanded: netPanel.selectedSsid === modelData.ssid
+                            readonly property bool keyboardSelected: netPanel.keyboardIndex === index
 
                             Connections {
                                 target: root.useNM && modelData.network ? modelData.network : null
@@ -599,67 +759,209 @@ PanelWindow {
                                 }
                             }
 
-                            Row {
-                                anchors.left: parent.left; anchors.leftMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
-                                IconText {
-                                    text: modelData.sec === "open" ? "\uE898" : "\uE897"
-                                    font.pixelSize: 12
-                                    color: root.sumiHi
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                UiText {
-                                    text: modelData.ssid
-                                    color: (nma.containsMouse || modelData.conn) ? root.seal : root.ink
-                                    font.family: root.mono; font.pixelSize: 11
-                                    font.weight: modelData.conn ? Font.Medium : Font.Normal
-                                    width: modelData.conn ? 116 : 170; elide: Text.ElideRight
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                UiText {
-                                    visible: modelData.conn
-                                    text: "· Connected"
-                                    color: root.seal
-                                    font.family: root.mono; font.pixelSize: 9
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
+                            Rectangle {
+                                width: parent.width
+                                height: 30
+                                radius: root.tileRadius
+                                readonly property bool active: nma.containsMouse || netTile.expanded || netTile.keyboardSelected
+                                color: modelData.conn ? root.fillActive : active ? root.fillHover : root.fillIdle
+                                border.color: modelData.conn || active ? root.seal : root.sep
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 120 } }
 
-                            // signal bars
-                            Row {
-                                anchors.right: parent.right; anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-                                Repeater {
-                                    model: 4
-                                    delegate: Rectangle {
-                                        required property int index
-                                        width: 3; height: 4 + index * 2; radius: 1
-                                        anchors.bottom: parent.bottom
-                                        color: index < modelData.sig
-                                            ? (modelData.conn ? root.seal : root.ink)
-                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.18)
+                                Row {
+                                    anchors.left: parent.left; anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
+                                    IconText {
+                                        text: modelData.sec === "open" ? "\uE898" : "\uE897"
+                                        font.pixelSize: 12
+                                        color: root.sumiHi
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    UiText {
+                                        text: modelData.ssid
+                                        color: (nma.containsMouse || modelData.conn) ? root.seal : root.ink
+                                        font.family: root.mono; font.pixelSize: 11
+                                        font.weight: modelData.conn ? Font.Medium : Font.Normal
+                                        width: modelData.conn ? 116 : 170; elide: Text.ElideRight
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    UiText {
+                                        visible: modelData.conn
+                                        text: "· Connected"
+                                        color: root.seal
+                                        font.family: root.mono; font.pixelSize: 9
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+
+                                Row {
+                                    anchors.right: detailButton.left; anchors.rightMargin: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
+                                    UiText {
+                                        visible: modelData.known && !modelData.conn
+                                        text: "saved"
+                                        color: root.sumiHi
+                                        font.family: root.mono
+                                        font.pixelSize: 9
+                                    }
+                                    Row {
+                                        spacing: 2
+                                        Repeater {
+                                            model: 4
+                                            delegate: Rectangle {
+                                                required property int index
+                                                width: 3; height: 4 + index * 2; radius: 1
+                                                anchors.bottom: parent.bottom
+                                                color: index < modelData.sig
+                                                    ? (modelData.conn ? root.seal : root.ink)
+                                                    : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.18)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: nma
+                                    anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                    anchors.right: detailButton.left
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onEntered: netPanel.keyboardIndex = netTile.index
+                                    onClicked: netPanel.activateNetwork(modelData)
+                                }
+
+                                UiText {
+                                    id: detailButton
+                                    anchors.right: parent.right; anchors.rightMargin: 7
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 16
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: netTile.expanded ? "⌃" : "›"
+                                    color: detailMa.containsMouse || netTile.expanded ? root.seal : root.sumiHi
+                                    font.family: root.mono; font.pixelSize: 13
+                                    MouseArea {
+                                        id: detailMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onEntered: netPanel.keyboardIndex = netTile.index
+                                        onClicked: netPanel.selectNetwork(modelData)
                                     }
                                 }
                             }
 
-                            MouseArea {
-                                id: nma
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: netPanel.connectTo(modelData, modelData.sec)
+                            Rectangle {
+                                width: parent.width
+                                height: netTile.expanded ? detailColumn.implicitHeight + 16 : 0
+                                visible: height > 0
+                                clip: true
+                                radius: root.tileRadius
+                                color: root.fillIdle
+                                border.color: root.sep
+                                border.width: netTile.expanded ? 1 : 0
+                                Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                                Column {
+                                    id: detailColumn
+                                    anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 8
+                                    spacing: 6
+
+                                    Row {
+                                        spacing: 12
+                                        UiText {
+                                            text: modelData.sec === "open" ? "Open" : "Protected"
+                                            color: root.sumiHi
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                        UiText {
+                                            text: modelData.visible === false
+                                                ? "Not currently visible"
+                                                : "Signal " + (modelData.sig * 25) + "%"
+                                            color: root.sumiHi
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                        UiText {
+                                            visible: modelData.known
+                                            text: "Saved"
+                                            color: root.seal
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                    }
+
+                                    Row {
+                                        width: parent.width
+                                        height: 26
+                                        spacing: 6
+
+                                        Rectangle {
+                                            width: modelData.known ? (parent.width - 6) / 2 : parent.width
+                                            height: parent.height
+                                            radius: root.tileRadius
+                                            color: networkActionMa.containsMouse ? root.fillHover : root.fillIdle
+                                            border.color: networkActionMa.containsMouse ? root.seal : root.sep
+                                            border.width: 1
+                                            UiText {
+                                                anchors.centerIn: parent
+                                                text: modelData.conn ? "Disconnect" : modelData.known ? "Reconnect" : "Connect"
+                                                color: root.ink
+                                                font.family: root.mono; font.pixelSize: 10
+                                            }
+                                            MouseArea {
+                                                id: networkActionMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: netPanel.activateNetwork(modelData)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: modelData.known
+                                            width: (parent.width - 6) / 2
+                                            height: parent.height
+                                            radius: root.tileRadius
+                                            color: forgetMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.fillIdle
+                                            border.color: forgetMa.containsMouse ? root.seal : root.sep
+                                            border.width: 1
+                                            UiText {
+                                                anchors.centerIn: parent
+                                                text: "Forget"
+                                                color: forgetMa.containsMouse ? root.seal : root.ink
+                                                font.family: root.mono; font.pixelSize: 10
+                                            }
+                                            MouseArea {
+                                                id: forgetMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: netPanel.forgetNetwork(modelData)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
 
                     UiText {
-                        visible: !netPanel.scanning && netPanel.networks.length === 0
+                        visible: !netPanel.scanning && netPanel.shownNetworks.length === 0
                         width: netList.width; horizontalAlignment: Text.AlignHCenter
-                        text: "No networks found"
+                        text: netPanel.savedOnly ? "No saved networks" : "No networks found"
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
                         font.family: root.mono; font.pixelSize: 11
+                    }
+                    UiText {
+                        visible: netPanel.networkActionError !== ""
+                        width: netList.width
+                        text: netPanel.networkActionError
+                        color: root.seal
+                        wrapMode: Text.Wrap
+                        font.family: root.mono; font.pixelSize: 10
                     }
                 }
             }
@@ -929,8 +1231,21 @@ PanelWindow {
                     if (p[0] === "KNOWN" && p[1]) {
                         kn.push(p[1].trim())
                     } else if (p[0] === "NET" && p.length >= 5) {
-                        nets.push({ conn: p[1] === "1", ssid: p[2], sec: p[3], sig: parseInt(p[4]) || 0 })
+                        nets.push({ conn: p[1] === "1", ssid: p[2], sec: p[3], sig: parseInt(p[4]) || 0, known: false, visible: true })
                     }
+                }
+                for (var j = 0; j < nets.length; j++)
+                    nets[j].known = kn.indexOf(nets[j].ssid) >= 0
+                for (var k = 0; k < kn.length; k++) {
+                    var found = false
+                    for (var n = 0; n < nets.length; n++) {
+                        if (nets[n].ssid === kn[k]) {
+                            found = true
+                            break
+                        }
+                    }
+                    if (!found)
+                        nets.push({ conn: false, ssid: kn[k], sec: "saved", sig: 0, known: true, visible: false })
                 }
                 // connected first, then by signal
                 nets.sort(function(a, b) { return (b.conn - a.conn) || (b.sig - a.sig) })
@@ -943,6 +1258,12 @@ PanelWindow {
     }
 
     Process { id: connectProc; command: ["bash", "-c", "true"] }
+    Process {
+        id: forgetProc
+        command: ["true"]
+        running: false
+        onExited: rescanTimer.restart()
+    }
 
     Timer { id: rescanTimer; interval: 1500; onTriggered: { netData.running = false; netData.running = true; netPanel.scan() } }
     // safety: if a scan hangs, don't block future rescans forever
@@ -1018,6 +1339,7 @@ PanelWindow {
             if (speedTest.running)
                 speedTest.cancel()
             clearNmPassword()
+            resetNetworkSelection()
         }
     }
 }
