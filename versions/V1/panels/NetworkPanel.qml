@@ -19,6 +19,24 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
+    // ── Wi-Fi backend model ───────────────────────────────────────────────
+    // Two backends, selected at runtime by root.useNM (set by the shell per
+    // Omarchy version):
+    //   • Omarchy 4 → NetworkManager, through the Quickshell wrapper in
+    //     NetworkManagerAdapter.qml (Loader `nmAdapter`). scan/connect/forget/
+    //     toggle delegate to nmAdapter.item.*; joining a secured AP uses the
+    //     in-panel password prompt (connectWithPsk). `nmAdapterReady` gates
+    //     this path — if NM is active but the adapter can't load, the panel
+    //     degrades to an "open nmtui" shortcut.
+    //   • Legacy    → iwd, driven by iwctl Process calls (scanProc parses
+    //     `iwctl station get-networks`; connectProc/forgetProc run connect/
+    //     forget). SSIDs are passed as argv, never interpolated into a shell
+    //     string, so a crafted SSID cannot inject commands.
+    // Each action function below has the same shape:
+    //   if (nmAdapterReady) { nmAdapter.item.X(); return }   // NM path
+    //   ...                                                  // iwd fallback
+    // netData/speedProc (ip + iw) and CloudflareSpeedTest are backend-agnostic.
+
     property string mode:  "none"   // wifi | ethernet | none
     property string ssid:  ""
     property int    signal: 0
@@ -51,6 +69,7 @@ PanelWindow {
     property bool   nmConnecting: false
 
     // ── wifi radio ──
+    // NM path toggles via the adapter; legacy path uses rfkill (rfkillState/rfkillToggle).
     property bool   wifiBlocked: false
 
     // ── link speed (negotiated connection rate) ──
@@ -112,6 +131,7 @@ PanelWindow {
     // ✓ marks show only on a healthy run (in progress or finished ok) — never on error/cancel/offline
     readonly property bool speedRunOk: speedTest.running || speedTest.phase === "success"
 
+    // ── actions (dual-backend: NM adapter when ready, else iwd/iwctl) ──
     function toggleWifi() {
         if (nmAdapterReady) {
             nmAdapter.item.toggleWifi()

@@ -21,6 +21,18 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
+    // ── Bluetooth via Quickshell.Bluetooth (native BlueZ service) ──────────
+    // Replaces the old bluetoothctl-per-device approach and the temporary BlueZ
+    // ObjectManager helper: power, discovery, pairing, connection and per-device
+    // state all come from the declarative service.
+    //   • adapter = Bluetooth.defaultAdapter → power (adapter.enabled) and
+    //     discovery (adapter.discovering).
+    //   • Bluetooth.devices.values           → mapped into `devices` view rows
+    //     (name/mac/connected/paired/battery/icon), sorted connected→paired→rest.
+    // The service is event-driven (fire-and-forget calls + model updates), so
+    // progress/completion are tracked by watching device state via
+    // onDevicesChanged → syncBusyState(), not through callbacks.
+
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool btOn: adapter !== null && adapter.enabled
     readonly property bool scanning: adapter !== null && adapter.discovering
@@ -64,6 +76,9 @@ PanelWindow {
         for (var i = 0; i < devices.length; i++) if (devices[i].connected) n++
         return n
     }
+    // One-tap action keyed on current state: connected → disconnect;
+    // paired → trust + connect; new → trust + pair (syncBusyState then
+    // auto-connects once pairing lands). busyMac/busyLabel drive the row label.
     function activateDevice(device) {
         if (!device || !device.ref)
             return
@@ -94,6 +109,11 @@ PanelWindow {
         busyTimeout.restart()
     }
 
+    // Event-driven progress tracker (the native API has no completion
+    // callbacks): runs on every onDevicesChanged. Advances Pairing… →
+    // Connecting… once the device reports paired, and clears the busy state
+    // when the pending op is observed complete (connected / disconnected / no
+    // longer paired). busyTimeout is the safety net if the transition never lands.
     function syncBusyState() {
         if (busyMac === "")
             return
