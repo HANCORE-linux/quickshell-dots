@@ -25,8 +25,49 @@ var icons = {
     "storage": "\uE1DB",
     "speed": "\uE9E4",
     "package_2": "\uF569",
+    "bt_gamepad": "\uE338",
+    "bt_speaker": "\uE32D",
+    "bt_headset": "\uE310",
+    "bt_headphones": "\uF01F",
+    "bt_phone": "\uE32C",
+    "bt_computer": "\uE30A",
+    "bt_printer": "\uE8AD",
+    "bt_scanner": "\uE329",
+    "bt_keyboard": "\uE312",
+    "bt_mouse": "\uE323",
+    "bt_watch": "\uE334",
+    "bt_tv": "\uE333",
+    "bt_router": "\uE328",
+    "bt_generic": "\uE337",
 }
 
 function icon(name) {
     return icons[name] || name
+}
+
+function btTypeIcon(bluezIcon) {
+    var names = {
+        "audio-card": "bt_speaker",
+        "audio-speakers": "bt_speaker",
+        "audio-headset": "bt_headset",
+        "audio-headphones": "bt_headphones",
+        "audio-input-microphone": "bt_headset",
+        "input-gaming": "bt_gamepad",
+        "input-keyboard": "bt_keyboard",
+        "input-mouse": "bt_mouse",
+        "phone": "bt_phone",
+        "computer": "bt_computer",
+        "printer": "bt_printer",
+        "scanner": "bt_scanner",
+        "video-display": "bt_tv",
+        "tv": "bt_tv",
+        "network-wireless": "bt_router",
+        "modem": "bt_router",
+        "watch": "bt_watch"
+    }
+    var key = (bluezIcon || "").toLowerCase()
+    if (names[key]) return icons[names[key]]
+    if (key.indexOf("audio") === 0) return icons.bt_headphones
+    if (key.indexOf("phone") === 0) return icons.bt_phone
+    return icons.bluetooth || icons.bt_generic
 }
