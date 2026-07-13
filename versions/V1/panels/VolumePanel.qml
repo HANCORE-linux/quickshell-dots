@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 import Quickshell.Wayland
 import "../modules"
 
@@ -23,6 +24,36 @@ PanelWindow {
     readonly property int    volume:   audio.volume
     readonly property bool   muted:    audio.muted
     property bool   micMuted: false
+    property real   micLevel: 0
+    property bool   notifyMicStateAfterRefresh: false
+    readonly property real micNoiseFloorDb: -55
+
+    PwNodePeakMonitor {
+        id: micPeak
+        node: Pipewire.defaultAudioSource
+        enabled: root.volVisible && !volPanel.micMuted && node !== null
+    }
+
+    function peakToMeter(peak) {
+        if (!isFinite(peak) || peak <= 0) return 0
+        // PwNodePeakMonitor exposes the cube root of linear amplitude.
+        var amplitude = peak * peak * peak
+        var db = 20 * Math.log(amplitude) / Math.LN10
+        if (db <= micNoiseFloorDb) return 0
+        return Math.max(0, Math.min(1, (db - micNoiseFloorDb) / -micNoiseFloorDb))
+    }
+
+    Timer {
+        interval: 45
+        repeat: true
+        running: root.volVisible
+        onTriggered: {
+            var sample = volPanel.micMuted ? 0 : volPanel.peakToMeter(micPeak.peak)
+            volPanel.micLevel = sample >= volPanel.micLevel
+                ? sample : Math.max(sample, volPanel.micLevel * 0.78)
+        }
+        onRunningChanged: if (!running) volPanel.micLevel = 0
+    }
 
     // ── per-app mixer + device switcher state ──
     property var    apps:        []   // [{idx, name, vol, muted}]
@@ -38,9 +69,7 @@ PanelWindow {
         "pamixer -t"
 
     readonly property string micMuteCommand:
-        "if command -v omarchy-audio-input-mute >/dev/null 2>&1; then " +
-        "omarchy-audio-input-mute; " +
-        "else wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle || pamixer --default-source -t; fi"
+        "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle || pamixer --default-source -t"
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
     function run(cmd, refreshAfter) {
@@ -58,6 +87,14 @@ PanelWindow {
             " 2>/dev/null || true"]
         audioErrNotify.running = false
         audioErrNotify.running = true
+    }
+    function notifyMicState() {
+        var title = micMuted ? "Microphone muted" : "Microphone active"
+        var body = micMuted ? "Input has been disabled" : "Input is ready"
+        micStateNotify.command = ["notify-send", "-a", "Audio",
+            "-h", "string:x-canonical-private-synchronous:qs-microphone", title, body]
+        micStateNotify.running = false
+        micStateNotify.running = true
     }
 
     function setDefaultSink(dev) {
@@ -393,6 +430,33 @@ PanelWindow {
                 }
             }
 
+            Item {
+                width: parent.width
+                height: 8
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 4
+                    radius: 2
+                    color: root.fillIdle
+                    border.color: root.sep
+                    border.width: 1
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: parent.width * volPanel.micLevel
+                        radius: parent.radius
+                        color: volPanel.micMuted
+                            ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.25)
+                            : root.seal
+                    }
+                }
+            }
+
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
@@ -449,6 +513,7 @@ PanelWindow {
     }
 
     Process { id: audioErrNotify }
+    Process { id: micStateNotify }
     Process {
         id: muteRunner
         command: ["bash", "-c", volPanel.outputMuteCommand]
@@ -462,6 +527,7 @@ PanelWindow {
         command: ["bash", "-c", volPanel.micMuteCommand]
         onExited: (code) => {
             volPanel.notifyAudioError("Mute mic", code)
+            volPanel.notifyMicStateAfterRefresh = code === 0
             micData.running = false
             micData.running = true
         }
@@ -481,11 +547,15 @@ PanelWindow {
 
     Process {
         id: micData
-        command: ["bash", "-c", "pactl get-source-mute @DEFAULT_SOURCE@ 2>/dev/null | awk '{print $2}'"]
+        command: ["pactl", "get-source-mute", "@DEFAULT_SOURCE@"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
-                volPanel.micMuted = this.text.trim() === "yes"
+                volPanel.micMuted = this.text.indexOf("yes") >= 0
+                if (volPanel.notifyMicStateAfterRefresh) {
+                    volPanel.notifyMicStateAfterRefresh = false
+                    volPanel.notifyMicState()
+                }
             }
         }
     }
