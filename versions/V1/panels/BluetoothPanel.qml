@@ -1,6 +1,7 @@
 import QtQuick
 import "../modules"
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
 import Quickshell.Wayland
 import "../IconMap.js" as IconMap
@@ -20,18 +21,201 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    property bool btOn: false
-    property bool scanning: false
-    property var devices: []   // [{name, mac, connected, paired}]
-    readonly property var shownDevices: devices.slice(0, 8)
+    readonly property var adapter: Bluetooth.defaultAdapter
+    readonly property bool btOn: adapter !== null && adapter.enabled
+    readonly property bool scanning: adapter !== null && adapter.discovering
+    // Keep discovery and device ownership tied to the adapter shown by this
+    // panel. The global Bluetooth.devices model may include another adapter.
+    readonly property var nativeDevices: adapter && adapter.devices ? adapter.devices.values : []
+    readonly property var devices: {
+        var rows = []
+        for (var i = 0; i < nativeDevices.length; i++) {
+            var device = nativeDevices[i]
+            if (!device || !device.address)
+                continue
+            rows.push({
+                ref: device,
+                name: device.name || device.deviceName || device.address,
+                mac: device.address,
+                connected: !!device.connected,
+                paired: !!(device.paired || device.bonded || device.trusted),
+                icon: device.icon || "",
+                rssi: null,
+                battery: device.batteryAvailable ? Math.round(device.battery * 100) : -1
+            })
+        }
+        rows.sort(function(a, b) {
+            var ra = a.connected ? 0 : a.paired ? 1 : 2
+            var rb = b.connected ? 0 : b.paired ? 1 : 2
+            if (ra !== rb) return ra - rb
+            return a.name.localeCompare(b.name)
+        })
+        return rows
+    }
+    property bool savedOnly: false
+    property string selectedMac: ""
+    property int keyboardIndex: -1
+    property string busyMac: ""
+    property string busyLabel: ""
+    property var pairDevice: null
+    property string pairOutput: ""
+    property string pairPromptMode: "" // "pin" | "confirm"
+    property string pairPromptText: ""
+    property string pairPin: ""
+    property string actionError: ""
+    property bool pairTimedOut: false
+    readonly property var savedDevices: devices.filter(function(device) {
+        return device.paired || device.connected
+    })
+    readonly property var shownDevices: savedOnly ? savedDevices : devices
     readonly property int numConnected: {
         var n = 0
         for (var i = 0; i < devices.length; i++) if (devices[i].connected) n++
         return n
     }
-    property string connCmd: ""
+    function activateDevice(device) {
+        if (!device || !device.ref)
+            return
 
-    function refresh() { btData.running = false; btData.running = true }
+        actionError = ""
+        pairPromptMode = ""
+        pairPromptText = ""
+        if (device.connected) {
+            busyLabel = "Disconnecting…"
+            device.ref.disconnect()
+        } else if (device.paired) {
+            busyLabel = "Connecting…"
+            device.ref.trusted = true
+            device.ref.connect()
+        } else {
+            busyLabel = "Pairing…"
+            startPairing(device)
+            return
+        }
+        busyMac = device.mac
+        busyTimeout.restart()
+    }
+
+    function startPairing(device) {
+        if (!device || !device.ref || pairProc.running)
+            return
+        pairDevice = device.ref
+        pairOutput = ""
+        pairPin = ""
+        pairPromptMode = ""
+        pairPromptText = ""
+        pairTimedOut = false
+        actionError = ""
+        busyMac = device.mac
+        busyLabel = "Pairing…"
+        selectedMac = device.mac
+        pairProc.command = ["bluetoothctl", "--agent", "KeyboardOnly", "--timeout", "35", "pair", device.mac]
+        pairProc.running = true
+        pairTimeout.restart()
+    }
+
+    function cleanPairOutput(chunk) {
+        return String(chunk || "").replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    }
+
+    function handlePairOutput(chunk) {
+        var clean = cleanPairOutput(chunk)
+        pairOutput = (pairOutput + clean).slice(-4096)
+        var confirm = pairOutput.match(/Confirm passkey\s+([0-9]+)/i)
+        if (confirm) {
+            pairPromptMode = "confirm"
+            pairPromptText = "Confirm passkey " + confirm[1]
+            busyLabel = "Confirmation required"
+            return
+        }
+        if (/Enter (PIN code|passkey)/i.test(pairOutput)) {
+            pairPromptMode = "pin"
+            pairPromptText = "Enter the PIN shown by the device"
+            busyLabel = "PIN required"
+        }
+        var failure = pairOutput.match(/Failed to pair:\s*([^\r\n]+)/i)
+            || pairOutput.match(/(AuthenticationFailed|AuthenticationCanceled|AuthenticationRejected|ConnectionAttemptFailed)/i)
+        if (failure)
+            actionError = failure[1].replace(/^org\.bluez\.Error\./, "")
+    }
+
+    function answerPairing(answer) {
+        if (!pairProc.running)
+            return
+        pairProc.write(String(answer) + "\n")
+        pairPromptMode = ""
+        pairPromptText = ""
+        pairPin = ""
+        busyLabel = "Pairing…"
+    }
+
+    function cancelPairing() {
+        if (pairProc.running) {
+            pairProc.write("no\n")
+            pairProc.running = false
+        }
+        if (pairDevice && pairDevice.pairing)
+            pairDevice.cancelPair()
+        pairTimeout.stop()
+        pairPromptMode = ""
+        pairPromptText = ""
+        busyLabel = ""
+        busyMac = ""
+        pairDevice = null
+    }
+
+    function forgetDevice(device) {
+        if (!device || !device.ref)
+            return
+        selectedMac = ""
+        busyMac = device.mac
+        busyLabel = "Forgetting…"
+        actionError = ""
+        device.ref.forget()
+        busyTimeout.restart()
+    }
+
+    function syncBusyState() {
+        if (busyMac === "")
+            return
+        var device = null
+        for (var i = 0; i < devices.length; i++) {
+            if (devices[i].mac === busyMac) {
+                device = devices[i]
+                break
+            }
+        }
+        var finished = (busyLabel === "Connecting…" && device && device.connected)
+            || (busyLabel === "Disconnecting…" && device && !device.connected)
+            || (busyLabel === "Forgetting…" && (!device || !device.paired))
+        if (finished) {
+            busyMac = ""
+            busyLabel = ""
+            busyTimeout.stop()
+        }
+    }
+
+    function ensureKeyboardDeviceVisible() {
+        if (keyboardIndex < 0 || keyboardIndex >= deviceRepeater.count)
+            return
+        var item = deviceRepeater.itemAt(keyboardIndex)
+        if (!item)
+            return
+        var top = item.y
+        var bottom = top + item.height
+        if (top < deviceFlick.contentY)
+            deviceFlick.contentY = top
+        else if (bottom > deviceFlick.contentY + deviceFlick.height)
+            deviceFlick.contentY = Math.min(deviceFlick.contentHeight - deviceFlick.height,
+                                           bottom - deviceFlick.height)
+    }
+
+    onDevicesChanged: syncBusyState()
+
+    onSavedOnlyChanged: {
+        keyboardIndex = -1
+        selectedMac = ""
+    }
 
     property real reveal: root.bluetoothVisible ? 1 : 0
     Behavior on reveal {
@@ -61,7 +245,42 @@ PanelWindow {
         focus: root.bluetoothVisible
 
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape) { root.bluetoothVisible = false; event.accepted = true }
+            if (event.key === Qt.Key_Escape) {
+                if (pairProc.running)
+                    btPanel.cancelPairing()
+                else if (btPanel.selectedMac !== "")
+                    btPanel.selectedMac = ""
+                else
+                    root.bluetoothVisible = false
+                event.accepted = true
+                return
+            }
+
+            var entries = btPanel.shownDevices
+            if (!btPanel.btOn || entries.length === 0)
+                return
+
+            if (event.key === Qt.Key_Down) {
+                btPanel.keyboardIndex = (btPanel.keyboardIndex + 1) % entries.length
+                Qt.callLater(btPanel.ensureKeyboardDeviceVisible)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+                btPanel.keyboardIndex = btPanel.keyboardIndex <= 0
+                    ? entries.length - 1 : btPanel.keyboardIndex - 1
+                Qt.callLater(btPanel.ensureKeyboardDeviceVisible)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Right) {
+                if (btPanel.keyboardIndex >= 0)
+                    btPanel.selectedMac = entries[btPanel.keyboardIndex].mac
+                event.accepted = true
+            } else if (event.key === Qt.Key_Left) {
+                btPanel.selectedMac = ""
+                event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (btPanel.keyboardIndex >= 0)
+                    btPanel.activateDevice(entries[btPanel.keyboardIndex])
+                event.accepted = true
+            }
         }
 
         MouseArea { anchors.fill: parent; onClicked: {} }
@@ -125,7 +344,7 @@ PanelWindow {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: { powerProc.running = false; powerProc.running = true }
+                            onClicked: if (btPanel.adapter) btPanel.adapter.enabled = !btPanel.adapter.enabled
                         }
                     }
                     UiText {
@@ -149,99 +368,324 @@ PanelWindow {
                 topPadding: 4; bottomPadding: 4
             }
 
-            // ── scan control (only when on) ──
-            Rectangle {
+            Row {
                 visible: btPanel.btOn
                 width: parent.width
-                height: 28; radius: root.tileRadius
-                readonly property bool hovered: scanMa.containsMouse
-                color: btPanel.scanning ? root.fillActive
-                       : hovered ? root.fillHover : root.fillIdle
-                border.color: (btPanel.scanning || hovered) ? root.seal : root.sep
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 120 } }
-                UiText {
-                    anchors.centerIn: parent
-                    text: btPanel.scanning ? "Scanning…" : "Scan for devices"
-                    color: btPanel.scanning ? root.seal : root.ink
-                    font.family: root.mono; font.pixelSize: 11
-                }
-                MouseArea {
-                    id: scanMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    enabled: !btPanel.scanning
-                    onClicked: { scanProc.running = false; scanProc.running = true }
-                }
-            }
+                height: 28
+                spacing: 6
 
-            // ── device list ──
-            Column {
-                width: parent.width
-                spacing: 4
-                visible: btPanel.btOn
                 Repeater {
-                    model: btPanel.shownDevices
+                    model: [
+                        { label: btPanel.scanning ? "Discovering…" : "Discover", saved: false },
+                        { label: "Saved" + (btPanel.savedDevices.length > 0 ? " (" + btPanel.savedDevices.length + ")" : ""), saved: true }
+                    ]
                     delegate: Rectangle {
-                        id: devTile
                         required property var modelData
-                        readonly property bool hovered: devMa.containsMouse
-                        width: col.width
-                        height: 30; radius: root.tileRadius
-                        color: modelData.connected ? root.fillActive
-                               : hovered ? root.fillHover : root.fillIdle
-                        border.color: modelData.connected ? root.seal
-                                      : hovered ? root.seal : root.sep
+                        width: (parent.width - 6) / 2
+                        height: 28
+                        radius: root.tileRadius
+                        readonly property bool active: btPanel.savedOnly === modelData.saved
+                        color: active ? root.fillActive : btTabMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: active || btTabMa.containsMouse ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
-
                         UiText {
-                            anchors.left: parent.left; anchors.leftMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - tag.width - 24
-                            text: devTile.modelData.name
-                            color: root.ink; font.family: root.mono; font.pixelSize: 11
-                            elide: Text.ElideRight
-                        }
-                        UiText {
-                            id: tag
-                            anchors.right: parent.right; anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: devTile.modelData.connected ? "Connected"
-                                  : devTile.modelData.paired ? "Paired" : "Connect"
-                            color: devTile.modelData.connected ? root.seal
-                                   : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
-                            font.family: root.mono; font.pixelSize: 9; font.letterSpacing: 0.5
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: parent.active ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 10
                         }
                         MouseArea {
-                            id: devMa
+                            id: btTabMa
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                var m = devTile.modelData
-                                if (m.connected) {
-                                    btPanel.connCmd = "bluetoothctl disconnect " + m.mac
-                                } else if (m.paired) {
-                                    btPanel.connCmd = "bluetoothctl connect " + m.mac
-                                } else {
-                                    btPanel.connCmd = "bluetoothctl trust " + m.mac
-                                        + " && bluetoothctl pair " + m.mac
-                                        + " && bluetoothctl connect " + m.mac
+                                btPanel.savedOnly = modelData.saved
+                                if (!modelData.saved && btPanel.adapter) {
+                                    btPanel.adapter.discovering = true
+                                    scanTimeout.restart()
                                 }
-                                connProc.running = false; connProc.running = true
                             }
                         }
                     }
                 }
-                UiText {
-                    visible: btPanel.btOn && btPanel.devices.length === 0
-                    width: parent.width; horizontalAlignment: Text.AlignHCenter
-                    text: btPanel.scanning ? "Searching…" : "No devices — tap Scan"
-                    color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
-                    font.family: root.mono; font.pixelSize: 11
-                    topPadding: 2; bottomPadding: 2
+            }
+
+            // ── device list ──
+            Flickable {
+                id: deviceFlick
+                width: parent.width
+                height: Math.min(deviceList.implicitHeight, 280)
+                contentHeight: deviceList.implicitHeight
+                visible: btPanel.btOn
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                Column {
+                    id: deviceList
+                    width: deviceFlick.width
+                    spacing: 4
+
+                    Repeater {
+                        id: deviceRepeater
+                        model: btPanel.shownDevices
+                        delegate: Column {
+                        id: devTile
+                        required property var modelData
+                        required property int index
+                        width: deviceList.width
+                        spacing: 4
+                        readonly property bool expanded: btPanel.selectedMac === modelData.mac
+                        readonly property bool keyboardSelected: btPanel.keyboardIndex === index
+
+                        Rectangle {
+                            width: parent.width
+                            height: 30
+                            radius: root.tileRadius
+                            readonly property bool active: devMa.containsMouse || devTile.expanded || devTile.keyboardSelected
+                            color: modelData.connected ? root.fillActive : active ? root.fillHover : root.fillIdle
+                            border.color: modelData.connected || active ? root.seal : root.sep
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            IconText {
+                                id: deviceTypeIcon
+                                anchors.left: parent.left; anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: IconMap.btTypeIcon(modelData.icon)
+                                color: modelData.connected ? root.seal : root.sumiHi
+                                font.pixelSize: 14
+                            }
+                            UiText {
+                                anchors.left: deviceTypeIcon.right; anchors.leftMargin: 7
+                                anchors.right: deviceState.left; anchors.rightMargin: 7
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.name
+                                color: modelData.connected || devMa.containsMouse ? root.seal : root.ink
+                                font.family: root.mono; font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            UiText {
+                                id: deviceState
+                                anchors.right: parent.right; anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: btPanel.busyMac === modelData.mac ? btPanel.busyLabel
+                                    : modelData.connected ? "Connected"
+                                    : modelData.paired ? "Paired" : "Connect"
+                                color: btPanel.busyMac === modelData.mac || modelData.connected ? root.seal : root.sumiHi
+                                font.family: root.mono; font.pixelSize: 9
+                            }
+                            MouseArea {
+                                id: devMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: btPanel.keyboardIndex = devTile.index
+                                onClicked: btPanel.selectedMac = devTile.expanded ? "" : modelData.mac
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: devTile.expanded ? deviceDetails.implicitHeight + 16 : 0
+                            visible: height > 0
+                            clip: true
+                            radius: root.tileRadius
+                            color: root.fillIdle
+                            border.color: root.sep
+                            border.width: devTile.expanded ? 1 : 0
+                            Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                            Column {
+                                id: deviceDetails
+                                anchors.left: parent.left; anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 8
+                                spacing: 6
+
+                                UiText {
+                                    text: "UID  " + modelData.mac
+                                    color: root.sumiHi
+                                    font.family: root.mono; font.pixelSize: 10
+                                }
+                                Row {
+                                    spacing: 12
+                                    visible: modelData.rssi !== null || modelData.battery >= 0
+                                    UiText {
+                                        visible: modelData.rssi !== null
+                                        text: "Signal " + modelData.rssi + " dBm"
+                                        color: root.sumiHi
+                                        font.family: root.mono; font.pixelSize: 10
+                                    }
+                                    UiText {
+                                        visible: modelData.battery >= 0
+                                        text: "Battery " + modelData.battery + "%"
+                                        color: root.seal
+                                        font.family: root.mono; font.pixelSize: 10
+                                    }
+                                }
+                                UiText {
+                                    visible: btPanel.busyMac === modelData.mac && btPanel.actionError !== ""
+                                    width: parent.width
+                                    text: btPanel.actionError
+                                    color: root.seal
+                                    wrapMode: Text.Wrap
+                                    font.family: root.mono; font.pixelSize: 10
+                                }
+                                UiText {
+                                    visible: btPanel.busyMac === modelData.mac && btPanel.pairPromptMode !== ""
+                                    width: parent.width
+                                    text: btPanel.pairPromptText
+                                    color: root.seal
+                                    wrapMode: Text.Wrap
+                                    font.family: root.mono; font.pixelSize: 10
+                                }
+                                Row {
+                                    id: pinPromptRow
+                                    visible: btPanel.busyMac === modelData.mac && btPanel.pairPromptMode === "pin"
+                                    width: parent.width
+                                    height: visible ? 26 : 0
+                                    spacing: 6
+
+                                    Rectangle {
+                                        width: parent.width * 0.66
+                                        height: parent.height
+                                        radius: root.tileRadius
+                                        color: root.fillIdle
+                                        border.color: pinInput.activeFocus ? root.seal : root.sep
+                                        border.width: 1
+                                        TextInput {
+                                            id: pinInput
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 7; anchors.rightMargin: 7
+                                            verticalAlignment: TextInput.AlignVCenter
+                                            color: root.ink
+                                            font.family: root.mono; font.pixelSize: 11
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            onTextChanged: btPanel.pairPin = text
+                                            Keys.onReturnPressed: if (text !== "") btPanel.answerPairing(text)
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: parent.width - pinInput.parent.width - 6
+                                        height: parent.height
+                                        radius: root.tileRadius
+                                        color: btPanel.pairPin !== "" ? root.seal : root.fillIdle
+                                        border.color: btPanel.pairPin !== "" ? root.seal : root.sep
+                                        border.width: 1
+                                        UiText {
+                                            anchors.centerIn: parent
+                                            text: "Send"
+                                            color: btPanel.pairPin !== "" ? root.paper : root.sumi
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: btPanel.pairPin !== ""
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: btPanel.answerPairing(btPanel.pairPin)
+                                        }
+                                    }
+                                    onVisibleChanged: if (visible)
+                                        Qt.callLater(function() { pinInput.forceActiveFocus() })
+                                }
+                                Row {
+                                    visible: btPanel.busyMac === modelData.mac && btPanel.pairPromptMode === "confirm"
+                                    width: parent.width
+                                    height: visible ? 26 : 0
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: [
+                                            { label: "Confirm", answer: "yes", primary: true },
+                                            { label: "Reject", answer: "no", primary: false }
+                                        ]
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            width: (parent.width - 6) / 2
+                                            height: parent.height
+                                            radius: root.tileRadius
+                                            color: modelData.primary ? root.seal : root.fillIdle
+                                            border.color: modelData.primary ? root.seal : root.sep
+                                            border.width: 1
+                                            UiText {
+                                                anchors.centerIn: parent
+                                                text: modelData.label
+                                                color: modelData.primary ? root.paper : root.ink
+                                                font.family: root.mono; font.pixelSize: 10
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: btPanel.answerPairing(modelData.answer)
+                                            }
+                                        }
+                                    }
+                                }
+                                Row {
+                                    width: parent.width
+                                    height: 26
+                                    spacing: 6
+                                    visible: !(btPanel.busyMac === modelData.mac && btPanel.pairPromptMode !== "")
+
+                                    Rectangle {
+                                        width: modelData.paired ? (parent.width - 6) / 2 : parent.width
+                                        height: parent.height
+                                        radius: root.tileRadius
+                                        color: btActionMa.containsMouse ? root.fillHover : root.fillIdle
+                                        border.color: btActionMa.containsMouse ? root.seal : root.sep
+                                        border.width: 1
+                                        UiText {
+                                            anchors.centerIn: parent
+                                            text: modelData.connected ? "Disconnect" : modelData.paired ? "Reconnect" : "Connect"
+                                            color: root.ink
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                        MouseArea {
+                                            id: btActionMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: btPanel.activateDevice(modelData)
+                                        }
+                                    }
+                                    Rectangle {
+                                        visible: modelData.paired
+                                        width: (parent.width - 6) / 2
+                                        height: parent.height
+                                        radius: root.tileRadius
+                                        color: btForgetMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.fillIdle
+                                        border.color: btForgetMa.containsMouse ? root.seal : root.sep
+                                        border.width: 1
+                                        UiText {
+                                            anchors.centerIn: parent
+                                            text: "Forget"
+                                            color: btForgetMa.containsMouse ? root.seal : root.ink
+                                            font.family: root.mono; font.pixelSize: 10
+                                        }
+                                        MouseArea {
+                                            id: btForgetMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: btPanel.forgetDevice(modelData)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        }
+                    }
+                    UiText {
+                        visible: btPanel.btOn && btPanel.shownDevices.length === 0
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                        text: btPanel.savedOnly ? "No saved devices"
+                            : btPanel.scanning ? "Searching…" : "No devices — tap Discover"
+                        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
+                        font.family: root.mono; font.pixelSize: 11
+                        topPadding: 2; bottomPadding: 2
+                    }
                 }
             }
 
@@ -262,82 +706,81 @@ PanelWindow {
         }
     }
 
-    // ── data: power state + device list with connected/paired flags ──
-    Process {
-        id: btData
-        command: ["bash", "-c",
-            "if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then " +
-            "  echo ON; " +
-            "  conn=$(bluetoothctl devices Connected 2>/dev/null | awk '{print $2}'); " +
-            "  paired=$(bluetoothctl devices Paired 2>/dev/null | awk '{print $2}'); " +
-            "  bluetoothctl devices 2>/dev/null | while read -r _ mac rest; do " +
-            "    c=0; p=0; " +
-            "    printf '%s\\n' \"$conn\"   | grep -qx \"$mac\" && c=1; " +
-            "    printf '%s\\n' \"$paired\" | grep -qx \"$mac\" && p=1; " +
-            "    echo \"$c|$p|$mac|$rest\"; " +
-            "  done; " +
-            "else echo OFF; fi"
-        ]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var lines = this.text.trim().split("\n")
-                if (lines[0] !== "ON") { btPanel.btOn = false; btPanel.devices = []; return }
-                btPanel.btOn = true
-                var devs = []
-                for (var i = 1; i < lines.length; i++) {
-                    var parts = lines[i].split("|")
-                    if (parts.length < 4) continue
-                    var name = parts.slice(3).join("|").trim()
-                    if (!name || name === parts[2]) name = parts[2]   // fall back to mac
-                    devs.push({
-                        connected: parts[0] === "1",
-                        paired:    parts[1] === "1",
-                        mac:       parts[2],
-                        name:      name
-                    })
-                }
-                // connected first, then paired, then the rest
-                devs.sort(function(a, b) {
-                    var ra = a.connected ? 0 : a.paired ? 1 : 2
-                    var rb = b.connected ? 0 : b.paired ? 1 : 2
-                    return ra - rb
-                })
-                btPanel.devices = devs
-            }
+    Timer {
+        id: scanTimeout
+        interval: 10000
+        onTriggered: if (btPanel.adapter) btPanel.adapter.discovering = false
+    }
+
+    Timer {
+        id: busyTimeout
+        interval: 8000
+        onTriggered: {
+            btPanel.actionError = btPanel.busyLabel.replace("…", "") + " timed out"
+            btPanel.busyLabel = "Timed out"
         }
     }
 
-    // ── power on/off ──
-    Process {
-        id: powerProc
-        command: ["bash", "-c", "bluetoothctl power " + (btPanel.btOn ? "off" : "on")]
-        running: false
-        onExited: btPanel.refresh()
-    }
-
-    // ── timed discovery scan ──
-    Process {
-        id: scanProc
-        command: ["bash", "-c", "bluetoothctl --timeout 10 scan on >/dev/null 2>&1"]
-        running: false
-        onRunningChanged: { btPanel.scanning = running; if (!running) btPanel.refresh() }
-    }
     Timer {
-        interval: 1500; repeat: true
-        running: btPanel.scanning && btPanel.visible
-        onTriggered: btPanel.refresh()
+        id: pairTimeout
+        interval: 37000
+        onTriggered: {
+            btPanel.pairTimedOut = true
+            btPanel.actionError = "Pairing timed out"
+            btPanel.busyLabel = "Timed out"
+            btPanel.pairPromptMode = ""
+            btPanel.pairPromptText = ""
+            if (pairProc.running)
+                pairProc.running = false
+            if (btPanel.pairDevice && btPanel.pairDevice.pairing)
+                btPanel.pairDevice.cancelPair()
+        }
     }
 
-    // ── connect / disconnect / pair ──
     Process {
-        id: connProc
-        command: ["bash", "-c", btPanel.connCmd]
-        running: false
-        onExited: btPanel.refresh()
+        id: pairProc
+        stdinEnabled: true
+        stdout: SplitParser {
+            splitMarker: ""
+            onRead: function(data) { btPanel.handlePairOutput(data) }
+        }
+        stderr: SplitParser {
+            splitMarker: ""
+            onRead: function(data) { btPanel.handlePairOutput(data) }
+        }
+        onExited: function(exitCode) {
+            pairTimeout.stop()
+            if (btPanel.pairTimedOut) {
+                btPanel.actionError = "Pairing timed out"
+                btPanel.busyLabel = "Timed out"
+            } else if (exitCode !== 0 || btPanel.actionError !== "") {
+                if (btPanel.actionError === "")
+                    btPanel.actionError = "Pairing failed"
+                btPanel.busyLabel = "Failed"
+            } else {
+                var pairedDevice = btPanel.pairDevice
+                if (pairedDevice) {
+                    pairedDevice.trusted = true
+                    pairedDevice.connect()
+                }
+                btPanel.busyLabel = "Connecting…"
+                busyTimeout.restart()
+            }
+            btPanel.pairPromptMode = ""
+            btPanel.pairPromptText = ""
+            btPanel.pairPin = ""
+            btPanel.pairDevice = null
+        }
     }
 
     Process { id: btRunner; command: ["bash", "-c", root.launchBtCmd] }
 
-    onVisibleChanged: { if (visible) btPanel.refresh() }
+    onVisibleChanged: {
+        keyboardIndex = -1
+        if (!visible) {
+            selectedMac = ""
+            if (pairProc.running)
+                cancelPairing()
+        }
+    }
 }
