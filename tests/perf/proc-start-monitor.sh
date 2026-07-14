@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-LC_ALL=C
 
 monitor_interval="${PROC_MONITOR_INTERVAL:-0.002}"
 
@@ -67,6 +66,13 @@ read_process() {
     PROCESS_STARTTIME="$first_start"
 }
 
+seed_descendant_identity() {
+    local boot_id="$1" pid="$2" seen_name="$3"
+    local -n seen_ref="$seen_name"
+    stat_starttime "$pid" || return 1
+    seen_ref["$boot_id:$pid:$REPLY"]=1
+}
+
 json_quote() {
     local value="$1" output='"' char ordinal i
     for ((i = 0; i < ${#value}; i++)); do
@@ -81,7 +87,7 @@ json_quote() {
             $'\t') output+='\t' ;;
             *)
                 printf -v ordinal '%d' "'$char"
-                if ((ordinal < 32 || ordinal >= 127)); then
+                if ((ordinal < 32)); then
                     printf -v char '\\u%04x' "$ordinal"
                 fi
                 output+="$char"
@@ -92,13 +98,7 @@ json_quote() {
 }
 
 argv_json() {
-    local arg separator="" output="["
-    for arg in "${PROCESS_ARGV[@]}"; do
-        json_quote "$arg"
-        output+="$separator$REPLY"
-        separator=,
-    done
-    REPLY="$output]"
+    REPLY="$(printf '%s\0' "${PROCESS_ARGV[@]}" | jq -cRs 'split("\u0000")[:-1]')"
 }
 
 attribute_process() {
@@ -144,14 +144,37 @@ write_process_record() {
         "$observed_ms" "$attribution_value" "$endpoint_value" "$argv_value" >> "$output"
 }
 
-monitor_starts() {
-    local root_pid="$1" duration="$2" output="$3" ready_file="${4:-}"
-    local boot_id root_start deadline now pid identity wait_dir monitor_wait_fd
+scan_descendants() {
+    local root_pid="$1" boot_id="$2" seen_name="$3" output="$4" mode="$5" now="$6"
+    local minimum_start="${7:-0}"
+    local pid identity
     local -a descendants
+    local -n seen_ref="$seen_name"
+
+    collect_descendants "$root_pid" descendants
+    for pid in "${descendants[@]}"; do
+        if [[ "$mode" == seed ]]; then
+            seed_descendant_identity "$boot_id" "$pid" "$seen_name" || true
+            continue
+        fi
+        stat_starttime "$pid" || continue
+        identity="$boot_id:$pid:$REPLY"
+        [[ -z "${seen_ref[$identity]+x}" ]] || continue
+        read_process "$pid" || continue
+        identity="$boot_id:$pid:$PROCESS_STARTTIME"
+        [[ -z "${seen_ref[$identity]+x}" ]] || continue
+        seen_ref["$identity"]=1
+        ((PROCESS_STARTTIME >= minimum_start)) || continue
+        write_process_record "$output" "$boot_id" "$pid" "$now"
+    done
+}
+
+monitor_starts() {
+    local root_pid="$1" output="$2" ready_file="$3" start_file="$4" stop_file="$5"
+    local boot_id root_start now wait_dir monitor_wait_fd minimum_start
     local -A seen=()
 
     [[ "$root_pid" =~ ^[1-9][0-9]*$ ]] || return 2
-    [[ "$duration" =~ ^[1-9][0-9]*$ ]] || return 2
     IFS= read -r boot_id < /proc/sys/kernel/random/boot_id
     [[ "$boot_id" =~ ^[0-9a-f-]+$ ]] || return 1
     stat_starttime "$root_pid" || {
@@ -161,28 +184,28 @@ monitor_starts() {
     root_start="$REPLY"
     : > "$output"
 
-    collect_descendants "$root_pid" descendants
-    for pid in "${descendants[@]}"; do
-        read_process "$pid" || continue
-        seen["$boot_id:$pid:$PROCESS_STARTTIME"]=1
-    done
+    scan_descendants "$root_pid" "$boot_id" seen "$output" seed 0
 
     if [[ -n "$ready_file" ]]; then
         : > "$ready_file.tmp.$$"
         mv -f -- "$ready_file.tmp.$$" "$ready_file"
     fi
-    uptime_milliseconds
-    deadline=$((REPLY + duration * 1000))
-
     wait_dir="$(mktemp -d "${TMPDIR:-/tmp}/proc-start-monitor.XXXXXX")"
     mkfifo "$wait_dir/tick"
     exec {monitor_wait_fd}<>"$wait_dir/tick"
     trap 'exec {monitor_wait_fd}>&- 2>/dev/null || true; rm -rf -- "$wait_dir"' RETURN
 
-    while :; do
+    while [[ ! -e "$start_file" ]]; do
+        stat_starttime "$root_pid" || return 1
+        [[ "$REPLY" == "$root_start" ]] || return 1
+        read -r -t "$monitor_interval" -u "$monitor_wait_fd" _ || true
+    done
+    IFS= read -r minimum_start < "$start_file" || return 1
+    [[ "$minimum_start" =~ ^[0-9]+$ ]] || return 1
+
+    while [[ ! -e "$stop_file" ]]; do
         uptime_milliseconds
         now="$REPLY"
-        ((now < deadline)) || break
         stat_starttime "$root_pid" || {
             printf 'root PID %s exited during monitoring\n' "$root_pid" >&2
             return 1
@@ -191,21 +214,19 @@ monitor_starts() {
             printf 'root PID %s was reused during monitoring\n' "$root_pid" >&2
             return 1
         }
-        collect_descendants "$root_pid" descendants
-        for pid in "${descendants[@]}"; do
-            read_process "$pid" || continue
-            identity="$boot_id:$pid:$PROCESS_STARTTIME"
-            [[ -z "${seen[$identity]+x}" ]] || continue
-            seen["$identity"]=1
-            write_process_record "$output" "$boot_id" "$pid" "$now"
-        done
+        scan_descendants "$root_pid" "$boot_id" seen "$output" observe "$now" "$minimum_start"
         read -r -t "$monitor_interval" -u "$monitor_wait_fd" _ || true
     done
+    uptime_milliseconds
+    now="$REPLY"
+    stat_starttime "$root_pid" || return 1
+    [[ "$REPLY" == "$root_start" ]] || return 1
+    scan_descendants "$root_pid" "$boot_id" seen "$output" observe "$now" "$minimum_start"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    if (($# < 3 || $# > 4)); then
-        printf 'usage: %s ROOT_PID DURATION_SECONDS OUTPUT_JSONL [READY_FILE]\n' "$0" >&2
+    if (($# != 5)); then
+        printf 'usage: %s ROOT_PID OUTPUT_JSONL READY_FILE START_FILE STOP_FILE\n' "$0" >&2
         exit 2
     fi
     monitor_starts "$@"

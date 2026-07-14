@@ -213,9 +213,9 @@ find_matching_bar() {
 }
 
 wait_identity_gone() {
-    local pid="$1" starttime="$2" timeout="$3" deadline
+    local pid="$1" starttime="$2" timeout_ms="$3" deadline
     uptime_milliseconds
-    deadline=$((REPLY + timeout * 1000))
+    deadline=$((REPLY + timeout_ms))
     while identity_alive "$pid" "$starttime"; do
         uptime_milliseconds
         ((REPLY < deadline)) || return 1
@@ -225,13 +225,45 @@ wait_identity_gone() {
 
 stop_identity() {
     local pid="$1" starttime="$2"
+    local term_timeout_ms="${STOP_TERM_TIMEOUT_MS:-10000}"
+    local kill_timeout_ms="${STOP_KILL_TIMEOUT_MS:-5000}"
     identity_alive "$pid" "$starttime" || return 0
     kill -TERM "$pid" || return 1
-    if ! wait_identity_gone "$pid" "$starttime" 10; then
+    if ! wait_identity_gone "$pid" "$starttime" "$term_timeout_ms"; then
         identity_alive "$pid" "$starttime" || return 0
         kill -KILL "$pid" || return 1
-        wait_identity_gone "$pid" "$starttime" 5 || return 1
+        wait_identity_gone "$pid" "$starttime" "$kill_timeout_ms" || return 1
     fi
+}
+
+terminate_unidentified_child() {
+    local pid="$1" deadline state line rest
+    kill -TERM "$pid" 2>/dev/null || true
+    uptime_milliseconds
+    deadline=$((REPLY + 2000))
+    while kill -0 "$pid" 2>/dev/null; do
+        if [[ -r "/proc/$pid/stat" ]]; then
+            IFS= read -r line < "/proc/$pid/stat" 2>/dev/null || break
+            rest="${line##*) }"
+            read -r state _ <<< "$rest"
+            [[ "$state" == Z ]] && break
+        fi
+        uptime_milliseconds
+        ((REPLY < deadline)) || break
+        wait_tick 0.02
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        if [[ -r "/proc/$pid/stat" ]]; then
+            IFS= read -r line < "/proc/$pid/stat" 2>/dev/null || line=""
+            rest="${line##*) }"
+            read -r state _ <<< "$rest"
+        else
+            state=""
+        fi
+        [[ "$state" == Z ]] || kill -KILL "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+    ! kill -0 "$pid" 2>/dev/null
 }
 
 descendant_pull_active() {
@@ -266,8 +298,13 @@ descendant_pull_active() {
 }
 
 stop_run_bar() {
-    if [[ -n "${RUN_BAR_PID:-}" && -n "${RUN_BAR_STARTTIME:-}" ]]; then
-        stop_identity "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" || true
+    if [[ -n "${RUN_BAR_PID:-}" ]]; then
+        if [[ -n "${RUN_BAR_STARTTIME:-}" ]]; then
+            stop_identity "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" || return 1
+            identity_alive "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" && return 1
+        else
+            terminate_unidentified_child "$RUN_BAR_PID" || return 1
+        fi
     fi
     RUN_BAR_PID=""
     RUN_BAR_STARTTIME=""
@@ -276,7 +313,10 @@ stop_run_bar() {
 restore_environment() {
     local deadline restored=0 candidate="" stable_candidate="" stable_since=0 now
     ((RUN_RESTORED == 0)) || return 0
-    stop_run_bar
+    stop_run_bar || {
+        RUN_RESTORATION_OUTCOME=blocked_live_benchmark
+        return 1
+    }
     if ((RUN_CACHE_EXISTED)); then
         cp -p -- "$RUN_CACHE_BACKUP" "$RUN_CACHE_PATH"
     else
@@ -320,17 +360,22 @@ restore_environment() {
         fi
         ((restored)) || {
             printf 'failed to verify active bar restoration\n' >> "$RUN_OUTPUT/restoration.log"
+            RUN_RESTORATION_OUTCOME=bar_restore_failed
             return 1
         }
     fi
     RUN_RESTORED=1
+    RUN_RESTORATION_OUTCOME=restored
 }
 
 cleanup_run() {
-    local status="$1"
+    local status="$1" restoration_ok=true
     trap - EXIT INT TERM
-    if ! restore_environment; then
-        ((status != 0)) || status=1
+    restore_environment || restoration_ok=false
+    if [[ "$restoration_ok" == false && "$status" == 0 ]]; then status=1; fi
+    RUN_FINAL_STATUS="$status"
+    if ! finalize_run_artifacts; then
+        [[ "$status" != 0 ]] || status=1
     fi
     exit "$status"
 }
@@ -381,33 +426,56 @@ start_source_bar() {
     local source="$1" log="$2"
     qs --no-color --log-times -p "$source/versions/V1/shell.qml" > "$log" 2>&1 &
     RUN_BAR_PID=$!
-    process_starttime "$RUN_BAR_PID" || return 1
+    if ! process_starttime "$RUN_BAR_PID"; then
+        terminate_unidentified_child "$RUN_BAR_PID" || return 1
+        RUN_BAR_PID=""
+        RUN_BAR_STARTTIME=""
+        return 1
+    fi
     RUN_BAR_STARTTIME="$REPLY"
     wait_for_instance "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" "$log"
 }
 
+read_ipc_bool() {
+    local property="$1" log="$2" value
+    value="$(qs ipc --pid "$RUN_BAR_PID" prop get ollama "$property" 2>> "$log")" || return 1
+    value="${value//$'\r'/}"
+    value="${value//$'\n'/}"
+    [[ "$value" == true || "$value" == false ]] || return 1
+    printf '%s=%s\n' "$property" "$value" >> "$log"
+    REPLY="$value"
+}
+
 set_scenario_state() {
-    local state="$1" log="$2"
+    local expected_enabled="$1" state="$2" log="$3" shown expected_visible
     case "$state" in
         absent)
-            return 0
+            shown="$(qs ipc --pid "$RUN_BAR_PID" show 2>> "$log")" || return 1
+            [[ "$shown" != *ollama* ]]
+            return
             ;;
         closed)
             qs ipc --pid "$RUN_BAR_PID" call ollama close >> "$log" 2>&1
+            expected_visible=false
             ;;
         open)
             qs ipc --pid "$RUN_BAR_PID" call ollama open >> "$log" 2>&1
+            expected_visible=true
             ;;
         *)
             return 2
             ;;
     esac
-    qs ipc --pid "$RUN_BAR_PID" show >> "$log" 2>&1
+    read_ipc_bool enabled "$log" || return 1
+    [[ "$REPLY" == "$expected_enabled" ]] || return 1
+    read_ipc_bool panelVisible "$log" || return 1
+    [[ "$REPLY" == "$expected_visible" ]]
 }
 
 calibrate_start_monitor() {
     local directory="$1" commands="$directory/commands" ready="$directory/ready"
-    local starts="$directory/starts.jsonl" root_pid root_start monitor_pid monitor_start
+    local starts="$directory/starts.jsonl" start="$directory/start" stop="$directory/stop"
+    local root_pid root_start monitor_pid monitor_start
     local duration observed observed_5ms observed_20ms valid ready_ok=false
     mkdir -p "$directory"
     mkfifo "$commands" "$directory/wait"
@@ -423,7 +491,8 @@ calibrate_start_monitor() {
     root_pid=$!
     if process_starttime "$root_pid"; then
         root_start="$REPLY"
-        PROC_MONITOR_INTERVAL=0.001 "$start_monitor" "$root_pid" 1 "$starts" "$ready" &
+        PROC_MONITOR_INTERVAL=0.001 "$start_monitor" "$root_pid" "$starts" "$ready" \
+            "$start" "$stop" &
         monitor_pid=$!
         if process_starttime "$monitor_pid"; then
             monitor_start="$REPLY"
@@ -434,6 +503,7 @@ calibrate_start_monitor() {
         fi
     fi
     if [[ "$ready_ok" == true ]]; then
+        printf '0\n' > "$start"
         for duration in 0.005 0.005 0.005 0.020 0.020 0.020; do
             printf '%s\n' "$duration" >&"$calibration_command_fd"
             if [[ "$duration" == 0.005 ]]; then
@@ -442,6 +512,7 @@ calibrate_start_monitor() {
                 wait_tick 0.025
             fi
         done
+        : > "$stop"
         wait "$monitor_pid" || true
     elif [[ -n "${monitor_pid:-}" ]]; then
         kill "$monitor_pid" 2>/dev/null || true
@@ -469,38 +540,63 @@ calibrate_start_monitor() {
     [[ "$valid" == true ]]
 }
 
+write_qsg_result() {
+    local directory="$1" state_ok="$2" completed="$3" timing_count status valid
+    local -a reasons=()
+    grep -Ei 'qt[.]scenegraph[.]time|render[^ ]* timing|frame[^ ]* [0-9.]+ ?ms' \
+        "$directory/qsg.log" > "$directory/qsg-timing-lines.log" || true
+    timing_count="$(grep -c . "$directory/qsg-timing-lines.log" || true)"
+    valid=true
+    [[ "$state_ok" == true ]] || { valid=false; reasons+=("requested state not established"); }
+    [[ "$completed" == true ]] || { valid=false; reasons+=("diagnostic process exited prematurely"); }
+    status=unavailable
+    [[ "$valid" == true && "$timing_count" -gt 0 ]] && status=available
+    printf '%s\n' "${reasons[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))' \
+        > "$directory/reasons.json"
+    jq -n --arg status "$status" --argjson valid "$valid" \
+        --argjson timing_count "$timing_count" --slurpfile reasons "$directory/reasons.json" \
+        --arg raw_log "qsg/qsg.log" \
+        '{valid: $valid, status: $status,
+          timing_line_count: (if $status == "available" then $timing_count else null end),
+          invalid_reasons: $reasons[0], raw_log: $raw_log}' > "$directory/result.json"
+    [[ "$valid" == true ]]
+}
+
 run_qsg_diagnostic() {
-    local source="$1" state="$2" directory="$3" seconds="$4"
-    local timing_count status
+    local source="$1" expected_enabled="$2" state="$3" directory="$4" seconds="$5"
+    local state_ok=false completed=false launch_pid
     mkdir -p "$directory"
     QSG_RENDER_TIMING=1 QSG_INFO=1 \
     QT_LOGGING_RULES='qt.scenegraph.time.*=true' \
         qs --no-color --log-times -p "$source/versions/V1/shell.qml" \
         > "$directory/qsg.log" 2>&1 &
     RUN_BAR_PID=$!
-    process_starttime "$RUN_BAR_PID" || return 1
+    launch_pid="$RUN_BAR_PID"
+    if ! process_starttime "$RUN_BAR_PID"; then
+        terminate_unidentified_child "$launch_pid" || true
+        RUN_BAR_PID=""
+        RUN_BAR_STARTTIME=""
+        : > "$directory/qsg.log"
+        write_qsg_result "$directory" false false
+        return 1
+    fi
     RUN_BAR_STARTTIME="$REPLY"
     if wait_for_instance "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" "$directory/qsg.log"; then
-        set_scenario_state "$state" "$directory/qsg-ipc.log" || true
-        wait_seconds_for_identity "$seconds" "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" || true
+        if set_scenario_state "$expected_enabled" "$state" "$directory/qsg-ipc.log"; then
+            state_ok=true
+            wait_seconds_for_identity "$seconds" "$RUN_BAR_PID" "$RUN_BAR_STARTTIME" \
+                && completed=true
+        fi
     fi
-    stop_run_bar
-    grep -Ei 'qt[.]scenegraph[.]time|render[^ ]* timing|frame[^ ]* [0-9.]+ ?ms' \
-        "$directory/qsg.log" > "$directory/qsg-timing-lines.log" || true
-    timing_count="$(grep -c . "$directory/qsg-timing-lines.log" || true)"
-    status=unavailable
-    ((timing_count > 0)) && status=available
-    jq -n --arg status "$status" --argjson timing_count "$timing_count" \
-        --arg raw_log "qsg/qsg.log" \
-        '{status: $status,
-          timing_line_count: (if $status == "available" then $timing_count else null end),
-          raw_log: $raw_log}' > "$directory/result.json"
+    stop_run_bar || completed=false
+    write_qsg_result "$directory" "$state_ok" "$completed"
 }
 
 run_scenario() {
     local name="$1" source_name="$2" source="$3" enabled="$4" state="$5" duration="$6"
     local directory="$RUN_OUTPUT/scenarios/$name" valid=true pss_json qsg_json calibration_json
-    local sampler_pid monitor_pid monitor_start monitor_ready=false
+    local sampler_pid monitor_pid="" monitor_start monitor_ready=false state_ok=false
+    local window_start="$directory/window.start" window_stop="$directory/window.stop"
     local -a invalid_reasons=()
     mkdir -p "$directory"
     set_widget_cache_ollama "$RUN_CACHE_BACKUP" "$RUN_CACHE_PATH" "$enabled" || \
@@ -514,27 +610,34 @@ run_scenario() {
         valid=false
         invalid_reasons+=("Quickshell did not become ready")
     else
-        if ! set_scenario_state "$state" "$directory/ipc.log"; then
+        if ! set_scenario_state "$([[ "$enabled" == 1 ]] && printf true || printf false)" \
+                "$state" "$directory/ipc.log"; then
             valid=false
             invalid_reasons+=("requested IPC state was not accepted")
-        fi
-        if descendant_pull_active "$RUN_BAR_PID"; then
-            valid=false
-            invalid_reasons+=("Ollama pull was active before warm-up")
-        fi
-        if ! wait_seconds_for_identity "$RUN_WARMUP_SECONDS" "$RUN_BAR_PID" "$RUN_BAR_STARTTIME"; then
-            valid=false
-            invalid_reasons+=("Quickshell exited during warm-up")
-        elif descendant_pull_active "$RUN_BAR_PID"; then
-            valid=false
-            invalid_reasons+=("Ollama pull was active before sampling")
         else
-            "$start_monitor" "$RUN_BAR_PID" "$duration" "$directory/starts.jsonl" \
-                "$directory/start-monitor.ready" &
+            state_ok=true
+        fi
+        if [[ "$state_ok" == true ]]; then
+            if descendant_pull_active "$RUN_BAR_PID"; then
+                valid=false
+                invalid_reasons+=("Ollama pull was active before warm-up")
+            fi
+            if ! wait_seconds_for_identity "$RUN_WARMUP_SECONDS" "$RUN_BAR_PID" "$RUN_BAR_STARTTIME"; then
+                valid=false
+                invalid_reasons+=("Quickshell exited during warm-up")
+            elif descendant_pull_active "$RUN_BAR_PID"; then
+                valid=false
+                invalid_reasons+=("Ollama pull was active before sampling")
+            else
+            "$start_monitor" "$RUN_BAR_PID" "$directory/starts.jsonl" \
+                "$directory/start-monitor.ready" "$window_start" "$window_stop" &
             monitor_pid=$!
             if ! process_starttime "$monitor_pid"; then
                 valid=false
                 invalid_reasons+=("process-start monitor did not launch")
+                terminate_unidentified_child "$monitor_pid" || \
+                    invalid_reasons+=("unidentified process-start monitor could not be terminated")
+                monitor_pid=""
             else
                 monitor_start="$REPLY"
                 if wait_for_file_identity "$directory/start-monitor.ready" \
@@ -547,12 +650,14 @@ run_scenario() {
             fi
             if [[ "$monitor_ready" == true ]]; then
                 "$sampler" "$RUN_BAR_PID" "$duration" "$directory/cpu-samples.jsonl" \
-                    "$directory/pss.json" &
+                    "$directory/pss.json" "$window_start" "$window_stop" &
                 sampler_pid=$!
                 if ! wait "$sampler_pid"; then
                     valid=false
                     invalid_reasons+=("CPU/PSS sampler failed")
                 fi
+                [[ -e "$window_start" ]] || printf '0\n' > "$window_start"
+                [[ -e "$window_stop" ]] || printf 'failed\n' > "$window_stop"
                 if ! wait "$monitor_pid"; then
                     valid=false
                     invalid_reasons+=("process-start monitor failed")
@@ -568,18 +673,28 @@ run_scenario() {
                     invalid_reasons+=("CPU sample count mismatch")
                 fi
             else
-                kill "$monitor_pid" 2>/dev/null || true
-                wait "$monitor_pid" 2>/dev/null || true
+                if [[ -n "$monitor_pid" && -n "${monitor_start:-}" ]]; then
+                    stop_identity "$monitor_pid" "$monitor_start" || \
+                        invalid_reasons+=("process-start monitor could not be terminated")
+                    wait "$monitor_pid" 2>/dev/null || true
+                fi
+            fi
             fi
         fi
     fi
     stop_run_bar
 
-    run_qsg_diagnostic "$source" "$state" "$directory/qsg" "$RUN_QSG_SECONDS" || {
+    if ! run_qsg_diagnostic "$source" \
+            "$([[ "$enabled" == 1 ]] && printf true || printf false)" \
+            "$state" "$directory/qsg" "$RUN_QSG_SECONDS"; then
+        valid=false
+        invalid_reasons+=("QSG diagnostic invalid")
+    fi
+    if [[ ! -f "$directory/qsg/result.json" ]]; then
         mkdir -p "$directory/qsg"
-        printf '%s\n' '{"status":"unavailable","timing_line_count":null,"raw_log":"qsg/qsg.log"}' \
+        printf '%s\n' '{"valid":false,"status":"unavailable","timing_line_count":null,"invalid_reasons":["diagnostic failed"],"raw_log":"qsg/qsg.log"}' \
             > "$directory/qsg/result.json"
-    }
+    fi
     [[ -f "$directory/cpu-samples.jsonl" ]] || : > "$directory/cpu-samples.jsonl"
     [[ -f "$directory/starts.jsonl" ]] || : > "$directory/starts.jsonl"
     pss_json=null
@@ -608,9 +723,11 @@ write_manifest() {
         --arg output "$RUN_OUTPUT" --arg created "$RUN_CREATED" \
         --arg boot_id "$RUN_BOOT_ID" --arg kernel "$RUN_KERNEL" \
         --arg restoration "$restoration" --argjson duration "$RUN_BASE_DURATION" \
+        --argjson observed_calibration "${RUN_CALIBRATION_JSON:-[]}" \
+        --argjson valid "${RUN_VALID:-false}" --argjson exit_status "${RUN_FINAL_STATUS:-0}" \
         --argjson warmup "$RUN_WARMUP_SECONDS" --argjson qsg_seconds "$RUN_QSG_SECONDS" \
         --argjson active_bar_pid "$ACTIVE_BAR_PID" --arg active_bar_starttime "$ACTIVE_BAR_STARTTIME" \
-        '{schema_version: 1, created_utc: $created, output: $output,
+        '{schema_version: 1, created_utc: $created, output: $output, valid: $valid,
           refs: {main: {input: $main_ref, sha: $main_sha}, pr: {input: $pr_ref, sha: $pr_sha}},
           timing: {base_scenario_seconds: $duration, open_scenario_seconds: (($duration + 1) / 2 | floor),
                    warmup_seconds: $warmup, qsg_diagnostic_seconds: $qsg_seconds},
@@ -618,6 +735,8 @@ write_manifest() {
                     calibration_poll_seconds: 0.001, calibration_children: {"5ms": 3, "20ms": 3}},
           host: {boot_id: $boot_id, kernel: $kernel},
           active_bar: {pid: $active_bar_pid, starttime: $active_bar_starttime},
+          observed_calibration: $observed_calibration,
+          exit_status: $exit_status,
           restoration_status: $restoration}' > "$RUN_OUTPUT/manifest.json.tmp"
     mv -f -- "$RUN_OUTPUT/manifest.json.tmp" "$RUN_OUTPUT/manifest.json"
 }
@@ -632,6 +751,48 @@ write_checksums() {
             sha256sum -- "$file"
         done | LC_ALL=C sort
     ) > "$RUN_OUTPUT/checksums.sha256"
+}
+
+scenario_results_valid() {
+    (($# == 4)) || return 1
+    jq -e -s 'length == 4 and all(.[]; .valid == true and
+        .calibration.valid == true)' "$@" >/dev/null
+}
+
+finalize_run_artifacts() {
+    local -a scenario_files=()
+    local file
+    ((RUN_FINALIZED == 0)) || return 0
+    for file in "$RUN_OUTPUT"/scenarios/*/result.json; do
+        [[ -f "$file" ]] && scenario_files+=("$file")
+    done
+    if ((${#scenario_files[@]})); then
+        RUN_CALIBRATION_JSON="$(jq -s '[.[] | {scenario: .name} + .calibration]' \
+            "${scenario_files[@]}")"
+        if scenario_results_valid "${scenario_files[@]}" \
+                && [[ "${RUN_RESTORATION_OUTCOME:-}" == restored ]] \
+                && [[ "${RUN_FINAL_STATUS:-1}" == 0 ]]; then
+            RUN_VALID=true
+        else
+            RUN_VALID=false
+        fi
+    else
+        RUN_CALIBRATION_JSON='[]'
+        RUN_VALID=false
+    fi
+    write_manifest "${RUN_RESTORATION_OUTCOME:-not_attempted}"
+    if ((${#scenario_files[@]})); then
+        jq -s --slurpfile manifest "$RUN_OUTPUT/manifest.json" \
+            '{manifest: $manifest[0], scenarios: .}' "${scenario_files[@]}" \
+            > "$RUN_OUTPUT/results.json"
+    else
+        jq -n --slurpfile manifest "$RUN_OUTPUT/manifest.json" \
+            '{manifest: $manifest[0], scenarios: []}' > "$RUN_OUTPUT/results.json"
+    fi
+    jq -f "$script_dir/summarize-ollama.jq" "$RUN_OUTPUT/results.json" \
+        > "$RUN_OUTPUT/summary.json"
+    write_checksums
+    RUN_FINALIZED=1
 }
 
 run_benchmark() {
@@ -693,6 +854,11 @@ run_benchmark() {
     RUN_BAR_STARTTIME=""
     RUN_ACTIVE_STOPPED=0
     RUN_RESTORED=0
+    RUN_RESTORATION_OUTCOME=pending
+    RUN_FINALIZED=0
+    RUN_VALID=false
+    RUN_FINAL_STATUS=0
+    RUN_CALIBRATION_JSON='[]'
     trap 'cleanup_run $?' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
@@ -706,22 +872,10 @@ run_benchmark() {
     run_scenario 03-pr-enabled-closed pr "$RUN_OUTPUT/sources/pr/source" 1 closed "$RUN_BASE_DURATION"
     run_scenario 04-pr-enabled-open pr "$RUN_OUTPUT/sources/pr/source" 1 open "$open_duration"
 
-    jq -n --slurpfile manifest "$RUN_OUTPUT/manifest.json" \
-        --slurpfile s1 "$RUN_OUTPUT/scenarios/01-main/result.json" \
-        --slurpfile s2 "$RUN_OUTPUT/scenarios/02-pr-disabled/result.json" \
-        --slurpfile s3 "$RUN_OUTPUT/scenarios/03-pr-enabled-closed/result.json" \
-        --slurpfile s4 "$RUN_OUTPUT/scenarios/04-pr-enabled-open/result.json" \
-        '{manifest: $manifest[0], scenarios: [$s1[0], $s2[0], $s3[0], $s4[0]]}' \
-        > "$RUN_OUTPUT/results.json"
-    jq -f "$script_dir/summarize-ollama.jq" "$RUN_OUTPUT/results.json" > "$RUN_OUTPUT/summary.json"
-    restore_environment || die "active bar restoration failed"
-    write_manifest restored
-    jq --slurpfile manifest "$RUN_OUTPUT/manifest.json" '.manifest = $manifest[0]' \
-        "$RUN_OUTPUT/results.json" > "$RUN_OUTPUT/results.json.tmp"
-    mv -f "$RUN_OUTPUT/results.json.tmp" "$RUN_OUTPUT/results.json"
-    jq -f "$script_dir/summarize-ollama.jq" "$RUN_OUTPUT/results.json" > "$RUN_OUTPUT/summary.json"
-    write_checksums
     printf 'artifacts: %s\n' "$RUN_OUTPUT"
+    if ! scenario_results_valid "$RUN_OUTPUT"/scenarios/*/result.json; then
+        return 1
+    fi
 }
 
 bar_identities() {
@@ -818,18 +972,21 @@ self_test_sampler() {
     local pid samples="$self_test_tmp/samples.jsonl" pss="$self_test_tmp/pss.json"
     local unstable_samples="$self_test_tmp/unstable.jsonl"
     local unstable_pss="$self_test_tmp/unstable-pss.json"
+    local start="$self_test_tmp/sample.start" stop="$self_test_tmp/sample.stop"
+    local unstable_start="$self_test_tmp/unstable.start" unstable_stop="$self_test_tmp/unstable.stop"
 
     bash -c 'while :; do :; done' &
     pid=$!
     self_test_track_pid "$pid"
-    "$sampler" "$pid" 2 "$samples" "$pss"
+    "$sampler" "$pid" 2 "$samples" "$pss" "$start" "$stop"
     kill "$pid"
     wait "$pid" 2>/dev/null || true
 
     jq -e -s '
         length == 2 and
         all(.[]; .sample >= 1 and .elapsed_seconds > 0.5 and
-                  .cpu_one_core_percent >= 0 and .starttime > 0)
+                  .cpu_one_core_percent >= 0 and .own_cpu_one_core_percent >= 0 and
+                  .child_cpu_one_core_percent >= 0 and .starttime > 0)
     ' "$samples" >/dev/null || die "sampler did not emit two valid elapsed-time samples"
     jq -e '
         (.before | has("Pss") and has("Pss_Anon") and has("Pss_File") and has("Pss_Shmem")) and
@@ -839,7 +996,8 @@ self_test_sampler() {
     bash -c 'read -r -t 0.15 -u "$1" _ || :' _ "$wait_fd" &
     pid=$!
     self_test_track_pid "$pid"
-    if "$sampler" "$pid" 2 "$unstable_samples" "$unstable_pss" 2>/dev/null; then
+    if "$sampler" "$pid" 2 "$unstable_samples" "$unstable_pss" \
+            "$unstable_start" "$unstable_stop" 2>/dev/null; then
         die "sampler accepted a process that exited during the window"
     fi
 }
@@ -847,7 +1005,8 @@ self_test_sampler() {
 self_test_start_monitor() {
     local commands="$self_test_tmp/calibration-commands"
     local ready="$self_test_tmp/monitor-ready"
-    local starts="$self_test_tmp/starts.jsonl"
+    local starts="$self_test_tmp/starts.jsonl" start="$self_test_tmp/monitor-start"
+    local stop="$self_test_tmp/monitor-stop"
     local root_pid monitor_pid duration
 
     bash -c '
@@ -876,11 +1035,13 @@ self_test_start_monitor() {
     root_pid=$!
     self_test_track_pid "$root_pid"
 
-    PROC_MONITOR_INTERVAL=0.001 "$start_monitor" "$root_pid" 1 "$starts" "$ready" &
+    PROC_MONITOR_INTERVAL=0.001 "$start_monitor" "$root_pid" "$starts" "$ready" \
+        "$start" "$stop" &
     monitor_pid=$!
     self_test_track_pid "$monitor_pid"
     self_test_wait_for_file "$ready" 2 || die "start monitor did not become ready"
 
+    printf '0\n' > "$start"
     for duration in 0.005 0.005 0.005 0.020 0.020 0.020; do
         printf '%s\n' "$duration" >&"$command_fd"
         if [[ "$duration" == 0.005 ]]; then
@@ -889,6 +1050,7 @@ self_test_start_monitor() {
             wait_tick 0.025
         fi
     done
+    : > "$stop"
     wait "$monitor_pid"
     printf '%s\n' stop >&"$command_fd"
     wait "$root_pid"
@@ -936,6 +1098,282 @@ self_test_orchestration_helpers() {
         die "archive helper changed the resolved commit"
 }
 
+review_case_stop_retains_identity() (
+    RUN_BAR_PID=424242
+    RUN_BAR_STARTTIME=777
+    stop_identity() { return 1; }
+    ! stop_run_bar
+    [[ "$RUN_BAR_PID" == 424242 && "$RUN_BAR_STARTTIME" == 777 ]]
+)
+
+review_case_stop_retains_unidentified_pid() (
+    RUN_BAR_PID=424243
+    RUN_BAR_STARTTIME=""
+    terminate_unidentified_child() { return 1; }
+    ! stop_run_bar
+    [[ "$RUN_BAR_PID" == 424243 && -z "$RUN_BAR_STARTTIME" ]]
+)
+
+review_case_term_escalates_to_kill() (
+    local fifo="$self_test_tmp/term-resistant" ready="$self_test_tmp/term-resistant.ready"
+    local pid start before after
+    mkfifo "$fifo"
+    exec {term_fd}<>"$fifo"
+    bash -c 'trap "" TERM; : > "$2"; read -r -u "$1" _' _ "$term_fd" "$ready" &
+    pid=$!
+    self_test_wait_for_file "$ready" 2
+    process_starttime "$pid"
+    start="$REPLY"
+    uptime_milliseconds
+    before="$REPLY"
+    STOP_TERM_TIMEOUT_MS=50 STOP_KILL_TIMEOUT_MS=500 stop_identity "$pid" "$start"
+    uptime_milliseconds
+    after="$REPLY"
+    exec {term_fd}>&-
+    ! identity_alive "$pid" "$start" && ((after - before < 1000))
+)
+
+review_case_launch_identity_failure_stops_child() (
+    local pid status
+    qs() {
+        trap 'exit 0' TERM
+        while :; do read -r -t 0.05 _ || true; done
+    }
+    process_starttime() { return 1; }
+    RUN_BAR_PID=""
+    RUN_BAR_STARTTIME=""
+    start_source_bar "$self_test_tmp" "$self_test_tmp/launch-failure.log" && return 1
+    pid="$RUN_BAR_PID"
+    status=0
+    kill -0 "$pid" 2>/dev/null && status=1
+    if ((status)); then
+        kill -KILL "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    fi
+    ((status == 0))
+)
+
+review_case_restore_blocked_by_live_run() (
+    local cache="$self_test_tmp/fault-cache" backup="$self_test_tmp/fault-cache-backup"
+    printf 'modified\n' > "$cache"
+    printf 'original\n' > "$backup"
+    RUN_CACHE_PATH="$cache"
+    RUN_CACHE_BACKUP="$backup"
+    RUN_CACHE_EXISTED=1
+    RUN_ACTIVE_STOPPED=0
+    RUN_RESTORED=0
+    stop_run_bar() { return 1; }
+    ! restore_environment
+    [[ "$(<"$cache")" == modified ]]
+)
+
+review_case_cleanup_finalizes_and_preserves_status() (
+    local marker="$self_test_tmp/finalized"
+    (
+        restore_environment() { return 0; }
+        finalize_run_artifacts() { : > "$marker"; }
+        cleanup_run 7
+    )
+    local status=$?
+    [[ "$status" == 7 && -e "$marker" ]]
+)
+
+review_case_ipc_exact_readback() (
+    local fake_enabled=true fake_visible=true log="$self_test_tmp/ipc-fault.log"
+    qs() {
+        if [[ "$*" == *'prop get ollama enabled' ]]; then
+            printf '%s\n' "$fake_enabled"
+        elif [[ "$*" == *'prop get ollama panelVisible' ]]; then
+            printf '%s\n' "$fake_visible"
+        else
+            return 0
+        fi
+    }
+    RUN_BAR_PID=$$
+    set_scenario_state true open "$log" || return 1
+    fake_visible=false
+    ! set_scenario_state true open "$log"
+)
+
+review_case_monitor_boundaries() (
+    local commands="$self_test_tmp/boundary-commands" wait_fifo="$self_test_tmp/boundary-wait"
+    local starts="$self_test_tmp/boundary-starts.jsonl" ready="$self_test_tmp/boundary-ready"
+    local start="$self_test_tmp/boundary-start" stop="$self_test_tmp/boundary-stop"
+    local root monitor duration uptime ignored hz boundary
+    mkfifo "$commands" "$wait_fifo"
+    exec {boundary_command_fd}<>"$commands"
+    exec {boundary_wait_fd}<>"$wait_fifo"
+    bash -c '
+        while IFS= read -r duration <&"$1"; do
+            [[ "$duration" == stop ]] && break
+            bash -c '\''read -r -t "$1" -u "$2" _ || :'\'' _ "$duration" "$2" &
+        done
+        wait
+    ' _ "$boundary_command_fd" "$boundary_wait_fd" &
+    root=$!
+    "$start_monitor" "$root" "$starts" "$ready" "$start" "$stop" &
+    monitor=$!
+    self_test_wait_for_file "$ready" 2
+    printf '0.100\n' >&"$boundary_command_fd"
+    read -r -t 0.030 -u "$boundary_wait_fd" _ || true
+    read -r uptime ignored < /proc/uptime
+    hz="$(getconf CLK_TCK)"
+    boundary="$(awk -v uptime="$uptime" -v hz="$hz" 'BEGIN { printf "%d", uptime * hz }')"
+    printf '%s\n' "$boundary" > "$start"
+    printf '0.050\n' >&"$boundary_command_fd"
+    read -r -t 0.005 -u "$boundary_wait_fd" _ || true
+    : > "$stop"
+    wait "$monitor"
+    printf 'stop\n' >&"$boundary_command_fd"
+    wait "$root"
+    exec {boundary_command_fd}>&-
+    exec {boundary_wait_fd}>&-
+    jq -e -s 'length == 1 and .[0].argv[4] == "0.050"' "$starts" >/dev/null
+)
+
+review_case_empty_cmdline_seed() (
+    local -A seen=()
+    source "$start_monitor"
+    stat_starttime() { REPLY=12345; }
+    read_process_argv() { PROCESS_ARGV=(); return 1; }
+    seed_descendant_identity boot 42 seen
+    [[ -n "${seen[boot:42:12345]+x}" ]]
+)
+
+review_case_utf8_argv() (
+    source "$start_monitor"
+    PROCESS_ARGV=('cafe-ñ' '模型')
+    argv_json
+    [[ "$REPLY" != *$'\n'* ]]
+    jq -e '. == ["cafe-ñ", "模型"]' <<< "$REPLY" >/dev/null
+)
+
+review_case_pss_identity_recheck() (
+    local pss anon file shmem calls=0
+    [[ "$(type -t read_stable_pss)" == function ]] || return 1
+    read_proc_stat() {
+        local -n start_out="$8"
+        ((calls++)) || true
+        start_out=$((calls == 1 ? 100 : 101))
+    }
+    read_proc_pss() {
+        local -n p="$2" a="$3" f="$4" s="$5"
+        p=1; a=1; f=0; s=0
+    }
+    ! read_stable_pss 99 100 pss anon file shmem
+)
+
+review_case_summary_statistics() (
+    local input="$self_test_tmp/statistics-input.json" output="$self_test_tmp/statistics-output.json"
+    jq -n '{manifest: {}, scenarios: [{
+      name: "stats", source: "pr", requested_state: "closed", duration_seconds: 6,
+      valid: true, invalid_reasons: [], pss: null, starts: [], calibration: {valid: true},
+      qsg: {status: "unavailable", raw_log: "qsg.log"},
+      samples: [
+        {elapsed_seconds: 1, cpu_one_core_percent: 10, own_cpu_one_core_percent: 0, child_cpu_one_core_percent: 10},
+        {elapsed_seconds: 1, cpu_one_core_percent: 20, own_cpu_one_core_percent: 10, child_cpu_one_core_percent: 10},
+        {elapsed_seconds: 2, cpu_one_core_percent: 20, own_cpu_one_core_percent: 20, child_cpu_one_core_percent: 0},
+        {elapsed_seconds: 2, cpu_one_core_percent: 30, own_cpu_one_core_percent: 30, child_cpu_one_core_percent: 0}
+      ]
+    }]}' > "$input"
+    jq -f "$script_dir/summarize-ollama.jq" "$input" > "$output"
+    jq -e '
+      .scenarios[0].cpu.p50_one_core_percent == 20 and
+      .scenarios[0].cpu.p95_one_core_percent == 30 and
+      ((.scenarios[0].cpu.whole_window_own_one_core_percent - 18.333333) | fabs < 0.00001) and
+      ((.scenarios[0].cpu.whole_window_child_one_core_percent - 3.333333) | fabs < 0.00001)
+    ' "$output" >/dev/null
+)
+
+review_case_calibration_invalidates_run() (
+    local input="$self_test_tmp/invalid-run-input.json" output="$self_test_tmp/invalid-run-output.json"
+    local scenario="$self_test_tmp/invalid-scenario.json"
+    jq -n '{manifest: {}, scenarios: [{name: "bad", source: "pr", requested_state: "closed",
+      duration_seconds: 1, valid: true, invalid_reasons: [], samples: [], starts: [], pss: null,
+      calibration: {valid: false, expected: 6, observed: 5}, qsg: {status: "unavailable"}}]}' > "$input"
+    jq -f "$script_dir/summarize-ollama.jq" "$input" > "$output"
+    jq -e '.valid == false and .observed_calibration[0].observed == 5' "$output" >/dev/null
+    jq '.scenarios[0]' "$input" > "$scenario"
+    [[ "$(type -t scenario_results_valid)" == function ]] || return 1
+    ! scenario_results_valid "$scenario" "$scenario" "$scenario" "$scenario"
+)
+
+review_case_manifest_records_calibration() (
+    RUN_OUTPUT="$self_test_tmp/manifest-fault"
+    mkdir -p "$RUN_OUTPUT"
+    RUN_MAIN_REF=main RUN_MAIN_SHA=0000000000000000000000000000000000000000
+    RUN_PR_REF=pr RUN_PR_SHA=1111111111111111111111111111111111111111
+    RUN_CREATED=now RUN_BOOT_ID=boot RUN_KERNEL=kernel RUN_BASE_DURATION=1
+    RUN_WARMUP_SECONDS=0 RUN_QSG_SECONDS=1 ACTIVE_BAR_PID=1 ACTIVE_BAR_STARTTIME=2
+    RUN_CALIBRATION_JSON='[{"scenario":"bad","valid":false,"observed":5}]'
+    write_manifest failed
+    jq -e '.observed_calibration[0].observed == 5' "$RUN_OUTPUT/manifest.json" >/dev/null
+)
+
+review_case_qsg_validity() (
+    local directory="$self_test_tmp/qsg-result"
+    [[ "$(type -t write_qsg_result)" == function ]] || return 1
+    mkdir -p "$directory"
+    printf 'qt.scenegraph.time.render: 1 ms\n' > "$directory/qsg.log"
+    ! write_qsg_result "$directory" false true
+    jq -e '.valid == false and .status == "unavailable"' "$directory/result.json" >/dev/null
+    ! write_qsg_result "$directory" true false
+    jq -e '.valid == false and .status == "unavailable"' "$directory/result.json" >/dev/null
+)
+
+review_case_qsg_premature_process() (
+    local directory="$self_test_tmp/qsg-premature"
+    qs() {
+        if [[ "${1:-}" == --no-color ]]; then
+            printf 'qt.scenegraph.time.render: 1 ms\n'
+            read -r -t 0.05 -u "$wait_fd" _ || true
+        elif [[ "$*" == *'prop get ollama enabled' ]]; then
+            printf 'true\n'
+        elif [[ "$*" == *'prop get ollama panelVisible' ]]; then
+            printf 'true\n'
+        else
+            return 0
+        fi
+    }
+    RUN_BAR_PID=""
+    RUN_BAR_STARTTIME=""
+    ! run_qsg_diagnostic "$self_test_tmp" true open "$directory" 1
+    jq -e '.valid == false and .status == "unavailable" and
+      (.invalid_reasons | index("diagnostic process exited prematurely")) != null' \
+      "$directory/result.json" >/dev/null
+)
+
+self_test_review_findings() {
+    local name failures=0
+    local -a cases=(
+        stop_retains_identity
+        stop_retains_unidentified_pid
+        term_escalates_to_kill
+        launch_identity_failure_stops_child
+        restore_blocked_by_live_run
+        cleanup_finalizes_and_preserves_status
+        ipc_exact_readback
+        monitor_boundaries
+        empty_cmdline_seed
+        utf8_argv
+        pss_identity_recheck
+        summary_statistics
+        calibration_invalidates_run
+        manifest_records_calibration
+        qsg_validity
+        qsg_premature_process
+    )
+    for name in "${cases[@]}"; do
+        if "review_case_$name"; then
+            printf 'review fault %s: PASS\n' "$name"
+        else
+            printf 'review fault %s: FAIL\n' "$name" >&2
+            failures=$((failures + 1))
+        fi
+    done
+    ((failures == 0))
+}
+
 self_test() {
     local before after
     command -v jq >/dev/null || die "self-test requires jq"
@@ -959,6 +1397,7 @@ self_test() {
     self_test_sampler
     self_test_start_monitor
     self_test_orchestration_helpers
+    self_test_review_findings
 
     after="$(bar_identities)"
     [[ "$after" == "$before" ]] || die "active Quickshell process identity changed during self-test"
@@ -966,6 +1405,7 @@ self_test() {
     printf 'CPU/PSS sampling: PASS\n'
     printf '5ms/20ms start calibration: PASS\n'
     printf 'cache/archive isolation: PASS\n'
+    printf 'review fault injection: PASS\n'
     printf 'active bar unchanged: PASS (%s)\n' "${before:-none}"
     printf 'self-test: PASS\n'
 }

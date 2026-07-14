@@ -1,3 +1,15 @@
+def nearest_rank($values; $percentile):
+  ($values | sort) as $sorted
+  | if ($sorted | length) == 0 then null
+    else $sorted[((($sorted | length) * $percentile | ceil) - 1)]
+    end;
+
+def weighted_cpu($samples; $field):
+  ($samples | map(.elapsed_seconds) | add) as $elapsed
+  | if $elapsed == 0 then null
+    else ($samples | map(.elapsed_seconds * .[$field]) | add) / $elapsed
+    end;
+
 def cpu_summary($samples):
   if ($samples | length) == 0 then
     {
@@ -5,7 +17,16 @@ def cpu_summary($samples):
       elapsed_seconds: 0,
       mean_one_core_percent: null,
       min_one_core_percent: null,
-      max_one_core_percent: null
+      max_one_core_percent: null,
+      p50_one_core_percent: null,
+      p95_one_core_percent: null,
+      own_p50_one_core_percent: null,
+      own_p95_one_core_percent: null,
+      child_p50_one_core_percent: null,
+      child_p95_one_core_percent: null,
+      whole_window_one_core_percent: null,
+      whole_window_own_one_core_percent: null,
+      whole_window_child_one_core_percent: null
     }
   else
     {
@@ -13,7 +34,16 @@ def cpu_summary($samples):
       elapsed_seconds: ($samples | map(.elapsed_seconds) | add),
       mean_one_core_percent: ($samples | map(.cpu_one_core_percent) | add / length),
       min_one_core_percent: ($samples | map(.cpu_one_core_percent) | min),
-      max_one_core_percent: ($samples | map(.cpu_one_core_percent) | max)
+      max_one_core_percent: ($samples | map(.cpu_one_core_percent) | max),
+      p50_one_core_percent: nearest_rank(($samples | map(.cpu_one_core_percent)); 0.50),
+      p95_one_core_percent: nearest_rank(($samples | map(.cpu_one_core_percent)); 0.95),
+      own_p50_one_core_percent: nearest_rank(($samples | map(.own_cpu_one_core_percent)); 0.50),
+      own_p95_one_core_percent: nearest_rank(($samples | map(.own_cpu_one_core_percent)); 0.95),
+      child_p50_one_core_percent: nearest_rank(($samples | map(.child_cpu_one_core_percent)); 0.50),
+      child_p95_one_core_percent: nearest_rank(($samples | map(.child_cpu_one_core_percent)); 0.95),
+      whole_window_one_core_percent: weighted_cpu($samples; "cpu_one_core_percent"),
+      whole_window_own_one_core_percent: weighted_cpu($samples; "own_cpu_one_core_percent"),
+      whole_window_child_one_core_percent: weighted_cpu($samples; "child_cpu_one_core_percent")
     }
   end;
 
@@ -65,18 +95,21 @@ def scenario_summary:
       pss: pss_summary($pss),
       process_starts: start_summary($starts),
       calibration: (.calibration // {valid: false, expected: 0, observed: 0}),
-      qsg: (if (.qsg.status // "unavailable") == "available" then
-              .qsg
-            else
-              {status: "unavailable", timing_line_count: null, raw_log: .qsg.raw_log}
-            end)
+      qsg: ({valid: true, status: "unavailable", timing_line_count: null,
+             invalid_reasons: [], raw_log: null} + (.qsg // {}))
     };
 
 if . == null then
-  {manifest: null, scenarios: []}
+  {valid: false, manifest: null, observed_calibration: [], scenarios: []}
 else
+  . as $input
+  |
   {
-    manifest: (.manifest // null),
-    scenarios: [(.scenarios // [])[] | scenario_summary]
+    valid: (($input.manifest.valid == true) and all(($input.scenarios // [])[];
+      (.valid == true and .calibration.valid == true))),
+    manifest: ($input.manifest // null),
+    observed_calibration: [($input.scenarios // [])[]
+      | {scenario: .name} + (.calibration // {valid: false, expected: 0, observed: 0})],
+    scenarios: [($input.scenarios // [])[] | scenario_summary]
   }
 end

@@ -56,24 +56,28 @@ made read-only. The mutable worktree is never launched.
 Before mutation, the runner records the active bar's NUL-delimited argv,
 configuration selector, PID, and starttime. It also validates and backs up the
 widget cache. EXIT, INT, and TERM traps stop only PID/starttime identities owned
-by the run, restore the cache byte-for-byte, and relaunch the original argv.
+by the run, escalating from bounded TERM to bounded KILL and retaining identity
+until death is verified. Only then do they restore the cache byte-for-byte and
+relaunch the original argv. Finalization records the restoration outcome and
+original exit status before regenerating summaries and checksums.
 Ambiguous bars, unknown cache schemas, missing caches, and active pulls abort
 before the live bar is stopped.
 
-PR state transitions use the `ollama open` and `ollama close` IPC methods. A
-successful IPC dispatch and the cache's enabled field are verified before each
-window. Current production IPC does not expose panel visibility as a readable
-property, so the harness cannot independently inspect that internal boolean.
+PR state transitions use the `ollama open` and `ollama close` IPC methods. Before
+every primary and QSG window, the harness reads the live `ollama.enabled` and
+`ollama.panelVisible` IPC properties and requires exact boolean matches. The main
+baseline instead requires the Ollama IPC target to be absent.
 
 ## Artifacts
 
 - `manifest.json`: resolved SHAs, timing, host boot ID, monitor calibration, and
-  restoration status
+  observed calibration, top-level validity/exit status, and restoration outcome
 - `sources/{main,pr}/source.tar`: retained immutable git archives
 - `sources/{main,pr}/source/`: read-only extracted sources
 - `safety/`: original bar argv/config/PID and widget-cache backup
 - `scenarios/*/cpu-samples.jsonl`: one record per interval, using real
-  `/proc/uptime` elapsed time and one-core CPU percentage
+  `/proc/uptime` elapsed time, own/child/total jiffy deltas, and own/child/total
+  one-core CPU percentages
 - `scenarios/*/pss.json`: before/after `Pss`, `Pss_Anon`, `Pss_File`, and
   `Pss_Shmem` from `smaps_rollup`
 - `scenarios/*/starts.jsonl`: observed descendant identities, argv, curl
@@ -83,13 +87,21 @@ property, so the harness cannot independently inspect that internal boolean.
 - `summary.json`: deterministic aggregates for all scenarios
 - `checksums.sha256`: SHA-256 checksums for every regular artifact file
 
+The sampler publishes start/stop markers around the CPU/PSS window. The process
+monitor compares field-22 starttime against the shared start boundary and makes
+a final tail scan after the stop marker.
+
 QSG timing is `unavailable` when the raw log has no recognized timing lines; it
-is never reported as zero. A calibrated monitor result with no records is
+is never reported as zero. A state mismatch or premature diagnostic process exit
+invalidates the QSG pass and scenario even when timing text exists. A calibrated
+monitor result with no records is
 reported as `zero observed starts`. Polling can miss a process that starts and
 exits between scans, so this wording is observation, not mathematical proof
 that no process started.
 
 CPU percentages include `utime`, `stime`, `cutime`, and `cstime`, and are scaled
-so 100% means one fully occupied core. PSS is a boundary measurement, not a
+so 100% means one fully occupied core. Summaries include nearest-rank p50/p95
+interval values and elapsed-weighted whole-window own, child, and total CPU. PSS
+is a boundary measurement, not a
 continuous memory trace. Results remain sensitive to compositor load, GPU
 driver state, filesystem caches, and unrelated host activity.
