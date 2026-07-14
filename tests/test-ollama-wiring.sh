@@ -202,6 +202,8 @@ assert_contains versions/V1/modules/OllamaWidget.qml 'visible: !root.compactOlla
 assert_contains versions/V1/modules/OllamaWidget.qml 'source: Qt.resolvedUrl("../assets/ollama.svg")'
 
 assert_contains versions/V1/shell.qml 'target: "ollama"'
+assert_contains versions/V1/shell.qml 'readonly property bool enabled: theme.ollama.enabled'
+assert_contains versions/V1/shell.qml 'readonly property bool panelVisible: theme.ollamaVisible'
 assert_contains versions/V1/shell.qml 'function open(): void { if (theme.ollama.enabled) theme.ollamaVisible = true }'
 assert_contains versions/V1/shell.qml 'function close(): void { theme.ollamaVisible = false }'
 assert_contains versions/V1/shell.qml 'function refresh(): void { if (theme.ollama.enabled) theme.ollama.refreshAll() }'

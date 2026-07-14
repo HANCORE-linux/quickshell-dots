@@ -32,6 +32,8 @@ ShellRoot {
 
     IpcHandler {
         target: "ollama"
+        readonly property bool enabled: theme.ollama.enabled
+        readonly property bool panelVisible: theme.ollamaVisible
         function open(): void { if (theme.ollama.enabled) theme.ollamaVisible = true }
         function close(): void { theme.ollamaVisible = false }
         function refresh(): void { if (theme.ollama.enabled) theme.ollama.refreshAll() }
