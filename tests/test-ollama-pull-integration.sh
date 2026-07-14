@@ -8,41 +8,20 @@ fixture_port_file="$fixture_root/port"
 fixture_script="$fixture_root/server.py"
 fixture_pid=""
 config_path="$repo_root/tests/fixtures/OllamaPullIntegrationSmoke.qml"
-test_config_root="$fixture_root/test-config"
-test_config_path="$test_config_root/tests/fixtures/OllamaPullIntegrationSmoke.qml"
-runner_path="$test_config_root/versions/V1/FixtureRunner.qml"
+test_config_root="$fixture_root/tests/fixtures"
+test_config_path="$test_config_root/OllamaPullIntegrationSmoke.qml"
 
-mkdir -p "$test_config_root/tests/fixtures" "$test_config_root/versions/V1/modules"
+mkdir -p "$test_config_root/modules"
 cp "$config_path" "$test_config_path"
 cp "$repo_root/versions/V1/modules/OllamaData.qml" \
     "$repo_root/versions/V1/modules/OllamaDataLogic.js" \
-    "$test_config_root/versions/V1/modules/"
+    "$test_config_root/modules/"
 
 cleanup() {
     [[ -n "$fixture_pid" ]] && kill "$fixture_pid" 2>/dev/null || true
     rm -rf "$fixture_root"
 }
 trap cleanup EXIT
-
-cat >"$runner_path" <<'QML'
-import QtQuick
-import Quickshell
-import "modules"
-
-ShellRoot {
-    property var fixture
-
-    Component.onCompleted: {
-        var component = Qt.createComponent(Quickshell.env("QML_FIXTURE_PATH"))
-        if (component.status !== Component.Ready) {
-            console.error(component.errorString())
-            Qt.quit()
-            return
-        }
-        fixture = component.createObject(null)
-    }
-}
-QML
 
 cat >"$fixture_script" <<'PY'
 import http.server
@@ -141,10 +120,9 @@ run_case() {
     local output status=0
     output="$(mktemp)"
     if timeout --kill-after=1s 20s env QT_QPA_PLATFORM=offscreen \
-        QML_FIXTURE_PATH="$test_config_path" \
         OLLAMA_PULL_TEST_CASE="$mode" \
         OLLAMA_PULL_TEST_URL="http://127.0.0.1:$(<"$fixture_port_file")" \
-        qs --no-color -p "$runner_path" >"$output" 2>&1; then
+        qs --no-color -p "$test_config_path" >"$output" 2>&1; then
         status=0
     else
         status=$?
