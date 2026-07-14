@@ -13,9 +13,11 @@ Item {
     property string version: ""
     property var installedModels: []
     property var loadedModels: []
-    property int gpuPercent: -1
-    property var gpuHistory: []
-    readonly property int gpuMaxSamples: 30
+    readonly property alias gpuPercent: gpuSampler.percent
+    readonly property alias gpuHistory: gpuSampler.history
+    readonly property alias gpuProviderKind: gpuSampler.providerKind
+    readonly property alias gpuProviderState: gpuSampler.providerState
+    readonly property int gpuMaxSamples: gpuSampler.maxSamples
     property bool busy: false
     property string pendingAction: ""
     property string pendingModel: ""
@@ -216,6 +218,7 @@ Item {
         refreshVersion()
         refreshTags()
         refreshLoaded()
+        refreshGpu()
     }
 
     function refreshVersion() {
@@ -247,8 +250,9 @@ Item {
     }
 
     function refreshGpu() {
-        if (gpuProc.running) return
-        gpuProc.running = true
+        if (gpuSampler.providerState === "unavailable"
+                || gpuSampler.providerState === "undetected") gpuSampler.redetect()
+        else gpuSampler.sampleNow()
     }
 
     function loadModel(name) {
@@ -547,10 +551,19 @@ Item {
     }
 
     onEnabledChanged: {
-        if (enabled) refreshAll()
-        else loadedTimerRefreshPending = false
+        if (enabled) {
+            gpuSampler.activate()
+            refreshAll()
+        } else {
+            loadedTimerRefreshPending = false
+            gpuSampler.deactivate()
+        }
     }
-    onPanelVisibleChanged: if (!panelVisible) loadedTimerRefreshPending = false
+    onPanelVisibleChanged: {
+        if (!panelVisible) loadedTimerRefreshPending = false
+        if (panelVisible) gpuSampler.panelOpened()
+        else gpuSampler.panelClosed()
+    }
     Component.onCompleted: if (enabled) refreshAll()
 
     Process {
@@ -713,29 +726,8 @@ Item {
         }
     }
 
-    Process {
-        id: gpuProc
-        command: [
-            "bash", "-c",
-            "{ command -v nvidia-smi &>/dev/null && "
-            + "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null; } ; "
-            + "for card in /sys/class/drm/card[0-9]*/device/gpu_busy_percent; do "
-            + "[ -r \"$card\" ] && cat \"$card\"; "
-            + "done; "
-            + "for hwmon in /sys/class/hwmon/hwmon[0-9]*/device/gpu_busy_percent; do "
-            + "[ -r \"$hwmon\" ] && cat \"$hwmon\"; "
-            + "done"
-        ]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var value = OllamaDataLogic.maxGpuPercent(this.text)
-                ollama.gpuPercent = value
-                var h = ollama.gpuHistory.slice()
-                h.push(value < 0 ? 0 : value / 100)
-                if (h.length > ollama.gpuMaxSamples) h.shift()
-                ollama.gpuHistory = h
-            }
-        }
+    OllamaGpuSampler {
+        id: gpuSampler
     }
 
     FileView {
@@ -1042,11 +1034,4 @@ Item {
         onTriggered: ollama.refreshLoaded(true)
     }
 
-    Timer {
-        interval: ollama.panelVisible ? 2000 : 15000
-        running: ollama.enabled
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: ollama.refreshGpu()
-    }
 }

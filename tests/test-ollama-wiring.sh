@@ -27,7 +27,8 @@ shopt -u dotglob globstar nullglob
 for runner in \
     tests/test_OllamaData_native.sh \
     tests/test-ollama-pull-integration.sh \
-    tests/test-ollama-lifecycle-integration.sh; do
+    tests/test-ollama-lifecycle-integration.sh \
+    tests/test-ollama-gpu-integration.sh; do
     ! grep -Eq "versions/V1/[^[:space:]\"']*(FixtureRunner|fixture-runner|Smoke)[^[:space:]\"']*\\.qml" "$repo_root/$runner" || {
         printf 'test runner creates fixture root in production payload: %s\n' "$runner" >&2
         exit 1
@@ -41,7 +42,8 @@ done
 for fixture in \
     tests/fixtures/OllamaDataSmoke.qml \
     tests/fixtures/OllamaPullIntegrationSmoke.qml \
-    tests/fixtures/OllamaLifecycleSmoke.qml; do
+    tests/fixtures/OllamaLifecycleSmoke.qml \
+    tests/fixtures/OllamaGpuSmoke.qml; do
     grep -Fxq 'import "modules"' "$repo_root/$fixture" || {
         printf 'test fixture must use local modules: %s\n' "$fixture" >&2
         exit 1
@@ -241,7 +243,20 @@ assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"
 assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Open Ollama config file"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.openRuntimeConfig()'
 assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running'
-assert_contains versions/V1/modules/OllamaData.qml 'OllamaDataLogic.maxGpuPercent'
+assert_contains versions/V1/modules/OllamaData.qml 'OllamaGpuSampler {'
+assert_contains versions/V1/modules/OllamaData.qml 'readonly property alias gpuProviderKind: gpuSampler.providerKind'
+assert_contains versions/V1/modules/OllamaData.qml 'readonly property alias gpuProviderState: gpuSampler.providerState'
+assert_contains versions/V1/modules/OllamaData.qml 'gpuSampler.sampleNow()'
+assert_not_contains versions/V1/modules/OllamaData.qml 'id: gpuProc'
+assert_not_contains versions/V1/modules/OllamaData.qml 'command -v nvidia-smi'
+assert_not_contains versions/V1/modules/OllamaData.qml 'cat "$card"'
+assert_contains versions/V1/modules/OllamaGpuSampler.qml 'FileView {'
+assert_contains versions/V1/modules/OllamaGpuSampler.qml 'nvidiaSmiExecutable,'
+assert_contains versions/V1/modules/OllamaGpuSampler.qml '"--query-gpu=index,utilization.gpu"'
+assert_contains versions/V1/modules/OllamaGpuSampler.qml '"--format=csv,noheader,nounits"'
+assert_contains versions/V1/modules/OllamaGpuSampler.qml '"--loop-ms=" + cadence'
+assert_not_contains versions/V1/modules/OllamaGpuSampler.qml '"bash"'
+assert_not_contains versions/V1/modules/OllamaGpuSampler.qml '"cat"'
 assert_contains versions/V1/modules/OllamaWidget.qml 'text: "GPU max"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'enabled: !root.ollama.refreshRunning'
 assert_contains versions/V1/panels/OllamaPanel.qml 'opacity: refreshMa.enabled ? 1 : 0.35'

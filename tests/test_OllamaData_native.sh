@@ -14,6 +14,8 @@ cp "$config_path" "$test_config_path"
 cp "$repo_root/versions/V1/modules/OllamaData.qml" \
     "$repo_root/versions/V1/modules/OllamaDataLogic.js" \
     "$repo_root/versions/V1/modules/OllamaPullLogic.js" \
+    "$repo_root/versions/V1/modules/OllamaGpuSampler.qml" \
+    "$repo_root/versions/V1/modules/OllamaGpuLogic.js" \
     "$test_config_root/modules/"
 ln -s "$(type -P true)" "$launcher_dir/omarchy-launch-floating-terminal-with-presentation"
 printf '%s\n' '{"keepAlive":"30m","numCtx":null,"dirty":true}' > "$home/.cache/qs-ollama-config.json"
