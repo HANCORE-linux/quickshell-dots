@@ -1,0 +1,8 @@
+  INFO: Launching config: "/tmp/opencode/task12-fixture-tmp/tmp.KIPmhC30hS/tests/fixtures/OllamaGpuSmoke.qml"
+  INFO: Shell ID: "14df4c1325ee8626f7db9f2f673f3078" Path ID "14df4c1325ee8626f7db9f2f673f3078"
+  INFO: Saving logs to "/run/user/1000/quickshell/by-id/kkj4xt96it/log.qslog"
+  WARN: --- WARNING ---
+  WARN: WAYLAND_DISPLAY is present but QT_QPA_PLATFORM is "offscreen"
+  WARN: If you are actually running wayland, set QT_QPA_PLATFORM to "wayland" or most functionality will be broken.
+  INFO: Configuration Loaded
+ DEBUG qml: OLLAMA_GPU_PASS: hardware-amd

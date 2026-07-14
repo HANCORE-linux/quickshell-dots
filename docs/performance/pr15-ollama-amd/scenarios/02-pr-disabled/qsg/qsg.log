@@ -1,0 +1,59 @@
+2026-07-14 17:53:38.634  INFO: Launching config: "/tmp/opencode/.task-12-full-run.work.ZJkTiQ/sources/pr/source/versions/V1/shell.qml"
+2026-07-14 17:53:38.634  INFO: Shell ID: "4d00d4b891dc1a9fd8cf1360193bd574" Path ID "4d00d4b891dc1a9fd8cf1360193bd574"
+2026-07-14 17:53:38.634  INFO: Saving logs to "/run/user/1000/quickshell/by-id/8194eh96it/log.qslog"
+2026-07-14 17:53:38.684 DEBUG qt.scenegraph.general: threaded render loop
+2026-07-14 17:53:38.684 DEBUG qt.scenegraph.general: Using sg animation driver
+2026-07-14 17:53:38.684 DEBUG qt.scenegraph.general: Animation Driver: using vsync: 6.94 ms
+2026-07-14 17:53:39.050  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "enabledChanged"
+2026-07-14 17:53:39.050  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "panelVisibleChanged"
+2026-07-14 17:53:39.052  INFO: Configuration Loaded
+2026-07-14 17:53:39.082 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][gui thread] polishAndSync: start, elapsed since last call: 3 ms
+2026-07-14 17:53:39.082 DEBUG qt.scenegraph.general: Animation Driver: using vsync: 6.94 ms
+2026-07-14 17:53:39.082 DEBUG qt.scenegraph.general: Creating QRhi with backend OpenGL for window 0x7f2cdb8fcff0 (wflags 0x1)
+  Graphics API debug/validation layers: 0
+  Debug markers: 0
+  Timestamps: 0
+  Prefer software device: 0
+  Shader/pipeline cache collection: 1
+2026-07-14 17:53:39.084 DEBUG qt.rhi.general: Created OpenGL context QSurfaceFormat(version 4.6, options QFlags<QSurfaceFormat::FormatOption>(DeprecatedFunctions|ResetNotification), depthBufferSize 24, redBufferSize 8, greenBufferSize 8, blueBufferSize 8, alphaBufferSize 8, stencilBufferSize 8, samples 0, swapBehavior QSurfaceFormat::DefaultSwapBehavior, swapInterval 1, colorSpace QColorSpace(), profile  QSurfaceFormat::CompatibilityProfile)
+2026-07-14 17:53:39.087 DEBUG qt.rhi.general: OpenGL VENDOR: AMD RENDERER: AMD Radeon RX 6700 XT (radeonsi, navi22, ACO, DRM 3.64, 7.1.3-2-cachyos) VERSION: 4.6 (Compatibility Profile) Mesa 26.1.4-arch1.1
+2026-07-14 17:53:39.087 DEBUG qt.scenegraph.general: Created QRhi 0x7f2cd720c008 for window 0x7f2cdb8fcff0
+2026-07-14 17:53:39.087 DEBUG qt.scenegraph.general: Attempting to seed pipeline cache for QRhi 0x7f2cd720c008 from '/home/alarisco/.cache/quickshell/qtpipelinecache-x86_64-little_endian-lp64/qqpc_opengl'
+2026-07-14 17:53:39.088 DEBUG qt.rhi.general: Seeded pipeline cache with 11 program binaries
+2026-07-14 17:53:39.088 DEBUG qt.scenegraph.general: MSAA sample count for the swapchain is 1. Alpha channel requested = yes.
+2026-07-14 17:53:39.088 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: start, elapsed since last call: 5 ms
+2026-07-14 17:53:39.088 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: frame rendered in 0ms, sync=0, render=0, swap=0
+2026-07-14 17:53:39.088 DEBUG qt.scenegraph.general: rhi texture atlas dimensions: 4096x2048
+2026-07-14 17:53:39.088 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: start, elapsed since last call: 0 ms
+2026-07-14 17:53:39.097 DEBUG qt.scenegraph.time.glyph: distancefield: 1 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.097 DEBUG qt.scenegraph.time.glyph: distancefield: 2 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.098 DEBUG qt.scenegraph.time.glyph: distancefield: 19 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.098 DEBUG qt.scenegraph.time.glyph: distancefield: 12 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.098 DEBUG qt.scenegraph.time.glyph: distancefield: 1 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.098 DEBUG qt.scenegraph.time.glyph: distancefield: 1 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.099 DEBUG qt.scenegraph.time.renderer: time in renderer: total=0ms, preprocess=0, updates=0, rendering=0
+2026-07-14 17:53:39.101 DEBUG qt.scenegraph.time.renderer: time in renderer: total=2ms, preprocess=0, updates=0, rendering=1
+2026-07-14 17:53:39.107 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: frame rendered in 18ms, sync=8, render=4, swap=6
+2026-07-14 17:53:39.107 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][gui thread] Frame prepared, polish=0 ms, lock=0 ms, blockedForSync=24 ms, animations=0 ms
+2026-07-14 17:53:39.180 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][gui thread] polishAndSync: start, elapsed since last call: 97 ms
+2026-07-14 17:53:39.181 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: start, elapsed since last call: 93 ms
+2026-07-14 17:53:39.182 DEBUG qt.scenegraph.time.glyph: distancefield: 1 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.182 DEBUG qt.scenegraph.time.glyph: distancefield: 2 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.182 DEBUG qt.scenegraph.time.glyph: distancefield: 1 glyphs prepared in 0ms, rendering=0, upload=0
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][gui thread] Frame prepared, polish=0 ms, lock=0 ms, blockedForSync=1 ms, animations=0 ms
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979933ms (18x18)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979933ms (48x48)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (656x192)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (549x230)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (605x231)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (80x24)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (16x14)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (6x8)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (36x14)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (16x16)
+2026-07-14 17:53:39.183 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (16x16)
+2026-07-14 17:53:39.184 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (36x14)
+2026-07-14 17:53:39.184 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (22x14)
+2026-07-14 17:53:39.184 DEBUG qt.scenegraph.time.texture: atlastexture upload enqueued in: -9223362979932ms (36x14)
+2026-07-14 17:53:39.184 DEBUG qt.scenegraph.time.renderer: time in renderer: total=1ms, preprocess=0, updates=0, rendering=1
+2026-07-14 17:53:39.187 DEBUG qt.scenegraph.time.renderloop: [window 0x7f2cdb8fcff0][render thread 0x7f2cdb806e40] syncAndRender: frame rendered in 5ms, sync=1, render=1, swap=3

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "valid_benchmark": true,
+  "refs": {
+    "main": "5fde51ed3ecb16039c96cd259a94c440ac702deb",
+    "pr": "d34ae8217d86f4d4ea9167ae122c0bf9a75358b7"
+  },
+  "scenarios": [
+    {
+      "name": "01-main",
+      "duration_seconds": 120,
+      "warmup_seconds": 30,
+      "sample_count": 120,
+      "cpu": {
+        "own_p50_one_core_percent": 4.950495,
+        "own_p95_one_core_percent": 5.940594,
+        "whole_window_own_one_core_percent": 4.611069829415156,
+        "whole_window_own_delta_vs_main_percentage_points": 0,
+        "child_p50_one_core_percent": 2.970297,
+        "child_p95_one_core_percent": 14.851485,
+        "whole_window_child_one_core_percent": 4.231625795265187,
+        "whole_window_child_delta_vs_main_percentage_points": 0,
+        "live_descendant_supplement": "unavailable"
+      },
+      "pss_kib": {"before": 156947, "after": 148900, "delta": -8047, "delta_percent": -5.127208548108597},
+      "process_starts": {"total": 245, "by_attribution": {"curl": 2, "other": 243}, "ollama_api_curl": 0, "nvidia_smi": 0, "gpu_detector_bash": 0},
+      "qsg": {"status": "available", "timing_line_count": 5240}
+    },
+    {
+      "name": "02-pr-disabled",
+      "duration_seconds": 120,
+      "warmup_seconds": 30,
+      "sample_count": 120,
+      "cpu": {
+        "own_p50_one_core_percent": 4.950495,
+        "own_p95_one_core_percent": 6.930693,
+        "whole_window_own_one_core_percent": 4.800791844510424,
+        "whole_window_own_delta_vs_main_percentage_points": 0.18972201509526787,
+        "child_p50_one_core_percent": 2.970297,
+        "child_p95_one_core_percent": 13.861386,
+        "whole_window_child_one_core_percent": 4.371855102449878,
+        "whole_window_child_delta_vs_main_percentage_points": 0.14022930718469073,
+        "live_descendant_supplement": "unavailable"
+      },
+      "pss_kib": {"before": 168482, "after": 167824, "delta": -658, "delta_percent": -0.3905461711043316},
+      "process_starts": {"total": 254, "by_attribution": {"curl": 2, "other": 252}, "ollama_api_curl": 0, "nvidia_smi": 0, "gpu_detector_bash": 0},
+      "qsg": {"status": "available", "timing_line_count": 36}
+    },
+    {
+      "name": "03-pr-enabled-closed",
+      "duration_seconds": 120,
+      "warmup_seconds": 30,
+      "sample_count": 120,
+      "cpu": {
+        "own_p50_one_core_percent": 0,
+        "own_p95_one_core_percent": 0.990099,
+        "whole_window_own_one_core_percent": 0.2557333747731391,
+        "whole_window_own_delta_vs_main_percentage_points": -4.355336454642017,
+        "child_p50_one_core_percent": 2.970297,
+        "child_p95_one_core_percent": 14.851485,
+        "whole_window_child_one_core_percent": 4.322718973354221,
+        "whole_window_child_delta_vs_main_percentage_points": 0.09109317808903405,
+        "live_descendant_supplement": "unavailable"
+      },
+      "pss_kib": {"before": 156512, "after": 155375, "delta": -1137, "delta_percent": -0.7264618687384993},
+      "process_starts": {"total": 259, "by_attribution": {"curl": 2, "other": 257}, "ollama_api_curl": 0, "nvidia_smi": 0, "gpu_detector_bash": 0},
+      "qsg": {"status": "available", "timing_line_count": 36}
+    },
+    {
+      "name": "04-pr-enabled-open",
+      "duration_seconds": 60,
+      "warmup_seconds": 30,
+      "sample_count": 60,
+      "cpu": {
+        "own_p50_one_core_percent": 0,
+        "own_p95_one_core_percent": 0.990099,
+        "whole_window_own_one_core_percent": 0.31347961821481607,
+        "whole_window_own_delta_vs_main_percentage_points": -4.2975902112003395,
+        "child_p50_one_core_percent": 2.970297,
+        "child_p95_one_core_percent": 13.861386,
+        "whole_window_child_one_core_percent": 4.520706106418086,
+        "whole_window_child_delta_vs_main_percentage_points": 0.28908031115289834,
+        "live_descendant_supplement": "unavailable"
+      },
+      "pss_kib": {"before": 160390, "after": 157902, "delta": -2488, "delta_percent": -1.5512189039216908},
+      "process_starts": {"total": 134, "by_attribution": {"curl": 7, "other": 127}, "ollama_api_curl": 6, "nvidia_smi": 0, "gpu_detector_bash": 0},
+      "qsg": {"status": "available", "timing_line_count": 50}
+    }
+  ],
+  "flags": [
+    {
+      "kind": "disabled_own_cpu_delta",
+      "observed_percentage_points": 0.18972201509526787,
+      "review_trigger_percentage_points": 0.10,
+      "message": "PR-disabled whole-window own CPU exceeded main by more than 0.10 percentage point."
+    }
+  ],
+  "gpu": {
+    "provider": "amdgpu-sysfs",
+    "source_driver": "amdgpu",
+    "source_readable": true,
+    "observed_nvidia_smi_starts": 0,
+    "observed_recurring_gpu_attributed_bash_cat_starts": 0,
+    "working_nvidia_fixture": {"status": "pass", "starts": 2, "cadences_ms": [120, 40]},
+    "broken_nvidia_fixture": {"status": "pass", "stable_display": "N/A", "starts": 2},
+    "no_source_fixture": {"status": "pass", "stable_display": "N/A", "nvidia_smi_starts": 0}
+  },
+  "limitations": [
+    "NVIDIA behavior was validated only with deterministic fixtures. No NVIDIA GPU was available on the benchmark machine, so working and broken NVIDIA behavior could not be tested on real hardware.",
+    "The committed sampler reports parent own CPU and reaped-child cutime/cstime, but not live-descendant CPU; the requested live-descendant supplement is unavailable and must not be interpreted as zero.",
+    "The committed harness produced and validated 120/120/120/60 interval rows, while the task brief expected 121/121/121/61; no rows were synthesized."
+  ]
+}

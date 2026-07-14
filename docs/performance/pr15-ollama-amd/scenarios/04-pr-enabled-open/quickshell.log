@@ -1,0 +1,32 @@
+2026-07-14 17:56:42.401  INFO: Launching config: "/tmp/opencode/.task-12-full-run.work.ZJkTiQ/sources/pr/source/versions/V1/shell.qml"
+2026-07-14 17:56:42.401  INFO: Shell ID: "4d00d4b891dc1a9fd8cf1360193bd574" Path ID "4d00d4b891dc1a9fd8cf1360193bd574"
+2026-07-14 17:56:42.401  INFO: Saving logs to "/run/user/1000/quickshell/by-id/mjd4im96it/log.qslog"
+2026-07-14 17:56:42.814  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "enabledChanged"
+2026-07-14 17:56:42.814  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "panelVisibleChanged"
+2026-07-14 17:56:42.816  INFO: Configuration Loaded
+target ollama
+  function close(): void
+  function refresh(): void
+  function open(): void
+  property panelVisible: bool
+  property enabled: bool
+  signal enabledChanged()
+  signal panelVisibleChanged()
+target theme
+  function apply(payload: string): void
+  function applyLauncher(payload: string): void
+  function reload(): void
+target omarchy.system-update
+  function refresh(): void
+target layout
+  function unlock(): void
+  function lock(): void
+target picker
+  function theme(): void
+  function wallpaper(): void
+  function videos(): void
+  function screenshots(): void
+target reactor
+  function clear(): void
+  function test(kind: string, arg: string): void
+  function monsweep(): void
