@@ -4,9 +4,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 theme="$repo_root/versions/V1/Theme.qml"
 
-for fixture in OllamaDataSmoke.qml OllamaPullIntegrationSmoke.qml; do
-    [[ ! -e "$repo_root/versions/V1/$fixture" ]] || {
-        printf 'test fixture shipped in production payload: %s\n' "$fixture" >&2
+for fixture in \
+    "$repo_root/versions/V1/OllamaDataSmoke.qml" \
+    "$repo_root/versions/V1/OllamaPullIntegrationSmoke.qml" \
+    "$repo_root"/versions/V1/.fixture-runner.*.qml; do
+    [[ ! -e "$fixture" ]] || {
+        printf 'test fixture shipped in production payload: %s\n' "${fixture##*/}" >&2
+        exit 1
+    }
+done
+
+for runner in tests/test_OllamaData_native.sh tests/test-ollama-pull-integration.sh; do
+    ! grep -Fq 'versions/V1/.fixture-runner.' "$repo_root/$runner" || {
+        printf 'test runner creates fixture root in production payload: %s\n' "$runner" >&2
         exit 1
     }
 done
