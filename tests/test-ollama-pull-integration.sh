@@ -66,6 +66,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             time.sleep(0.4)
             self.reply('{"models":[]}')
             return
+        if mode == "late-response" and tags == 1:
+            time.sleep(0.4)
+            self.reply('{"models":[{"name":"fixture:model","details":{}}]}')
+            return
         visible = (
             mode in ("success", "retry")
             or (mode == "delayed" and tags >= 3)
@@ -158,4 +162,5 @@ run_case delayed-125s
 run_case timeout
 run_case retry
 run_case reconcile-cancel
+run_case late-response
 printf '%s\n' "ollama pull integration: PASS"

@@ -10,6 +10,7 @@ ShellRoot {
     property bool cancelRequested: false
     property bool sawFinalizing: false
     property bool retryStarted: false
+    property bool deadlineAdvanced: false
     property bool finished: false
 
     QtObject {
@@ -72,6 +73,12 @@ ShellRoot {
                 testRoot.fail("reconciliation did not continue after cancel: " + data.pullState)
             }
 
+            if (testRoot.testCase === "late-response" && data.pullState === "reconciling"
+                    && data.pullReconcileAttempts > 0 && !testRoot.deadlineAdvanced) {
+                testRoot.deadlineAdvanced = true
+                testClock.virtualNowMs = data.pullReconcileDeadlineAtMs
+            }
+
             if ((testRoot.testCase === "delayed" || testRoot.testCase === "success")
                     && data.pullState === "success") {
                 if (!testRoot.sawFinalizing) testRoot.fail("success skipped finalizing")
@@ -96,6 +103,20 @@ ShellRoot {
             if (testRoot.testCase === "timeout" && data.pullState === "failed") {
                 if (data.pullError.indexOf("finalization") < 0)
                     testRoot.fail("timeout was not a finalization error")
+                else if (testClock.virtualNowMs < 180000)
+                    testRoot.fail("timeout occurred before 180000 logical ms")
+                else testRoot.pass()
+            }
+
+            if (testRoot.testCase === "late-response" && data.pullState === "success") {
+                testRoot.fail("response arriving at the deadline revived success")
+            } else if (testRoot.testCase === "late-response" && data.pullState === "failed") {
+                if (!testRoot.deadlineAdvanced)
+                    testRoot.fail("late response failed before the clock reached the deadline")
+                else if (testClock.virtualNowMs < 180000)
+                    testRoot.fail("late response failed before 180000 logical ms")
+                else if (data.installedModels.length !== 0)
+                    testRoot.fail("late response committed models after the deadline")
                 else testRoot.pass()
             }
 
@@ -117,7 +138,7 @@ ShellRoot {
     Component.onCompleted: {
         if (data.hasOwnProperty("reconciliationClock")
                 && (testCase === "delayed-125s" || testCase === "timeout"
-                    || testCase === "reconcile-cancel")) {
+                    || testCase === "reconcile-cancel" || testCase === "late-response")) {
             data.reconciliationClock = testClock
         }
         data.pullModel(modelName)

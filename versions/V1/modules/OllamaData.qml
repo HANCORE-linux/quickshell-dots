@@ -556,8 +556,8 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 tagsProc.streamDone = true
-                ollama.applyTags(this.text, tagsProc.refreshEpoch, tagsProc.pullAttempt)
                 ollama.handlePullTags(tagsProc.pullAttempt, this.text, tagsProc.refreshEpoch)
+                ollama.applyTags(this.text, tagsProc.refreshEpoch, tagsProc.pullAttempt)
             }
         }
         onExited: {
@@ -920,6 +920,10 @@ Item {
     function handlePullTags(attempt, raw, requestEpoch) {
         if (attempt !== pullAttempt || pullState !== "reconciling") return
         if (requestEpoch !== refreshEpoch) return
+        if (reconciliationClock.nowMs() >= pullReconcileDeadlineAtMs) {
+            failPullReconciliation()
+            return
+        }
         var visible = false
         var models = null
         try {
@@ -936,6 +940,8 @@ Item {
         } catch (error) {}
         if (visible) {
             installedModels = models
+            tagsConnected = true
+            tagsError = ""
             pullState = "success"
             pullStatus = "Done"
             pullError = ""
