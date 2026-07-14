@@ -484,11 +484,8 @@ cleanup_run() {
     restore_environment || restoration_ok=false
     if [[ "$restoration_ok" == false && "$status" == 0 ]]; then status=1; fi
     RUN_FINAL_STATUS="$status"
-    if ! finalize_run_artifacts; then
-        [[ "$status" != 0 ]] || status=1
-        RUN_FINAL_STATUS="$status"
-    fi
-    exit "$status"
+    finalize_run_artifacts || true
+    exit "$RUN_FINAL_STATUS"
 }
 
 wait_seconds_for_identity() {
@@ -891,10 +888,11 @@ run_scenario() {
 }
 
 write_manifest() {
-    local restoration="$1" tmp="$RUN_OUTPUT/manifest.json.tmp"
+    local restoration="$1" destination="${2:-$RUN_OUTPUT/manifest.json}"
+    local tmp="${destination}.tmp" output="${RUN_PUBLISH_OUTPUT:-$RUN_OUTPUT}"
     if ! jq -n --arg main_ref "$RUN_MAIN_REF" --arg main_sha "$RUN_MAIN_SHA" \
         --arg pr_ref "$RUN_PR_REF" --arg pr_sha "$RUN_PR_SHA" \
-        --arg output "$RUN_OUTPUT" --arg created "$RUN_CREATED" \
+        --arg output "$output" --arg created "$RUN_CREATED" \
         --arg boot_id "$RUN_BOOT_ID" --arg kernel "$RUN_KERNEL" \
         --arg restoration "$restoration" --argjson duration "$RUN_BASE_DURATION" \
         --argjson observed_calibration "${RUN_CALIBRATION_JSON:-[]}" \
@@ -916,7 +914,7 @@ write_manifest() {
         return 1
     fi
     jq -e . "$tmp" >/dev/null 2>&1 || { rm -f -- "$tmp"; return 1; }
-    mv -f -- "$tmp" "$RUN_OUTPUT/manifest.json"
+    mv -f -- "$tmp" "$destination"
 }
 
 write_checksums() {
@@ -926,7 +924,8 @@ write_checksums() {
         shopt -s globstar nullglob
         for file in **/*; do
             [[ -f "$file" && "$file" != checksums.sha256 \
-                && "$file" != checksums.sha256.tmp ]] || continue
+                && "$file" != checksums.sha256.tmp \
+                && "$file" != .finalize.*/* ]] || continue
             sha256sum -- "$file"
         done | LC_ALL=C sort
     ) > "$tmp"; then
@@ -934,6 +933,73 @@ write_checksums() {
         return 1
     fi
     mv -f -- "$tmp" "$RUN_OUTPUT/checksums.sha256"
+}
+
+write_finalization_errors() {
+    local destination="$1" tmp
+    tmp="${destination}.tmp"
+    shift
+    if ! printf '%s\n' "$@" | jq -Rsc 'split("\n") | map(select(length > 0))' \
+            > "$tmp" 2>/dev/null; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+    jq -e 'type == "array"' "$tmp" >/dev/null 2>&1 || {
+        rm -f -- "$tmp"
+        return 1
+    }
+    mv -f -- "$tmp" "$destination"
+}
+
+finalize_fault_once() {
+    local fault="$1"
+    [[ "${RUN_FINALIZE_FAULT:-}" == "$fault" ]] || return 1
+    RUN_FINALIZE_FAULT=""
+}
+
+publish_run_directory() {
+    [[ "${RUN_OUTPUT_PUBLISHED:-0}" == 0 ]] || return 0
+    [[ -n "${RUN_PUBLISH_OUTPUT:-}" && "$RUN_OUTPUT" != "$RUN_PUBLISH_OUTPUT" ]] || return 1
+    [[ ! -e "$RUN_PUBLISH_OUTPUT" && ! -L "$RUN_PUBLISH_OUTPUT" ]] || return 1
+    mv -T -- "$RUN_OUTPUT" "$RUN_PUBLISH_OUTPUT" || return 1
+    RUN_OUTPUT="$RUN_PUBLISH_OUTPUT"
+    RUN_OUTPUT_PUBLISHED=1
+}
+
+publish_failure_artifacts() {
+    local stage
+    RUN_VALID=false
+    rm -f -- "$RUN_OUTPUT/manifest.json" "$RUN_OUTPUT/results.json" \
+        "$RUN_OUTPUT/summary.json" "$RUN_OUTPUT/finalization-errors.json" \
+        "$RUN_OUTPUT/checksums.sha256" "$RUN_OUTPUT"/*.tmp
+    rm -rf -- "$RUN_OUTPUT"/.finalize.*
+    stage="$(mktemp -d "$RUN_OUTPUT/.finalize-failure.XXXXXX")" || return 1
+    if finalize_fault_once failure-metadata; then
+        rm -rf -- "$stage"
+        return 1
+    fi
+    if ! write_manifest "${RUN_RESTORATION_OUTCOME:-not_attempted}" "$stage/manifest.json" \
+            || ! write_finalization_errors "$stage/finalization-errors.json" \
+                "${RUN_FINALIZATION_ERRORS[@]}" \
+            || ! jq -e '.valid == false and .exit_status != 0' \
+                "$stage/manifest.json" >/dev/null 2>&1 \
+            || ! jq -e 'type == "array" and length > 0' \
+                "$stage/finalization-errors.json" >/dev/null 2>&1; then
+        rm -rf -- "$stage"
+        return 1
+    fi
+    mv -f -- "$stage/manifest.json" "$RUN_OUTPUT/manifest.json" || {
+        rm -rf -- "$stage"
+        return 1
+    }
+    mv -f -- "$stage/finalization-errors.json" \
+        "$RUN_OUTPUT/finalization-errors.json" || {
+        rm -f -- "$RUN_OUTPUT/manifest.json"
+        rm -rf -- "$stage"
+        return 1
+    }
+    rmdir "$stage" || return 1
+    publish_run_directory
 }
 
 scenario_results_valid() {
@@ -944,10 +1010,17 @@ scenario_results_valid() {
 
 finalize_run_artifacts() {
     local -a scenario_files=()
-    local file calibration_json results_tmp="$RUN_OUTPUT/results.json.tmp"
-    local summary_tmp="$RUN_OUTPUT/summary.json.tmp" manifest_ok=false results_ok=false
+    local file calibration_json stage preparation_failed=false
     ((RUN_FINALIZED == 0)) || return 0
     RUN_FINALIZATION_ERRORS=()
+    stage="$(mktemp -d "$RUN_OUTPUT/.finalize.XXXXXX")" || {
+        RUN_FINALIZATION_ERRORS+=(staging)
+        [[ "${RUN_FINAL_STATUS:-0}" != 0 ]] || RUN_FINAL_STATUS=1
+        if ! publish_failure_artifacts; then
+            return 1
+        fi
+        return 1
+    }
     for file in "$RUN_OUTPUT"/scenarios/*/result.json; do
         [[ -f "$file" ]] && scenario_files+=("$file")
     done
@@ -976,55 +1049,93 @@ finalize_run_artifacts() {
         RUN_VALID=false
         RUN_FINALIZATION_ERRORS+=(calibration-jq)
     fi
-    if write_manifest "${RUN_RESTORATION_OUTCOME:-not_attempted}"; then
-        manifest_ok=true
-    else
-        RUN_FINALIZATION_ERRORS+=(manifest)
+    ((${#RUN_FINALIZATION_ERRORS[@]} == 0)) || preparation_failed=true
+    if [[ "$preparation_failed" == false ]]; then
+        if finalize_fault_once manifest \
+                || ! write_manifest "${RUN_RESTORATION_OUTCOME:-not_attempted}" \
+                    "$stage/manifest.json"; then
+            RUN_FINALIZATION_ERRORS+=(manifest)
+            preparation_failed=true
+        fi
     fi
-    if [[ "$manifest_ok" == true && ${#scenario_files[@]} -gt 0 \
-            && " ${RUN_FINALIZATION_ERRORS[*]} " != *scenario-json:* ]]; then
-        if jq -s --slurpfile manifest "$RUN_OUTPUT/manifest.json" \
+    if [[ "$preparation_failed" == false ]]; then
+        if finalize_fault_once results || ! jq -s --slurpfile manifest "$stage/manifest.json" \
             '{manifest: $manifest[0], scenarios: .}' "${scenario_files[@]}" \
-            > "$results_tmp" 2>/dev/null \
-                && jq -e . "$results_tmp" >/dev/null 2>&1 \
-                && mv -f -- "$results_tmp" "$RUN_OUTPUT/results.json"; then
-            results_ok=true
-        else
-            rm -f -- "$results_tmp"
-            RUN_FINALIZATION_ERRORS+=(results-jq)
+                > "$stage/results.json.tmp" 2>/dev/null \
+                || ! jq -e . "$stage/results.json.tmp" >/dev/null 2>&1 \
+                || ! mv -f -- "$stage/results.json.tmp" "$stage/results.json"; then
+            rm -f -- "$stage/results.json.tmp"
+            RUN_FINALIZATION_ERRORS+=(results)
+            preparation_failed=true
         fi
-    else
-        RUN_FINALIZATION_ERRORS+=(results-jq)
     fi
-    if [[ "$results_ok" == true ]]; then
-        if jq -f "$script_dir/summarize-ollama.jq" "$RUN_OUTPUT/results.json" \
-                > "$summary_tmp" 2>/dev/null \
-                && jq -e . "$summary_tmp" >/dev/null 2>&1 \
-                && mv -f -- "$summary_tmp" "$RUN_OUTPUT/summary.json"; then
-            :
-        else
-            rm -f -- "$summary_tmp"
-            RUN_FINALIZATION_ERRORS+=(summary-jq)
+    if [[ "$preparation_failed" == false ]]; then
+        if finalize_fault_once summary \
+                || ! jq -f "$script_dir/summarize-ollama.jq" "$stage/results.json" \
+                    > "$stage/summary.json.tmp" 2>/dev/null \
+                || ! jq -e --argjson status "${RUN_FINAL_STATUS:-0}" \
+                    '.manifest.exit_status == $status and .valid == .manifest.valid' \
+                    "$stage/summary.json.tmp" >/dev/null 2>&1 \
+                || ! mv -f -- "$stage/summary.json.tmp" "$stage/summary.json"; then
+            rm -f -- "$stage/summary.json.tmp"
+            RUN_FINALIZATION_ERRORS+=(summary)
+            preparation_failed=true
         fi
-    else
-        RUN_FINALIZATION_ERRORS+=(summary-jq)
     fi
-    printf '%s\n' "${RUN_FINALIZATION_ERRORS[@]}" | \
-        jq -Rsc 'split("\n") | map(select(length > 0))' \
-        > "$RUN_OUTPUT/finalization-errors.json" 2>/dev/null || \
-        RUN_FINALIZATION_ERRORS+=(finalization-errors-write)
-    write_checksums || RUN_FINALIZATION_ERRORS+=(checksums)
-    if ((${#RUN_FINALIZATION_ERRORS[@]})); then
-        printf '%s\n' "${RUN_FINALIZATION_ERRORS[@]}" | \
-            jq -Rsc 'split("\n") | map(select(length > 0))' \
-            > "$RUN_OUTPUT/finalization-errors.json" 2>/dev/null || true
+    if [[ "$preparation_failed" == false ]]; then
+        if finalize_fault_once error-report \
+                || ! write_finalization_errors "$stage/finalization-errors.json"; then
+            RUN_FINALIZATION_ERRORS+=(error-report)
+            preparation_failed=true
+        fi
+    fi
+    if [[ "$preparation_failed" == false ]]; then
+        for file in manifest.json results.json summary.json finalization-errors.json; do
+            jq -e . "$stage/$file" >/dev/null 2>&1 || {
+                RUN_FINALIZATION_ERRORS+=("json-validation:$file")
+                preparation_failed=true
+            }
+        done
+    fi
+    if [[ "$preparation_failed" == false ]]; then
+        rm -f -- "$RUN_OUTPUT/manifest.json" "$RUN_OUTPUT/results.json" \
+            "$RUN_OUTPUT/summary.json" "$RUN_OUTPUT/finalization-errors.json" \
+            "$RUN_OUTPUT/checksums.sha256"
+        for file in manifest.json results.json summary.json finalization-errors.json; do
+            mv -f -- "$stage/$file" "$RUN_OUTPUT/$file" || {
+                RUN_FINALIZATION_ERRORS+=("install:$file")
+                preparation_failed=true
+                break
+            }
+        done
+    fi
+    rm -rf -- "$stage"
+    if [[ "$preparation_failed" == false ]]; then
+        if finalize_fault_once checksums || ! write_checksums \
+                || ! (cd "$RUN_OUTPUT" && sha256sum -c checksums.sha256 >/dev/null 2>&1); then
+            RUN_FINALIZATION_ERRORS+=(checksums)
+            preparation_failed=true
+        fi
+    fi
+    if [[ "$preparation_failed" == false ]]; then
+        if publish_run_directory; then
+            RUN_FINALIZED=1
+            return 0
+        fi
+        RUN_FINALIZATION_ERRORS+=(publication)
+        preparation_failed=true
+    fi
+    if [[ "$preparation_failed" == true ]]; then
+        [[ "${RUN_FINAL_STATUS:-0}" != 0 ]] || RUN_FINAL_STATUS=1
+        if ! publish_failure_artifacts; then
+            return 1
+        fi
         return 1
     fi
-    RUN_FINALIZED=1
 }
 
 run_benchmark() {
-    local repo_root parent output_arg open_duration
+    local repo_root parent output_arg output_name open_duration
     (($# == 3 || $# == 4)) || \
         die "usage: $0 run MAIN_REF PR_REF OUTPUT_DIR [BASE_DURATION_SECONDS]"
     RUN_MAIN_REF="$1"
@@ -1048,8 +1159,13 @@ run_benchmark() {
     [[ "$RUN_MAIN_SHA" != "$RUN_PR_SHA" ]] || die "main and PR refs resolve to the same commit"
     parent="$(dirname "$output_arg")"
     [[ -d "$parent" ]] || die "output parent does not exist: $parent"
-    mkdir "$output_arg" || die "output directory must not already exist"
-    RUN_OUTPUT="$(cd "$output_arg" && pwd -P)"
+    parent="$(cd "$parent" && pwd -P)"
+    output_name="$(basename "$output_arg")"
+    RUN_PUBLISH_OUTPUT="$parent/$output_name"
+    [[ ! -e "$RUN_PUBLISH_OUTPUT" && ! -L "$RUN_PUBLISH_OUTPUT" ]] || \
+        die "output directory must not already exist"
+    RUN_OUTPUT="$(mktemp -d "$parent/.${output_name}.work.XXXXXX")" || \
+        die "failed to create private output directory"
     mkdir -p "$RUN_OUTPUT/sources" "$RUN_OUTPUT/scenarios" "$RUN_OUTPUT/safety"
     RUN_CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     IFS= read -r RUN_BOOT_ID < /proc/sys/kernel/random/boot_id
@@ -1086,6 +1202,8 @@ run_benchmark() {
     RUN_RESTORED=0
     RUN_RESTORATION_OUTCOME=pending
     RUN_FINALIZED=0
+    RUN_OUTPUT_PUBLISHED=0
+    RUN_FINALIZE_FAULT=""
     RUN_VALID=false
     RUN_FINAL_STATUS=0
     RUN_CALIBRATION_JSON='[]'
@@ -1102,7 +1220,7 @@ run_benchmark() {
     run_scenario 03-pr-enabled-closed pr "$RUN_OUTPUT/sources/pr/source" 1 closed "$RUN_BASE_DURATION"
     run_scenario 04-pr-enabled-open pr "$RUN_OUTPUT/sources/pr/source" 1 open "$open_duration"
 
-    printf 'artifacts: %s\n' "$RUN_OUTPUT"
+    printf 'artifacts: %s\n' "$RUN_PUBLISH_OUTPUT"
     if ! scenario_results_valid "$RUN_OUTPUT"/scenarios/*/result.json; then
         return 1
     fi
@@ -1711,8 +1829,9 @@ review_case_signal_during_calibration_cleans_owned() (
 )
 
 review_setup_finalize_fixture() {
-    local directory="$1" index
-    RUN_OUTPUT="$directory"
+    local published="$1" index
+    RUN_PUBLISH_OUTPUT="$published"
+    RUN_OUTPUT="${published}.work"
     mkdir -p "$RUN_OUTPUT/scenarios"
     for index in 1 2 3 4; do
         mkdir -p "$RUN_OUTPUT/scenarios/$index"
@@ -1726,39 +1845,113 @@ review_setup_finalize_fixture() {
     RUN_WARMUP_SECONDS=0 RUN_QSG_SECONDS=1 ACTIVE_BAR_PID=1 ACTIVE_BAR_STARTTIME=2
     RUN_RESTORATION_OUTCOME=restored RUN_FINALIZED=0 RUN_FINAL_STATUS=0
     RUN_CALIBRATION_JSON='[]' RUN_VALID=false
+    RUN_OUTPUT_PUBLISHED=0 RUN_FINALIZE_FAULT=""
+    printf 'stale\n' > "$RUN_OUTPUT/results.json"
+    printf 'stale\n' > "$RUN_OUTPUT/summary.json"
+    printf 'stale\n' > "$RUN_OUTPUT/checksums.sha256"
 }
 
-review_case_finalize_truncated_json_aggregates_errors() (
-    local directory="$self_test_tmp/finalize-truncated"
-    review_setup_finalize_fixture "$directory"
-    printf '{"truncated":' > "$directory/scenarios/2/result.json"
-    ! finalize_run_artifacts
-    [[ "$RUN_FINALIZED" == 0 && " ${RUN_FINALIZATION_ERRORS[*]:-} " == *calibration* \
-        && " ${RUN_FINALIZATION_ERRORS[*]:-} " == *results* ]]
+review_assert_failure_publication() {
+    local published="$1" expected_error="$2" expected_status="$3"
+    [[ -d "$published" ]] || return 1
+    jq -e --argjson status "$expected_status" \
+        '.valid == false and .exit_status == $status' "$published/manifest.json" >/dev/null || return 1
+    jq -e --arg expected "$expected_error" \
+        'length > 0 and any(.[]; contains($expected))' \
+        "$published/finalization-errors.json" >/dev/null || return 1
+    jq -e . "$published/manifest.json" "$published/finalization-errors.json" >/dev/null || return 1
+    [[ -f "$published/scenarios/1/result.json" ]] || return 1
+    [[ ! -e "$published/results.json" && ! -e "$published/summary.json" \
+        && ! -e "$published/checksums.sha256" ]]
+}
+
+review_run_finalize_fault() (
+    local published="$1" fault="$2" initial_status="$3"
+    review_setup_finalize_fixture "$published"
+    RUN_FINALIZE_FAULT="$fault"
+    restore_environment() { RUN_RESTORATION_OUTCOME=restored; return 0; }
+    cleanup_run "$initial_status"
 )
 
-review_case_finalize_checksum_failure_normal_cleanup() (
-    local directory="$self_test_tmp/finalize-checksum-normal" status=0
+review_case_finalize_success_transaction() {
+    local published="$self_test_tmp/finalize-success" status=0
+    review_run_finalize_fault "$published" "" 0 || status=$?
+    [[ "$status" == 0 && -d "$published" && ! -e "${published}.work" ]] || return 1
+    jq -e '.valid == true and .exit_status == 0' "$published/manifest.json" >/dev/null || return 1
+    jq -e '.valid == true and .manifest.exit_status == 0' "$published/summary.json" >/dev/null || return 1
+    jq -e 'length == 0' "$published/finalization-errors.json" >/dev/null || return 1
+    (cd "$published" && sha256sum -c checksums.sha256 >/dev/null 2>&1)
+}
+
+review_case_finalize_malformed_scenario_transaction() {
+    local published="$self_test_tmp/finalize-malformed" status=0
     (
-        review_setup_finalize_fixture "$directory"
+        review_setup_finalize_fixture "$published"
+        printf '{"truncated":' > "$RUN_OUTPUT/scenarios/2/result.json"
         restore_environment() { RUN_RESTORATION_OUTCOME=restored; return 0; }
-        write_checksums() { return 1; }
         cleanup_run 0
     ) || status=$?
-    [[ "$status" != 0 ]]
-)
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" scenario-json 1
+}
 
-review_case_finalize_write_failure_signal_cleanup() (
-    local directory="$self_test_tmp/finalize-write-signal" status=0
+review_case_finalize_error_report_failure_transaction() {
+    local published="$self_test_tmp/finalize-error-report" status=0
+    review_run_finalize_fault "$published" error-report 0 || status=$?
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" error-report 1
+}
+
+review_case_finalize_manifest_failure_transaction() {
+    local published="$self_test_tmp/finalize-manifest" status=0
+    review_run_finalize_fault "$published" manifest 0 || status=$?
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" manifest 1
+}
+
+review_case_finalize_results_failure_transaction() {
+    local published="$self_test_tmp/finalize-results" status=0
+    review_run_finalize_fault "$published" results 0 || status=$?
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" results 1
+}
+
+review_case_finalize_summary_failure_transaction() {
+    local published="$self_test_tmp/finalize-summary" status=0
+    review_run_finalize_fault "$published" summary 0 || status=$?
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" summary 1
+}
+
+review_case_finalize_checksum_failure_transaction() {
+    local published="$self_test_tmp/finalize-checksum" status=0
+    review_run_finalize_fault "$published" checksums 0 || status=$?
+    [[ "$status" == 1 ]] && review_assert_failure_publication "$published" checksums 1
+}
+
+review_case_finalize_checksum_failure_signal_cleanup() {
+    local published="$self_test_tmp/finalize-checksum-signal" status=0
+    review_run_finalize_fault "$published" checksums 143 || status=$?
+    [[ "$status" == 143 ]] && review_assert_failure_publication "$published" checksums 143
+}
+
+review_case_finalize_metadata_failures_signal_cleanup() {
+    local fault published status
+    for fault in error-report manifest results summary; do
+        published="$self_test_tmp/finalize-${fault}-signal"
+        status=0
+        review_run_finalize_fault "$published" "$fault" 143 || status=$?
+        [[ "$status" == 143 ]] || return 1
+        review_assert_failure_publication "$published" "$fault" 143 || return 1
+    done
+}
+
+review_case_finalize_failure_metadata_fail_closed() {
+    local published="$self_test_tmp/finalize-metadata-closed" status=0
     (
-        review_setup_finalize_fixture "$directory"
+        review_setup_finalize_fixture "$published"
+        printf '{"truncated":' > "$RUN_OUTPUT/scenarios/2/result.json"
+        RUN_FINALIZE_FAULT=failure-metadata
         restore_environment() { RUN_RESTORATION_OUTCOME=restored; return 0; }
-        write_manifest() { return 1; }
-        cleanup_run 143
+        cleanup_run 0
     ) || status=$?
-    [[ "$status" == 143 && -f "$directory/finalization-errors.json" ]] &&
-        jq -e 'index("manifest") != null' "$directory/finalization-errors.json" >/dev/null
-)
+    [[ "$status" == 1 && ! -e "$published" ]]
+}
 
 self_test_review_findings() {
     local name failures=0
@@ -1783,9 +1976,16 @@ self_test_review_findings() {
         qsg_stop_failure_prevents_overwrite
         monitor_capture_and_stop_failure_owned
         signal_during_calibration_cleans_owned
-        finalize_truncated_json_aggregates_errors
-        finalize_checksum_failure_normal_cleanup
-        finalize_write_failure_signal_cleanup
+        finalize_success_transaction
+        finalize_malformed_scenario_transaction
+        finalize_error_report_failure_transaction
+        finalize_manifest_failure_transaction
+        finalize_results_failure_transaction
+        finalize_summary_failure_transaction
+        finalize_checksum_failure_transaction
+        finalize_checksum_failure_signal_cleanup
+        finalize_metadata_failures_signal_cleanup
+        finalize_failure_metadata_fail_closed
     )
     for name in "${cases[@]}"; do
         if "review_case_$name"; then

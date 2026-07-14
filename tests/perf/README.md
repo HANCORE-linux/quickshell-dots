@@ -47,9 +47,12 @@ For smoke testing only, `OLLAMA_PERF_WARMUP_SECONDS` and
 `OLLAMA_PERF_QSG_SECONDS` override the recorded warm-up and diagnostic lengths.
 Do not use overrides for reportable benchmark results.
 
-The output directory must not exist. Both refs are resolved once to commit SHAs,
-retained as `git archive` tar files, extracted under the artifact directory, and
-made read-only. The mutable worktree is never launched.
+The output directory must not exist. The run is built in a private sibling
+directory and the requested path remains absent until cleanup atomically renames
+one complete success or failure directory into place. Both refs are resolved
+once to commit SHAs, retained as `git archive` tar files, extracted under the
+private artifact directory, and made read-only. The mutable worktree is never
+launched.
 
 ## Safety
 
@@ -98,6 +101,12 @@ baseline instead requires the Ollama IPC target to be absent.
   or skipped scenario validation, calibration jq, manifest, results, summary,
   error-report, or checksum operations
 
+A finalization failure publishes raw diagnostics plus only an invalid, nonzero
+`manifest.json` and nonempty `finalization-errors.json`. It deliberately omits
+`results.json`, `summary.json`, and `checksums.sha256`. If those failure metadata
+files cannot both be written and validated, the requested output path remains
+absent and the private directory is retained for local recovery.
+
 The sampler publishes start/stop markers around the CPU/PSS window. The process
 monitor compares field-22 starttime against the shared start boundary and makes
 a final tail scan after the stop marker.
@@ -117,9 +126,11 @@ is a boundary measurement, not a
 continuous memory trace. Results remain sensitive to compositor load, GPU
 driver state, filesystem caches, and unrelated host activity.
 
-Artifact finalization does not rely on Bash `errexit`: each scenario JSON parse,
-calibration aggregation, manifest write, results aggregation, summary write, and
-checksum write is checked explicitly and uses an atomic temporary file where
-applicable. `RUN_FINALIZED` is published only when every operation succeeds. A
-finalization failure promotes an otherwise successful exit to nonzero while an
-existing failure or signal status is preserved.
+Artifact finalization does not rely on Bash `errexit`. It prepares manifest,
+results, summary, error-report, and checksum candidates privately, validates all
+JSON and verifies the checksum set against that private generation, then
+publishes the whole run with one directory rename. `finalization-errors.json`
+always uses a checked temporary-file rename. `RUN_FINALIZED` is set only after
+complete success. A preparation failure discards success candidates, regenerates
+failure metadata with `valid=false` and the final nonzero status, and preserves
+an existing failure or signal status.
