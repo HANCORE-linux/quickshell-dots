@@ -2,6 +2,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../modules"
+import "ollama"
+import "ollama/OllamaPanelLayout.js" as OllamaPanelLayout
 
 PanelWindow {
     id: ollamaPanel
@@ -394,52 +396,24 @@ PanelWindow {
                             visible: ollamaPanel.confirmDeleteModel !== modelData.name
                         }
 
-                        Rectangle {
+                        OllamaDeleteButton {
                             id: modelDelete
                             anchors.right: modelReload.visible ? modelReload.left : modelAction.left
                             anchors.rightMargin: 8
-                            anchors.top: parent.top
-                            anchors.topMargin: 15
-                            width: 28
-                            height: 28
-                            radius: root.tileRadius
-                            color: !delMa.enabled ? root.fillIdle
-                                : delMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
-                            border.color: delMa.containsMouse ? root.seal : root.sep
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            IconText {
-                                id: modelDeleteGlyph
-                                anchors.centerIn: parent
-                                width: 18
-                                height: 18
-                                text: "\uE872"
-                                color: !delMa.enabled ? root.sumi
-                                    : delMa.containsMouse ? root.paper : root.ink
-                                font.pixelSize: 14
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-
-                            MouseArea {
-                                id: delMa
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                hoverEnabled: enabled
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onEntered: modelDeleteTip.show()
-                                onExited: modelDeleteTip.hide()
-                                onEnabledChanged: if (!enabled) modelDeleteTip.hide()
-                                onClicked: ollamaPanel.confirmDelete(modelData.name)
-                            }
-                            TooltipMixin {
-                                id: modelDeleteTip
-                                root: ollamaPanel.root
-                                owner: modelDelete
-                                placement: "panel"
-                                text: "Delete model"
-                            }
+                            theme: root
+                            controlEnabled: !root.ollama.controlsLocked
+                            confirmationVisible: ollamaPanel.confirmDeleteModel === modelData.name
+                            onEntered: modelDeleteTip.show()
+                            onExited: modelDeleteTip.hide()
+                            onControlEnabledChanged: if (!controlEnabled) modelDeleteTip.hide()
+                            onClicked: ollamaPanel.confirmDelete(modelData.name)
+                        }
+                        TooltipMixin {
+                            id: modelDeleteTip
+                            root: ollamaPanel.root
+                            owner: modelDelete
+                            placement: "panel"
+                            text: "Delete model"
                         }
 
                         Rectangle {
@@ -447,8 +421,8 @@ PanelWindow {
                             visible: modelData.loaded
                             anchors.right: modelAction.left
                             anchors.rightMargin: 8
-                            anchors.top: parent.top
-                            anchors.topMargin: 15
+                            y: OllamaPanelLayout.modelActionY(
+                                ollamaPanel.confirmDeleteModel === modelData.name)
                             width: 28
                             height: 28
                             radius: root.tileRadius
@@ -492,8 +466,8 @@ PanelWindow {
                             id: modelAction
                             anchors.right: parent.right
                             anchors.rightMargin: 8
-                            anchors.top: parent.top
-                            anchors.topMargin: 15
+                            y: OllamaPanelLayout.modelActionY(
+                                ollamaPanel.confirmDeleteModel === modelData.name)
                             width: 50
                             height: 28
                             radius: root.tileRadius
@@ -771,50 +745,12 @@ PanelWindow {
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
                 // ── CONFIGURATION (collapsible) ──
-                Rectangle {
+                OllamaConfigurationToggle {
                     width: parent.width
-                    height: 28
-                    radius: root.tileRadius
-                    color: !configToggleMa.enabled ? root.fillIdle
-                        : configToggleMa.containsMouse ? root.fillHover : root.fillIdle
-                    border.color: !configToggleMa.enabled ? root.sep
-                        : configToggleMa.containsMouse ? root.seal : root.sep
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 120 } }
-
-                    Row {
-                        id: configurationHeadingGroup
-                        anchors.centerIn: parent
-                        spacing: 4
-
-                        UiText {
-                            id: configurationHeadingLabel
-                            text: "Configuration"
-                            color: !configToggleMa.enabled ? root.sumi
-                                : configToggleMa.containsMouse ? root.seal : root.ink
-                            font.family: root.mono
-                            font.pixelSize: 11
-                        }
-
-                        UiText {
-                            id: configurationDisclosureIndicator
-                            width: 12
-                            text: ollamaPanel.configOpen ? "▾" : "▸"
-                            color: !configToggleMa.enabled ? root.sumi
-                                : configToggleMa.containsMouse ? root.seal : root.ink
-                            font.family: root.mono
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignHCenter
-                        }
-                    }
-                    MouseArea {
-                        id: configToggleMa
-                        anchors.fill: parent
-                        enabled: !root.ollama.controlsLocked
-                        hoverEnabled: enabled
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
-                    }
+                    theme: root
+                    controlEnabled: !root.ollama.controlsLocked
+                    open: ollamaPanel.configOpen
+                    onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
                 }
 
                 Column {

@@ -1,5 +1,7 @@
 import QtQuick 2.15
 import QtTest 1.3
+import "../versions/V1/panels/ollama"
+import "../versions/V1/panels/ollama/OllamaPanelLayout.js" as PanelLayout
 
 TestCase {
     id: testCase
@@ -7,157 +9,148 @@ TestCase {
     when: windowShown
 
     width: 380
-    height: 120
+    height: 140
 
     property bool controlsLocked: false
-    property bool deleteHovered: false
     property bool confirmationVisible: false
     property bool configOpen: false
 
-    readonly property color paper: "#181616"
-    readonly property color ink: "#c5c9c5"
-    readonly property color sumi: "#8a8a82"
-    readonly property color fillIdle: "#222222"
-    readonly property color fillPrimaryHover: "#dc817a"
+    QtObject {
+        id: mockTheme
 
-    Rectangle {
-        id: deleteButton
-        objectName: "deleteButton"
-        x: 320
-        y: 15
-        width: 28
-        height: 28
-        color: testCase.controlsLocked ? testCase.fillIdle
-            : testCase.deleteHovered ? testCase.fillPrimaryHover : testCase.fillIdle
+        property color paper: "#181616"
+        property color ink: "#c5c9c5"
+        property color sumi: "#8a8a82"
+        property color seal: "#c4746e"
+        property color sep: "#555555"
+        property color fillHover: "#393939"
+        property color fillIdle: "#222222"
+        property color fillPrimaryHover: "#dc817a"
+        property int tileRadius: 6
+        property string mono: "monospace"
+    }
 
-        Text {
-            id: deleteGlyph
-            objectName: "deleteGlyph"
-            anchors.centerIn: parent
-            width: 18
-            height: 18
-            text: "\uE872"
-            color: testCase.controlsLocked ? testCase.sumi
-                : testCase.deleteHovered ? testCase.paper : testCase.ink
-            renderType: Text.QtRendering
-            font.family: "Material Symbols Rounded"
-            font.pixelSize: 14
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+    Item {
+        id: modelRow
+        width: parent.width
+        height: 86
+
+        OllamaDeleteButton {
+            id: deleteButton
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            theme: mockTheme
+            controlEnabled: !testCase.controlsLocked
+            confirmationVisible: testCase.confirmationVisible
         }
     }
 
-    Rectangle {
+    OllamaConfigurationToggle {
         id: configurationControl
-        objectName: "configurationControl"
-        y: 60
+        y: 96
         width: parent.width
-        height: 28
+        theme: mockTheme
+        controlEnabled: !testCase.controlsLocked
+        open: testCase.configOpen
+    }
 
-        Row {
-            id: configurationGroup
-            objectName: "configurationGroup"
-            anchors.centerIn: parent
-            spacing: 4
-
-            Text {
-                id: configurationLabel
-                objectName: "configurationLabel"
-                text: "Configuration"
-                font.family: "monospace"
-                font.pixelSize: 11
-            }
-
-            Text {
-                id: configurationIndicator
-                objectName: "configurationIndicator"
-                width: 12
-                text: testCase.configOpen ? "\u25BE" : "\u25B8"
-                font.family: "monospace"
-                font.pixelSize: 11
-                horizontalAlignment: Text.AlignHCenter
-            }
-        }
+    function child(parent, name) {
+        var item = findChild(parent, name)
+        verify(item !== null, "missing production control child: " + name)
+        return item
     }
 
     function init() {
         controlsLocked = false
-        deleteHovered = false
         confirmationVisible = false
         configOpen = false
+        deleteButton.hovered = false
+        configurationControl.hovered = false
     }
 
-    function test_deleteControlHasStableBoundsAndSemanticContrast() {
+    function test_actionRowYRemainsStableThroughConfirmation() {
+        compare(PanelLayout.modelActionY(false), 15)
+        compare(PanelLayout.modelActionY(true), 15)
+        compare(deleteButton.y, PanelLayout.modelActionY(false))
+        compare(deleteButton.confirmationVisible, false)
+
+        var closedY = deleteButton.y
+        confirmationVisible = true
+        compare(deleteButton.confirmationVisible, true)
+        compare(deleteButton.y, PanelLayout.modelActionY(true))
+        compare(deleteButton.y, closedY)
+    }
+
+    function test_deleteControlUsesStableBoundsAndSemanticContrast() {
+        var deleteGlyph = child(deleteButton, "modelDeleteGlyph")
+
         compare(deleteButton.width, 28)
         compare(deleteButton.height, 28)
         compare(deleteGlyph.width, 18)
         compare(deleteGlyph.height, 18)
         verify(deleteGlyph.paintedWidth <= deleteGlyph.width)
         verify(deleteGlyph.paintedHeight <= deleteGlyph.height)
-        compare(deleteButton.color, fillIdle)
-        compare(deleteGlyph.color, ink)
+        compare(deleteButton.color, mockTheme.fillIdle)
+        compare(deleteGlyph.color, mockTheme.ink)
 
-        var stableWidth = deleteButton.width
-        var stableHeight = deleteButton.height
-        var stableX = deleteButton.x
-        var stableY = deleteButton.y
-        var stableGlyphWidth = deleteGlyph.width
-        var stableGlyphHeight = deleteGlyph.height
-
-        deleteHovered = true
-        compare(deleteButton.color, fillPrimaryHover)
-        compare(deleteGlyph.color, paper)
-        compare(deleteButton.width, stableWidth)
-        compare(deleteButton.height, stableHeight)
-        compare(deleteButton.x, stableX)
-        compare(deleteButton.y, stableY)
-        compare(deleteGlyph.width, stableGlyphWidth)
-        compare(deleteGlyph.height, stableGlyphHeight)
+        var stableGeometry = Qt.rect(deleteButton.x, deleteButton.y,
+                                     deleteButton.width, deleteButton.height)
+        deleteButton.hovered = true
+        tryCompare(deleteButton, "color", mockTheme.fillPrimaryHover)
+        compare(deleteGlyph.color, mockTheme.paper)
+        compare(Qt.rect(deleteButton.x, deleteButton.y,
+                        deleteButton.width, deleteButton.height), stableGeometry)
 
         controlsLocked = true
-        compare(deleteButton.color, fillIdle)
-        compare(deleteGlyph.color, sumi)
-        compare(deleteButton.width, stableWidth)
-        compare(deleteButton.height, stableHeight)
-        compare(deleteButton.x, stableX)
-        compare(deleteButton.y, stableY)
+        tryCompare(deleteButton, "color", mockTheme.fillIdle)
+        compare(deleteGlyph.color, mockTheme.sumi)
+        compare(Qt.rect(deleteButton.x, deleteButton.y,
+                        deleteButton.width, deleteButton.height), stableGeometry)
 
         confirmationVisible = true
-        compare(deleteButton.width, stableWidth)
-        compare(deleteButton.height, stableHeight)
-        compare(deleteButton.x, stableX)
-        compare(deleteButton.y, stableY)
-        compare(deleteGlyph.width, stableGlyphWidth)
-        compare(deleteGlyph.height, stableGlyphHeight)
+        compare(Qt.rect(deleteButton.x, deleteButton.y,
+                        deleteButton.width, deleteButton.height), stableGeometry)
         verify(deleteGlyph.paintedWidth <= deleteGlyph.width)
         verify(deleteGlyph.paintedHeight <= deleteGlyph.height)
     }
 
-    function test_configurationHeadingRemainsCenteredWhenOpened() {
+    function test_configurationOpenAndHoverDoNotShiftHeading() {
+        var group = child(configurationControl, "configurationHeadingGroup")
+        var label = child(configurationControl, "configurationHeadingLabel")
+        var indicator = child(configurationControl,
+                              "configurationDisclosureIndicator")
+
         function groupCenter() {
-            return configurationGroup.mapToItem(configurationControl,
-                                                configurationGroup.width / 2,
-                                                configurationGroup.height / 2).x
+            return group.mapToItem(configurationControl,
+                                   group.width / 2, group.height / 2).x
         }
 
         var controlCenter = configurationControl.width / 2
-        verify(Math.abs(groupCenter() - controlCenter) <= 1)
         var closedCenter = groupCenter()
-        var closedGroupWidth = configurationGroup.width
-        var closedLabelX = configurationLabel.mapToItem(configurationControl, 0, 0).x
-        var indicatorWidth = configurationIndicator.width
+        var closedGroupWidth = group.width
+        var closedLabelX = label.mapToItem(configurationControl, 0, 0).x
+        var indicatorWidth = indicator.width
+        compare(indicator.text, "\u25B8")
+        verify(Math.abs(closedCenter - controlCenter) <= 1)
+
+        configurationControl.hovered = true
+        tryCompare(configurationControl, "color", mockTheme.fillHover)
+        compare(groupCenter(), closedCenter)
+        compare(group.width, closedGroupWidth)
+        compare(label.mapToItem(configurationControl, 0, 0).x, closedLabelX)
 
         configOpen = true
+        compare(indicator.text, "\u25BE")
+        verify(configurationControl.hovered)
         verify(Math.abs(groupCenter() - controlCenter) <= 1)
         compare(groupCenter(), closedCenter)
-        compare(configurationGroup.width, closedGroupWidth)
-        compare(configurationLabel.mapToItem(configurationControl, 0, 0).x,
-                closedLabelX)
-        compare(configurationIndicator.width, indicatorWidth)
+        compare(group.width, closedGroupWidth)
+        compare(label.mapToItem(configurationControl, 0, 0).x, closedLabelX)
+        compare(indicator.width, indicatorWidth)
 
         controlsLocked = true
         verify(Math.abs(groupCenter() - controlCenter) <= 1)
-        compare(configurationGroup.width, closedGroupWidth)
-        compare(configurationIndicator.width, indicatorWidth)
+        compare(group.width, closedGroupWidth)
+        compare(indicator.width, indicatorWidth)
     }
 }
