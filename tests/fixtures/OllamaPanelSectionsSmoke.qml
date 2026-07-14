@@ -72,8 +72,9 @@ ShellRoot {
         check(loadSignals === 1, "load action signal forwarded")
         check(ejectSignals === 1, "eject action signal forwarded")
         check(modelsSection.confirmDeleteModel === "", "model action clears confirmation")
-        check(fakeData.loadCalls === 0 && fakeData.ejectCalls === 0
-              && fakeData.deleteCalls === 0, "row or section mutated fake data")
+        check(fakeOperations.loadCalls === 0 && fakeOperations.ejectCalls === 0
+              && fakeOperations.deleteCalls === 0,
+              "row or section mutated operations directly")
 
         activateMouseArea("ollamaModelDeleteMouseArea")
         shortTimeoutCheck.start()
@@ -115,21 +116,6 @@ ShellRoot {
     QtObject {
         id: fakeOperations
 
-        property bool operationInProgress: false
-        property string operationMessage: ""
-        property bool busy: false
-        property string pendingModel: ""
-    }
-
-    QtObject {
-        id: fakeConfig
-
-        property var selectedNumCtx: null
-    }
-
-    QtObject {
-        id: fakeData
-
         property var models: [{
             name: "qwen3:8b",
             size: 8589934592,
@@ -139,32 +125,10 @@ ShellRoot {
         }]
         property bool controlsLocked: false
         property bool operationInProgress: false
-        property string pendingModel: ""
-        property string operationState: "idle"
-        property bool connected: true
-        property string version: "0.11.0"
-        property bool refreshRunning: false
-        property int gpuPercent: 42
-        property double loadedVramBytes: 4294967296
-        property var loadedModels: [{ name: "qwen3:8b" }]
-        property int effectiveContextLength: 8192
-        property var selectedNumCtx: null
-        property string keepAliveStatus: "5m"
         property string operationMessage: ""
+        property string operationState: "idle"
         property bool busy: false
-        property string displayError: ""
-        property var operations: fakeOperations
-        property var config: fakeConfig
-        property bool pullBusy: false
-        property string pullStatus: ""
-        property string pullProgressText: ""
-        property real pullProgress: 0
-        property bool pullCanCancel: false
-        property string pullResultText: ""
-        property string pullState: "idle"
-        property string selectedKeepAlive: "5m"
-        property bool configDirty: false
-        property bool dirty: false
+        property string pendingModel: ""
         property int loadCalls: 0
         property int ejectCalls: 0
         property int deleteCalls: 0
@@ -172,7 +136,48 @@ ShellRoot {
         function loadModel(name) { loadCalls += 1 }
         function ejectModel(name) { ejectCalls += 1 }
         function deleteModel(name) { deleteCalls += 1 }
+    }
+
+    QtObject {
+        id: fakeConfig
+
+        property string selectedKeepAlive: "5m"
+        property var selectedNumCtx: null
+        property bool dirty: false
+
         function parseContextInput(value) { return Number(value) }
+    }
+
+    QtObject {
+        id: fakePull
+
+        property bool controlsLocked: false
+        property bool pullBusy: false
+        property string pullStatus: ""
+        property string pullProgressText: ""
+        property real pullProgress: 0
+        property bool pullCanCancel: false
+        property string pullResultText: ""
+        property string pullState: "idle"
+    }
+
+    QtObject {
+        id: fakeData
+
+        property var models: fakeOperations.models
+        property bool controlsLocked: false
+        property bool connected: true
+        property string version: "0.11.0"
+        property bool refreshRunning: false
+        property int gpuPercent: 42
+        property double loadedVramBytes: 4294967296
+        property var loadedModels: [{ name: "qwen3:8b" }]
+        property int effectiveContextLength: 8192
+        property string keepAliveStatus: "5m"
+        property string displayError: ""
+        property var operations: fakeOperations
+        property var config: fakeConfig
+        property var pull: fakePull
     }
 
     Window {
@@ -200,7 +205,7 @@ ShellRoot {
             OllamaModelsSection {
                 id: modelsSection
                 root: theme
-                data: fakeData
+                data: fakeOperations
 
                 onLoadRequested: function(name) {
                     testRoot.loadSignals += 1
@@ -219,13 +224,13 @@ ShellRoot {
             OllamaPullSection {
                 id: pullSection
                 root: theme
-                data: fakeData
+                data: fakePull
             }
 
             OllamaConfigSection {
                 id: configSection
                 root: theme
-                data: fakeData
+                data: fakeConfig
                 controlsLocked: fakeData.controlsLocked
             }
         }
@@ -238,9 +243,12 @@ ShellRoot {
         onTriggered: {
             testRoot.check(modelsSection.confirmDeleteModel === "", "short timeout clears state")
             testRoot.check(testRoot.modelRow.height === 58, "short timeout restores row height")
-            testRoot.check(fakeData.loadCalls === 0, "section called data.loadModel directly")
-            testRoot.check(fakeData.ejectCalls === 0, "section called data.ejectModel directly")
-            testRoot.check(fakeData.deleteCalls === 0, "section called data.deleteModel directly")
+            testRoot.check(fakeOperations.loadCalls === 0,
+                           "section called operations.loadModel directly")
+            testRoot.check(fakeOperations.ejectCalls === 0,
+                           "section called operations.ejectModel directly")
+            testRoot.check(fakeOperations.deleteCalls === 0,
+                           "section called operations.deleteModel directly")
             testRoot.finish()
         }
     }

@@ -44,7 +44,6 @@ Item {
         pullState, pullError, pullElapsedSeconds)
 
     signal installedModelsAccepted(var models)
-    signal tagsFailureAccepted(string message)
     signal loadedRefreshRequested()
     signal refreshEpochInvalidationRequested()
     signal tagsRefreshResetRequested()
@@ -240,8 +239,6 @@ Item {
         }
         var response = decodeResponse(raw)
         if (!OllamaDataLogic.successful(response)) {
-            tagsFailureAccepted(OllamaDataLogic.errorMessage(
-                response, "Unable to list Ollama models"))
             schedulePullReconciliation(attempt)
             return
         }
@@ -249,12 +246,10 @@ Item {
         try {
             models = OllamaDataLogic.parseTags(response.body)
         } catch (error) {
-            tagsFailureAccepted("Invalid Ollama model response")
             schedulePullReconciliation(attempt)
             return
         }
 
-        installedModelsAccepted(models)
         var visible = false
         for (var i = 0; i < models.length; i++) {
             if (models[i].name === pullModelName) {
@@ -266,6 +261,7 @@ Item {
             schedulePullReconciliation(attempt)
             return
         }
+        installedModelsAccepted(models)
         pullState = "success"
         pullStatus = "Done"
         pullError = ""

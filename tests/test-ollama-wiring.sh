@@ -19,6 +19,13 @@ grep -Fxq 'import "panels/ollama"' \
     printf 'native Ollama panel fixture must use local panel components\n' >&2
     exit 1
 }
+for binding in 'data: fakeOperations' 'data: fakePull' 'data: fakeConfig'; do
+    grep -Fq "$binding" "$repo_root/tests/fixtures/OllamaPanelSectionsSmoke.qml" || {
+        printf 'native Ollama panel fixture omits controller-shaped binding: %s\n' \
+            "$binding" >&2
+        exit 1
+    }
+done
 for signal in confirmDeleteRequested clearDeleteRequested deleteRequested \
     loadRequested ejectRequested; do
     assert_text="modelRow.$signal"
@@ -43,6 +50,7 @@ shopt -u dotglob globstar nullglob
 for runner in \
     tests/test_OllamaData_native.sh \
     tests/test-ollama-panel-native.sh \
+    tests/test-ollama-model-operations-native.sh \
     tests/test-ollama-pull-integration.sh \
     tests/test-ollama-lifecycle-integration.sh \
     tests/test-ollama-gpu-integration.sh; do
@@ -59,6 +67,7 @@ done
 for fixture in \
     tests/fixtures/OllamaDataSmoke.qml \
     tests/fixtures/OllamaPanelSectionsSmoke.qml \
+    tests/fixtures/OllamaModelOperationsSmoke.qml \
     tests/fixtures/OllamaPullIntegrationSmoke.qml \
     tests/fixtures/OllamaLifecycleSmoke.qml \
     tests/fixtures/OllamaGpuSmoke.qml; do
@@ -257,6 +266,8 @@ assert_contains versions/V1/modules/OllamaModelOperations.qml 'signal configurat
 assert_contains versions/V1/modules/OllamaModelOperations.qml 'OllamaDataLogic.generateResponseState(response.body)'
 assert_contains versions/V1/modules/OllamaModelOperations.qml 'operationError = failureMessage'
 assert_contains versions/V1/modules/OllamaModelOperations.qml 'if (ok) operationError = ""'
+assert_contains tests/fixtures/OllamaModelOperationsSmoke.qml 'operations.handleOperationModels('
+assert_contains tests/fixtures/OllamaModelOperationsSmoke.qml 'operations.handleUnloadExit(7, "timed:model", -1, true)'
 assert_contains versions/V1/modules/OllamaData.qml 'function loadModel(name) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function applyAction(raw) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function runModelAction(name, keepAlive, actionName) {'

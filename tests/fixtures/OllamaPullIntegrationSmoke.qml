@@ -13,6 +13,7 @@ ShellRoot {
     property bool deadlineAdvanced: false
     property bool sawSecondLayerReset: false
     property bool sawSecondLayerProgress: false
+    property int privateIntermediateChecks: 0
     property bool finished: false
 
     QtObject {
@@ -102,6 +103,22 @@ ShellRoot {
                 testClock.virtualNowMs = data.pullReconcileDeadlineAtMs
             }
 
+            if (testRoot.testCase === "private-intermediates"
+                    && data.pullState === "reconciling"
+                    && data.pullReconcileAttempts - 1
+                        > testRoot.privateIntermediateChecks
+                    && data.pullReconcileAttempts - 1 <= 3) {
+                if (data.installedModels.length !== 1
+                        || data.installedModels[0].name !== "seed:model")
+                    testRoot.fail("intermediate response mutated installed models")
+                else if (data.tagsConnected !== false)
+                    testRoot.fail("intermediate response mutated tags connection")
+                else if (data.tagsError !== "preserved error")
+                    testRoot.fail("intermediate response mutated tags error")
+                else
+                    testRoot.privateIntermediateChecks = data.pullReconcileAttempts - 1
+            }
+
             if ((testRoot.testCase === "delayed" || testRoot.testCase === "success")
                     && data.pullState === "success") {
                 if (!testRoot.sawFinalizing) testRoot.fail("success skipped finalizing")
@@ -115,6 +132,18 @@ ShellRoot {
                     testRoot.fail("second layer progress was not observed")
                 else if (data.pullProgressText.indexOf("Current layer") !== 0)
                     testRoot.fail("progress is not labeled as the current layer")
+                else testRoot.pass()
+            }
+
+            if (testRoot.testCase === "private-intermediates"
+                    && data.pullState === "success") {
+                if (testRoot.privateIntermediateChecks !== 3)
+                    testRoot.fail("success arrived before every intermediate was checked")
+                else if (data.installedModels.length !== 1
+                        || data.installedModels[0].name !== testRoot.modelName)
+                    testRoot.fail("terminal model list was not published")
+                else if (!data.tagsConnected || data.tagsError !== "")
+                    testRoot.fail("terminal tag state was not published atomically")
                 else testRoot.pass()
             }
 
@@ -163,12 +192,17 @@ ShellRoot {
     }
 
     Timer {
-        interval: 15000
+        interval: testRoot.testCase === "private-intermediates" ? 30000 : 15000
         running: !testRoot.finished
         onTriggered: testRoot.fail("timed out in state " + data.pullState)
     }
 
     Component.onCompleted: {
+        if (testCase === "private-intermediates") {
+            data.installedModels = [{ name: "seed:model" }]
+            data.tagsConnected = false
+            data.tagsError = "preserved error"
+        }
         if (data.hasOwnProperty("reconciliationClock")
                 && (testCase === "delayed-125s" || testCase === "timeout"
                     || testCase === "reconcile-cancel" || testCase === "late-response")) {

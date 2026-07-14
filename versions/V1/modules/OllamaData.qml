@@ -443,10 +443,6 @@ Item {
             ollama.tagsConnected = true
             ollama.tagsError = ""
         }
-        onTagsFailureAccepted: function(message) {
-            ollama.tagsConnected = false
-            ollama.tagsError = message
-        }
         onLoadedRefreshRequested: ollama.refreshLoaded()
         onRefreshEpochInvalidationRequested: ollama.refreshEpoch += 1
         onTagsRefreshResetRequested: ollama.tagsRefreshPending = false

@@ -52,9 +52,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def reply(self, body):
+    def reply(self, body, status=200):
         encoded = body.encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
@@ -75,8 +75,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             time.sleep(0.4)
             self.reply('{"models":[{"name":"fixture:model","details":{}}]}')
             return
+        if mode == "private-intermediates":
+            if tags == 1:
+                self.reply('{"models":[]}')
+                return
+            if tags == 2:
+                self.reply('{"models":"malformed"}')
+                return
+            if tags == 3:
+                self.reply('{"error":"temporary failure"}', 503)
+                return
+            time.sleep(0.4)
         visible = (
-            mode in ("success", "retry", "multi-digest")
+            mode in ("success", "retry", "multi-digest", "private-intermediates")
             or (mode == "delayed" and tags >= 3)
             or (mode == "delayed-125s" and tags >= 16)
             or (mode == "reconcile-cancel" and tags >= 2)
@@ -149,7 +160,7 @@ run_case() {
 
     local output status=0
     output="$(mktemp)"
-    if timeout --kill-after=1s 20s env QT_QPA_PLATFORM=offscreen \
+    if timeout --kill-after=1s 35s env QT_QPA_PLATFORM=offscreen \
         OLLAMA_PULL_TEST_CASE="$mode" \
         OLLAMA_PULL_TEST_URL="http://127.0.0.1:$(<"$fixture_port_file")" \
         qs --no-color -p "$test_config_path" >"$output" 2>&1; then
@@ -184,4 +195,5 @@ run_case retry
 run_case reconcile-cancel
 run_case late-response
 run_case multi-digest
+run_case private-intermediates
 printf '%s\n' "ollama pull integration: PASS"
