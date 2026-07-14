@@ -1601,7 +1601,7 @@ Item {
     property bool ollamaVisible: false
     onOllamaVisibleChanged: {
         popupOpened("ollamaVisible")
-        if (ollamaVisible) ollama.refreshAll()
+        if (ollamaVisible && ollama.enabled) ollama.refreshAll()
     }
 
     // ── Image picker state (theme/wallpaper carousel) ──

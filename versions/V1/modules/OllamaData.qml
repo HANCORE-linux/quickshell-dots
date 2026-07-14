@@ -57,6 +57,7 @@ Item {
     property double pullStartedAtMs: 0
     property double pullElapsedSeconds: 0
     property bool panelVisible: false
+    property int loadedPollIntervalMs: 2000
     property var selectedKeepAlive: "5m"
     property var selectedNumCtx: null
     property bool configDirty: false
@@ -1023,18 +1024,10 @@ Item {
     }
 
     Timer {
-        interval: 15000
-        running: ollama.enabled
+        interval: ollama.loadedPollIntervalMs
+        running: ollama.enabled && ollama.panelVisible
         repeat: true
-        triggeredOnStart: true
-        onTriggered: ollama.refreshVersion()
-    }
-
-    Timer {
-        interval: ollama.panelVisible ? 2000 : 15000
-        running: ollama.enabled
-        repeat: true
-        triggeredOnStart: true
+        triggeredOnStart: false
         onTriggered: ollama.refreshLoaded()
     }
 

@@ -24,7 +24,10 @@ for qml in "$repo_root"/versions/V1/**/*.qml; do
 done
 shopt -u dotglob globstar nullglob
 
-for runner in tests/test_OllamaData_native.sh tests/test-ollama-pull-integration.sh; do
+for runner in \
+    tests/test_OllamaData_native.sh \
+    tests/test-ollama-pull-integration.sh \
+    tests/test-ollama-lifecycle-integration.sh; do
     ! grep -Eq "versions/V1/[^[:space:]\"']*(FixtureRunner|fixture-runner|Smoke)[^[:space:]\"']*\\.qml" "$repo_root/$runner" || {
         printf 'test runner creates fixture root in production payload: %s\n' "$runner" >&2
         exit 1
@@ -35,7 +38,10 @@ for runner in tests/test_OllamaData_native.sh tests/test-ollama-pull-integration
     }
 done
 
-for fixture in tests/fixtures/OllamaDataSmoke.qml tests/fixtures/OllamaPullIntegrationSmoke.qml; do
+for fixture in \
+    tests/fixtures/OllamaDataSmoke.qml \
+    tests/fixtures/OllamaPullIntegrationSmoke.qml \
+    tests/fixtures/OllamaLifecycleSmoke.qml; do
     grep -Fxq 'import "modules"' "$repo_root/$fixture" || {
         printf 'test fixture must use local modules: %s\n' "$fixture" >&2
         exit 1
@@ -105,7 +111,7 @@ assert_contains 'if (except !== "ollamaVisible") ollamaVisible = false'
 assert_contains 'else if (name === "ollama") ollamaBarX = x'
 assert_contains 'onOllamaVisibleChanged: {'
 assert_contains 'popupOpened("ollamaVisible")'
-assert_contains 'if (ollamaVisible) ollama.refreshAll()'
+assert_contains 'if (ollamaVisible && ollama.enabled) ollama.refreshAll()'
 assert_matches 'onModOllamaChanged:[[:space:]]+if \(_widgetsLoaded\) saveWidgets\(\)'
 assert_matches 'onCompactOllamaChanged:[[:space:]]+if \(_widgetsLoaded && !_compactResetting\) saveWidgets\(\)'
 assert_contains '|| compactOllama'
@@ -125,6 +131,11 @@ assert_contains versions/V1/modules/OllamaWidget.qml 'visible: !root.compactOlla
 assert_contains versions/V1/modules/OllamaWidget.qml 'source: Qt.resolvedUrl("../assets/ollama.svg")'
 
 assert_contains versions/V1/shell.qml 'target: "ollama"'
+assert_contains versions/V1/shell.qml 'function open(): void { theme.ollamaVisible = true }'
+assert_contains versions/V1/shell.qml 'function close(): void { theme.ollamaVisible = false }'
+assert_contains versions/V1/shell.qml 'function refresh(): void { theme.ollama.refreshAll() }'
+assert_not_contains versions/V1/shell.qml 'function open(): void { theme.modOllama'
+assert_not_contains versions/V1/shell.qml 'function close(): void { theme.modOllama'
 assert_contains versions/V1/shell.qml 'OllamaPanel { root: theme }'
 assert_contains versions/V1/modules/OllamaData.qml 'property bool operationInProgress: false'
 assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool controlsLocked:'
@@ -169,6 +180,13 @@ assert_contains versions/V1/modules/OllamaData.qml 'OllamaPullLogic.nextReconcil
 assert_contains versions/V1/modules/OllamaData.qml '--fail-with-body'
 assert_contains versions/V1/modules/OllamaData.qml 'stdout: SplitParser {'
 assert_contains versions/V1/modules/OllamaData.qml 'ollama.applyPullProgress(text)'
+assert_contains versions/V1/modules/OllamaData.qml 'property int loadedPollIntervalMs: 2000'
+assert_contains versions/V1/modules/OllamaData.qml 'interval: ollama.loadedPollIntervalMs'
+assert_contains versions/V1/modules/OllamaData.qml 'running: ollama.enabled && ollama.panelVisible'
+assert_contains versions/V1/modules/OllamaData.qml 'triggeredOnStart: false'
+assert_not_contains versions/V1/modules/OllamaData.qml 'onTriggered: ollama.refreshVersion()'
+assert_file_matches versions/V1/modules/OllamaData.qml 'interval: ollama\.loadedPollIntervalMs\s*running: ollama\.enabled && ollama\.panelVisible\s*repeat: true\s*triggeredOnStart: false\s*onTriggered: ollama\.refreshLoaded\(\)'
+assert_file_matches versions/V1/Theme.qml 'onOllamaVisibleChanged:\s*\{\s*popupOpened\("ollamaVisible"\)\s*if \(ollamaVisible && ollama\.enabled\) ollama\.refreshAll\(\)'
 
 if grep -Fq 'pullOutputPath\|pullProgressTimer\|progressReaderProc' "$repo_root/versions/V1/modules/OllamaData.qml"; then
     printf 'pull must not use file polling or pullProgressTimer\n' >&2
