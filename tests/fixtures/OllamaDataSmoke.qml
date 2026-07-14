@@ -140,6 +140,21 @@ ShellRoot {
         data.applyTags(badTags, epoch)
         check(data.tagsConnected === false, "tagsConnected false after malformed tags")
 
+        var invalidTagSchemas = [
+            '{}\n200',
+            '{"models":{}}\n200',
+            '{"models":[{}]}\n200'
+        ]
+        for (var schemaIndex = 0; schemaIndex < invalidTagSchemas.length; schemaIndex++) {
+            data.installedModels = [{ name: "preserved:latest" }]
+            data.tagsConnected = true
+            data.tagsError = ""
+            data.applyTags(invalidTagSchemas[schemaIndex], epoch)
+            check(data.installedModels.length === 1, "invalid tags preserve installed list")
+            check(data.tagsConnected === false, "invalid tags disconnect endpoint")
+            check(data.tagsError === "Invalid Ollama model response", "invalid tags expose error")
+        }
+
         data.applyLoaded(badLoaded, epoch)
         check(data.loadedConnected === false, "loadedConnected false after malformed loaded")
 

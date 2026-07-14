@@ -91,6 +91,11 @@ TestCase {
         }
     }
 
+    function didThrow(callback) {
+        try { callback() } catch (error) { return true }
+        return false
+    }
+
     function test_decodeResponse() {
         var response = data.decodeResponse('{"version":"0.31.2"}\n200')
         compare(response.status, 200)
@@ -103,6 +108,20 @@ TestCase {
         compare(models[0].name, "qwen3:8b")
         compare(models[0].parameterSize, "8B")
         compare(models[0].quantization, "Q6_K")
+    }
+
+    function test_rejectsMalformedTagsResponse() {
+        verify(didThrow(function() { data.parseTags("{}") }))
+        verify(didThrow(function() { data.parseTags('{"models":{}}') }))
+        verify(didThrow(function() { data.parseTags('{"models":"invalid"}') }))
+        verify(didThrow(function() { data.parseTags('{"models":null}') }))
+        verify(didThrow(function() { data.parseTags('{"models":[{}]}') }))
+        verify(didThrow(function() { data.parseTags('{"models":[{"name":"   "}]}') }))
+    }
+
+    function test_acceptsTagsModelFallbackName() {
+        var models = data.parseTags('{"models":[{"model":"qwen:latest"}]}')
+        compare(models[0].name, "qwen:latest")
     }
 
     function test_parseLoadedAndVram() {
@@ -121,10 +140,6 @@ TestCase {
     }
 
     function test_rejectsMalformedLoadedResponse() {
-        function didThrow(callback) {
-            try { callback() } catch (error) { return true }
-            return false
-        }
         verify(didThrow(function() { data.parseLoaded("{}") }))
         verify(didThrow(function() { data.parseLoaded('{"models":"invalid"}') }))
         verify(didThrow(function() { data.parseLoaded('{"models":[{}]}') }))

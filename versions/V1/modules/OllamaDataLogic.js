@@ -23,14 +23,19 @@ function buildRequest(baseUrl, method, path, payload, maxTime) {
 
 function parseTags(body) {
     var source = JSON.parse(body)
+    if (!source || !Array.isArray(source.models))
+        throw new Error("Invalid installed-model response")
+
     var result = []
-    var entries = source.models || []
-    for (var i = 0; i < entries.length; i++) {
-        var details = entries[i].details || {}
+    for (var i = 0; i < source.models.length; i++) {
+        var entry = source.models[i] || {}
+        var name = String(entry.name || entry.model || "").trim()
+        if (!name) throw new Error("Installed model is missing its name")
+        var details = entry.details || {}
         result.push({
-            name: String(entries[i].name || entries[i].model || ""),
-            size: Number(entries[i].size || 0),
-            modifiedAt: String(entries[i].modified_at || ""),
+            name: name,
+            size: Number(entry.size || 0),
+            modifiedAt: String(entry.modified_at || ""),
             parameterSize: String(details.parameter_size || ""),
             quantization: String(details.quantization_level || "")
         })
