@@ -19,6 +19,16 @@ grep -Fxq 'import "panels/ollama"' \
     printf 'native Ollama panel fixture must use local panel components\n' >&2
     exit 1
 }
+for signal in confirmDeleteRequested clearDeleteRequested deleteRequested \
+    loadRequested ejectRequested; do
+    assert_text="modelRow.$signal"
+    ! grep -Fq "$assert_text" \
+        "$repo_root/tests/fixtures/OllamaPanelSectionsSmoke.qml" || {
+        printf 'native Ollama panel fixture emits row signal directly: %s\n' \
+            "$signal" >&2
+        exit 1
+    }
+done
 
 shopt -s dotglob globstar nullglob
 for qml in "$repo_root"/versions/V1/**/*.qml; do
@@ -283,6 +293,11 @@ assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal loadRe
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal ejectRequested(string name)'
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal deleteRequested(string name)'
 assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'required property var modelData'
+assert_contains versions/V1/panels/ollama/OllamaDeleteButton.qml 'objectName: "ollamaModelDeleteMouseArea"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'objectName: "ollamaModelReloadMouseArea"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'objectName: "ollamaModelActionMouseArea"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'objectName: "ollamaModelCancelDeleteMouseArea"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'objectName: "ollamaModelConfirmDeleteMouseArea"'
 assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.loadModel('
 assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.ejectModel('
 assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.deleteModel('

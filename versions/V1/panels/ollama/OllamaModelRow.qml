@@ -123,6 +123,7 @@ Rectangle {
             }
             MouseArea {
                 id: modelReloadMa
+                objectName: "ollamaModelReloadMouseArea"
                 anchors.fill: parent
                 enabled: !modelRow.data.controlsLocked
                 hoverEnabled: enabled
@@ -163,6 +164,7 @@ Rectangle {
 
             MouseArea {
                 id: modelActionMa
+                objectName: "ollamaModelActionMouseArea"
                 anchors.fill: parent
                 enabled: !modelRow.data.controlsLocked
                 hoverEnabled: true
@@ -226,6 +228,7 @@ Rectangle {
                     }
                     MouseArea {
                         id: cancelDeleteMa
+                        objectName: "ollamaModelCancelDeleteMouseArea"
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
@@ -247,6 +250,7 @@ Rectangle {
                     }
                     MouseArea {
                         id: deleteModelMa
+                        objectName: "ollamaModelConfirmDeleteMouseArea"
                         anchors.fill: parent
                         enabled: !modelRow.data.controlsLocked
                         hoverEnabled: enabled

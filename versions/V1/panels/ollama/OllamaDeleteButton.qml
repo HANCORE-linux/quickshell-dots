@@ -40,6 +40,7 @@ Rectangle {
 
     MouseArea {
         id: deleteMouseArea
+        objectName: "ollamaModelDeleteMouseArea"
         anchors.fill: parent
         enabled: control.controlEnabled
         hoverEnabled: enabled

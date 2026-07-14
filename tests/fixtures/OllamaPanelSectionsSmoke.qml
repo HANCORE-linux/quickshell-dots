@@ -28,33 +28,54 @@ ShellRoot {
         return null
     }
 
+    function findObject(parent, name) {
+        if (parent.objectName === name) return parent
+        if (!parent.children) return null
+        for (var i = 0; i < parent.children.length; i++) {
+            var match = findObject(parent.children[i], name)
+            if (match !== null) return match
+        }
+        return null
+    }
+
+    function activateMouseArea(name) {
+        var mouseArea = findObject(modelRow, name)
+        check(mouseArea !== null, "missing production control " + name)
+        if (mouseArea !== null) mouseArea.clicked(null)
+    }
+
     function checkConfirmedState() {
         modelsSection.forceLayout()
+        sectionColumn.forceLayout()
         check(modelsSection.implicitHeight === 95, "confirmed section implicit height "
               + modelsSection.implicitHeight)
+        check(sectionColumn.implicitHeight === 427, "confirmed section column height")
+        check(sectionColumn.implicitHeight + 24 === 451, "confirmed card content height")
 
         modelsSection.clearDeleteConfirmation()
         check(modelsSection.confirmDeleteModel === "", "clear API state")
         check(!modelRow.confirmationVisible && modelRow.height === 58,
               "clear API row state")
 
-        modelRow.confirmDeleteRequested("qwen3:8b")
-        modelRow.clearDeleteRequested()
+        activateMouseArea("ollamaModelDeleteMouseArea")
+        activateMouseArea("ollamaModelCancelDeleteMouseArea")
         check(modelsSection.confirmDeleteModel === "", "cancel signal forwarded")
 
-        modelRow.confirmDeleteRequested("qwen3:8b")
-        modelRow.deleteRequested("qwen3:8b")
+        activateMouseArea("ollamaModelDeleteMouseArea")
+        activateMouseArea("ollamaModelConfirmDeleteMouseArea")
         check(deleteSignals === 1, "delete signal forwarded")
         check(modelsSection.confirmDeleteModel === "", "delete clears confirmation")
 
-        modelRow.loadRequested("qwen3:8b")
-        modelRow.ejectRequested("qwen3:8b")
+        activateMouseArea("ollamaModelReloadMouseArea")
+        activateMouseArea("ollamaModelDeleteMouseArea")
+        activateMouseArea("ollamaModelActionMouseArea")
         check(loadSignals === 1, "load action signal forwarded")
         check(ejectSignals === 1, "eject action signal forwarded")
+        check(modelsSection.confirmDeleteModel === "", "model action clears confirmation")
         check(fakeData.loadCalls === 0 && fakeData.ejectCalls === 0
               && fakeData.deleteCalls === 0, "row or section mutated fake data")
 
-        modelRow.confirmDeleteRequested("qwen3:8b")
+        activateMouseArea("ollamaModelDeleteMouseArea")
         shortTimeoutCheck.start()
     }
 
@@ -224,8 +245,26 @@ ShellRoot {
               && summarySection.y < modelsSection.y
               && modelsSection.y < pullSection.y
               && pullSection.y < configSection.y, "production section order")
-        check(summarySection.implicitHeight > 0 && pullSection.implicitHeight > 0
-              && configSection.implicitHeight > 0, "production section implicit sizes")
+        check(panelHeader.width === 356 && panelHeader.height === 24,
+              "header dimensions")
+        check(summarySection.width === 356 && summarySection.height === 116
+              && summarySection.implicitHeight === 116,
+              "summary dimensions")
+        check(modelsSection.width === 356 && modelsSection.height === 67
+              && modelsSection.implicitHeight === 67,
+              "models dimensions")
+        check(pullSection.width === 356 && pullSection.height === 87
+              && pullSection.implicitHeight === 87,
+              "pull dimensions")
+        check(configSection.width === 356 && configSection.height === 73
+              && configSection.implicitHeight === 73,
+              "config dimensions")
+        check(sectionColumn.width === 356 && sectionColumn.height === 399
+              && sectionColumn.implicitHeight === 399,
+              "section column dimensions")
+        check(sectionColumn.width + 24 === 380
+              && sectionColumn.implicitHeight + 24 === 423,
+              "card content dimensions")
         check(modelRow !== null, "production model row delegate")
         if (modelRow === null) {
             finish()
@@ -235,7 +274,7 @@ ShellRoot {
         check(modelRow.height === 58, "initial row height")
         check(modelsSection.implicitHeight === 67, "initial section implicit height")
 
-        modelRow.confirmDeleteRequested("qwen3:8b")
+        activateMouseArea("ollamaModelDeleteMouseArea")
         check(modelsSection.confirmDeleteModel === "qwen3:8b",
               "confirmation signal forwarded")
         check(modelRow.confirmationVisible, "row confirmation state")
