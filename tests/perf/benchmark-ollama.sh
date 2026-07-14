@@ -879,9 +879,22 @@ sample_artifacts_valid() {
       all(to_entries[]; .value.sample == .key and (.value.descendants | type) == "array")
     ' "$descendants" >/dev/null 2>&1 || return 1
     awk -F '\t' -v expected="$expected" '
-      NR == 1 { next }
-      $1 != NR - 2 { exit 1 }
-      END { exit !((NR - 1) == expected) }
+      NR == 1 {
+        if ($1 != "sample" || $2 != "kind") invalid = 1
+        next
+      }
+      {
+        rows++
+        if (rows == 1) first = $1
+        last = $1
+        if ($1 != rows - 1) invalid = 1
+        if (rows == 1 && $2 != "boundary") invalid = 1
+        if (rows > 1 && $2 != "interval") invalid = 1
+      }
+      END {
+        if (rows != expected || first != 0 || last != expected - 1) invalid = 1
+        exit (invalid ? 1 : 0)
+      }
     ' "$proc_stat"
 }
 
@@ -1498,6 +1511,8 @@ self_test_sampler() {
     child="$(<"$child_file")"
     self_test_track_pid "$child"
     "$sampler" "$pid" 2 "$samples" "$proc_stat" "$descendants" "$pss" "$start" "$stop"
+    identity_alive "$child" "${self_test_pid_starts[$child]}" || \
+        die "sampler descendant fixture exited before all boundaries completed"
     kill "$child" "$pid" 2>/dev/null || true
     wait "$child" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
@@ -1514,12 +1529,24 @@ self_test_sampler() {
                   .cutime >= 0 and .cstime >= 0)
     ' "$samples" >/dev/null || die "sampler did not emit initial plus two interval boundaries"
     [[ "$(wc -l < "$proc_stat")" == 4 ]] || die "proc-stat TSV did not contain a header plus three data rows"
-    jq -e -s --argjson child "$child" '
+    jq -e -s --argjson child "$child" \
+        --argjson starttime "${self_test_pid_starts[$child]}" '
         length == 3 and [.[].sample] == [0,1,2] and
-        all(.[]; (.descendants | type) == "array") and
-        any(.[]; any(.descendants[]; .pid == $child and .starttime > 0 and
-                     .utime >= 0 and .stime >= 0))
-    ' "$descendants" >/dev/null || die "sampler omitted stable descendant CPU boundaries"
+        ([ .[] as $boundary
+          | [$boundary.descendants[]
+             | select(.pid == $child and .starttime == $starttime)] as $matches
+          | select(($matches | length) == 1)
+          | $matches[0] + {sample:$boundary.sample,
+              total_jiffies:($matches[0].utime + $matches[0].stime)}
+        ] as $observations
+        | ($observations | length) == 3 and
+          ([$observations[].identity] | unique | length) == 1 and
+          all(range(1; ($observations | length));
+              $observations[.] .total_jiffies >= $observations[. - 1].total_jiffies) and
+          any(range(1; ($observations | length));
+              $observations[.] .total_jiffies > $observations[. - 1].total_jiffies))
+    ' "$descendants" >/dev/null || \
+        die "sampler did not retain one progressing descendant identity at every boundary"
     jq -e '
         (.before | has("Pss") and has("Pss_Anon") and has("Pss_File") and has("Pss_Shmem")) and
         (.after | has("Pss") and has("Pss_Anon") and has("Pss_File") and has("Pss_Shmem"))
@@ -1849,7 +1876,17 @@ review_case_sample_boundary_counts() (
     done
     printf '%s\n' '{"sample":121}' >> "$self_test_tmp/count-120.jsonl"
     ! sample_artifacts_valid 120 "$self_test_tmp/count-120.jsonl" \
-        "$self_test_tmp/count-120.tsv" "$self_test_tmp/count-120-descendants.jsonl"
+        "$self_test_tmp/count-120.tsv" "$self_test_tmp/count-120-descendants.jsonl" || return 1
+
+    cpu="$self_test_tmp/count-sequence.jsonl"
+    tsv="$self_test_tmp/count-sequence.tsv"
+    descendants="$self_test_tmp/count-sequence-descendants.jsonl"
+    for index in 0 1 2; do
+        jq -nc --argjson sample "$index" '{sample:$sample}' >> "$cpu"
+        jq -nc --argjson sample "$index" '{sample:$sample,descendants:[]}' >> "$descendants"
+    done
+    printf 'sample\tkind\n0\tboundary\n1\tinterval\n9\tinterval\n' > "$tsv"
+    ! sample_artifacts_valid 2 "$cpu" "$tsv" "$descendants"
 )
 
 review_case_summary_statistics() (
