@@ -63,6 +63,14 @@ original exit status before regenerating summaries and checksums.
 Ambiguous bars, unknown cache schemas, missing caches, and active pulls abort
 before the live bar is stopped.
 
+Ownership is role-based rather than tied to one code path. Benchmark and QSG
+bars, scenario monitors, samplers, and calibration root/monitor processes enter
+a cleanup-visible registry immediately after spawn. A role cannot be reused
+while its identity may survive. Identity-capture failure triggers synchronous
+TERM/KILL/reap by PID; failure to prove absence blocks cache and bar restoration.
+Calibration command/wait descriptors are global cleanup state and are closed on
+normal exit, INT, or TERM before registered calibration processes are stopped.
+
 PR state transitions use the `ollama open` and `ollama close` IPC methods. Before
 every primary and QSG window, the harness reads the live `ollama.enabled` and
 `ollama.panelVisible` IPC properties and requires exact boolean matches. The main
@@ -86,6 +94,9 @@ baseline instead requires the Ollama IPC target to be absent.
 - `scenarios/*/qsg/qsg.log`: raw QSG diagnostic output from a separate pass
 - `summary.json`: deterministic aggregates for all scenarios
 - `checksums.sha256`: SHA-256 checksums for every regular artifact file
+- `finalization-errors.json`: empty on complete success; otherwise lists failed
+  or skipped scenario validation, calibration jq, manifest, results, summary,
+  error-report, or checksum operations
 
 The sampler publishes start/stop markers around the CPU/PSS window. The process
 monitor compares field-22 starttime against the shared start boundary and makes
@@ -105,3 +116,10 @@ interval values and elapsed-weighted whole-window own, child, and total CPU. PSS
 is a boundary measurement, not a
 continuous memory trace. Results remain sensitive to compositor load, GPU
 driver state, filesystem caches, and unrelated host activity.
+
+Artifact finalization does not rely on Bash `errexit`: each scenario JSON parse,
+calibration aggregation, manifest write, results aggregation, summary write, and
+checksum write is checked explicitly and uses an atomic temporary file where
+applicable. `RUN_FINALIZED` is published only when every operation succeeds. A
+finalization failure promotes an otherwise successful exit to nonzero while an
+existing failure or signal status is preserved.
