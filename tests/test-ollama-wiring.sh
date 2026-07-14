@@ -14,6 +14,16 @@ for fixture in \
     }
 done
 
+shopt -s globstar nullglob
+for qml in "$repo_root"/versions/V1/**/*.qml; do
+    [[ "$qml" == "$repo_root/versions/V1/shell.qml" ]] && continue
+    ! grep -Pzq '(?m)^[\t ]*ShellRoot\s*\{' "$qml" || {
+        printf 'unexpected ShellRoot in production payload: %s\n' "${qml#"$repo_root/"}" >&2
+        exit 1
+    }
+done
+shopt -u globstar nullglob
+
 for runner in tests/test_OllamaData_native.sh tests/test-ollama-pull-integration.sh; do
     ! grep -Eq "versions/V1/[^[:space:]\"']*(FixtureRunner|fixture-runner|Smoke)[^[:space:]\"']*\\.qml" "$repo_root/$runner" || {
         printf 'test runner creates fixture root in production payload: %s\n' "$runner" >&2
