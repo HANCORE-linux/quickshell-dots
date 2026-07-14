@@ -81,6 +81,16 @@ assert_file_matches() {
     }
 }
 
+while IFS= read -r static_import; do
+    imported_file="${static_import##*/}"
+    grep -Fq "versions/V1/modules/$imported_file" \
+        "$repo_root/tests/test_OllamaData_native.sh" || {
+        printf 'native OllamaData fixture omits static JS import: %s\n' "$static_import" >&2
+        exit 1
+    }
+done < <(grep -oP '^import "\K[^"]+\.js(?=")' \
+    "$repo_root/versions/V1/modules/OllamaData.qml")
+
 assert_contains 'import "modules"'
 assert_contains 'OllamaData {'
 assert_contains 'id: ollamaData'
