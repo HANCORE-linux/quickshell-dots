@@ -14,6 +14,7 @@ Column {
     spacing: 8
 
     Column {
+        parent: pullSection
         width: parent.width
         height: 78
         spacing: 6
@@ -181,5 +182,10 @@ Column {
         }
     }
 
-    Rectangle { width: parent.width; height: 1; color: pullSection.root.sep }
+    Rectangle {
+        parent: pullSection
+        width: parent.width
+        height: 1
+        color: pullSection.root.sep
+    }
 }

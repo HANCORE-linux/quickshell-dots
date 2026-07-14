@@ -18,25 +18,34 @@ Column {
         return Math.round(value / mib) + " MiB"
     }
 
-    Rectangle { width: parent.width; height: 1; color: summarySection.root.sep }
+    Rectangle {
+        parent: summarySection
+        width: parent.width
+        height: 1
+        color: summarySection.root.sep
+    }
 
     OllamaDetailRow {
+        parent: summarySection
         root: summarySection.root
         k: "GPU"
         v: summarySection.data.gpuPercent >= 0
             ? summarySection.data.gpuPercent + "%" : "N/A"
     }
     OllamaDetailRow {
+        parent: summarySection
         root: summarySection.root
         k: "Ollama VRAM"
         v: summarySection.formatBytes(summarySection.data.loadedVramBytes)
     }
     OllamaDetailRow {
+        parent: summarySection
         root: summarySection.root
         k: "Loaded models"
         v: String(summarySection.data.loadedModels.length)
     }
     OllamaDetailRow {
+        parent: summarySection
         root: summarySection.root
         k: "Context"
         v: {
@@ -48,12 +57,14 @@ Column {
         }
     }
     OllamaDetailRow {
+        parent: summarySection
         root: summarySection.root
         k: "Keep Alive"
         v: summarySection.data.keepAliveStatus
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: summarySection.data.operationInProgress
         text: summarySection.data.operationMessage
@@ -65,6 +76,7 @@ Column {
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: summarySection.data.busy
             && !summarySection.data.operationInProgress
@@ -76,6 +88,7 @@ Column {
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: summarySection.data.connected
             && !summarySection.data.operationInProgress
@@ -90,6 +103,7 @@ Column {
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: !summarySection.data.connected
         text: "Ollama is disconnected"
@@ -100,6 +114,7 @@ Column {
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: summarySection.data.displayError !== ""
         text: summarySection.data.displayError
@@ -111,6 +126,7 @@ Column {
     }
 
     UiText {
+        parent: summarySection
         width: parent.width
         visible: summarySection.data.connected
             && summarySection.data.models.length === 0

@@ -6,6 +6,7 @@ Column {
     required property var root
     required property var data
     property string confirmDeleteModel: ""
+    property int confirmationTimeoutMs: 8000
 
     signal loadRequested(string name)
     signal ejectRequested(string name)
@@ -26,11 +27,12 @@ Column {
 
     Timer {
         id: deleteConfirmationTimer
-        interval: 8000
+        interval: modelsSection.confirmationTimeoutMs
         onTriggered: modelsSection.clearDeleteConfirmation()
     }
 
     Repeater {
+        parent: modelsSection
         model: modelsSection.data.models
 
         delegate: OllamaModelRow {
@@ -57,5 +59,10 @@ Column {
         }
     }
 
-    Rectangle { width: parent.width; height: 1; color: modelsSection.root.sep }
+    Rectangle {
+        parent: modelsSection
+        width: parent.width
+        height: 1
+        color: modelsSection.root.sep
+    }
 }

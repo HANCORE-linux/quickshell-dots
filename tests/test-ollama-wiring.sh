@@ -14,6 +14,12 @@ for fixture in \
     }
 done
 
+grep -Fxq 'import "panels/ollama"' \
+    "$repo_root/tests/fixtures/OllamaPanelSectionsSmoke.qml" || {
+    printf 'native Ollama panel fixture must use local panel components\n' >&2
+    exit 1
+}
+
 shopt -s dotglob globstar nullglob
 for qml in "$repo_root"/versions/V1/**/*.qml; do
     [[ "$qml" == "$repo_root/versions/V1/shell.qml" ]] && continue
@@ -26,6 +32,7 @@ shopt -u dotglob globstar nullglob
 
 for runner in \
     tests/test_OllamaData_native.sh \
+    tests/test-ollama-panel-native.sh \
     tests/test-ollama-pull-integration.sh \
     tests/test-ollama-lifecycle-integration.sh \
     tests/test-ollama-gpu-integration.sh; do
@@ -41,6 +48,7 @@ done
 
 for fixture in \
     tests/fixtures/OllamaDataSmoke.qml \
+    tests/fixtures/OllamaPanelSectionsSmoke.qml \
     tests/fixtures/OllamaPullIntegrationSmoke.qml \
     tests/fixtures/OllamaLifecycleSmoke.qml \
     tests/fixtures/OllamaGpuSmoke.qml; do
@@ -48,6 +56,33 @@ for fixture in \
         printf 'test fixture must use local modules: %s\n' "$fixture" >&2
         exit 1
     }
+done
+
+assert_native_panel_dependency() {
+    local dependency="$1"
+    grep -Fq "versions/V1/$dependency" \
+        "$repo_root/tests/test-ollama-panel-native.sh" || {
+        printf 'native Ollama panel fixture omits production dependency: %s\n' \
+            "$dependency" >&2
+        exit 1
+    }
+}
+
+for dependency in \
+    panels/ollama/OllamaModelsSection.qml \
+    panels/ollama/OllamaModelRow.qml \
+    panels/ollama/OllamaDeleteButton.qml \
+    panels/ollama/OllamaPanelHeader.qml \
+    panels/ollama/OllamaSummarySection.qml \
+    panels/ollama/OllamaDetailRow.qml \
+    panels/ollama/OllamaPullSection.qml \
+    panels/ollama/OllamaConfigSection.qml \
+    panels/ollama/OllamaConfigurationToggle.qml \
+    panels/ollama/OllamaPanelLayout.js \
+    modules/UiText.qml \
+    modules/IconText.qml \
+    modules/TooltipMixin.qml; do
+    assert_native_panel_dependency "$dependency"
 done
 
 assert_contains() {
@@ -242,6 +277,8 @@ assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'required prop
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'required property var data'
 assert_not_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'ollamaVisible ='
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'function clearDeleteConfirmation()'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'property int confirmationTimeoutMs: 8000'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'interval: modelsSection.confirmationTimeoutMs'
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal loadRequested(string name)'
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal ejectRequested(string name)'
 assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal deleteRequested(string name)'

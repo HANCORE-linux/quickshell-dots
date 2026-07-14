@@ -19,6 +19,7 @@ Column {
     spacing: 8
 
     OllamaConfigurationToggle {
+        parent: configSection
         width: parent.width
         theme: configSection.root
         controlEnabled: !configSection.data.controlsLocked
@@ -27,6 +28,7 @@ Column {
     }
 
     Column {
+        parent: configSection
         width: parent.width
         spacing: 8
         visible: configSection.configOpen
@@ -219,9 +221,15 @@ Column {
         }
     }
 
-    Rectangle { width: parent.width; height: 1; color: configSection.root.sep }
+    Rectangle {
+        parent: configSection
+        width: parent.width
+        height: 1
+        color: configSection.root.sep
+    }
 
     Row {
+        parent: configSection
         width: parent.width
         height: 28
         spacing: 8
