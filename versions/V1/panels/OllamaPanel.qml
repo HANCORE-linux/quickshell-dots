@@ -398,8 +398,8 @@ PanelWindow {
                             id: modelDelete
                             anchors.right: modelReload.visible ? modelReload.left : modelAction.left
                             anchors.rightMargin: 8
-                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
-                                : Math.round((parent.height - height) / 2)
+                            anchors.top: parent.top
+                            anchors.topMargin: 15
                             width: 28
                             height: 28
                             radius: root.tileRadius
@@ -410,11 +410,16 @@ PanelWindow {
                             Behavior on color { ColorAnimation { duration: 120 } }
 
                             IconText {
+                                id: modelDeleteGlyph
                                 anchors.centerIn: parent
+                                width: 18
+                                height: 18
                                 text: "\uE872"
                                 color: !delMa.enabled ? root.sumi
-                                    : delMa.containsMouse ? root.seal : root.sumi
+                                    : delMa.containsMouse ? root.paper : root.ink
                                 font.pixelSize: 14
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
                             }
 
                             MouseArea {
@@ -442,8 +447,8 @@ PanelWindow {
                             visible: modelData.loaded
                             anchors.right: modelAction.left
                             anchors.rightMargin: 8
-                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
-                                : Math.round((parent.height - height) / 2)
+                            anchors.top: parent.top
+                            anchors.topMargin: 15
                             width: 28
                             height: 28
                             radius: root.tileRadius
@@ -487,8 +492,8 @@ PanelWindow {
                             id: modelAction
                             anchors.right: parent.right
                             anchors.rightMargin: 8
-                            y: ollamaPanel.confirmDeleteModel === modelData.name ? 8
-                                : Math.round((parent.height - height) / 2)
+                            anchors.top: parent.top
+                            anchors.topMargin: 15
                             width: 50
                             height: 28
                             radius: root.tileRadius
@@ -777,15 +782,30 @@ PanelWindow {
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
 
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        text: ollamaPanel.configOpen ? "Configuration  ▾" : "Configuration  ▸"
-                        color: !configToggleMa.enabled ? root.sumi
-                            : configToggleMa.containsMouse ? root.seal : root.ink
-                        font.family: root.mono
-                        font.pixelSize: 11
+                    Row {
+                        id: configurationHeadingGroup
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        UiText {
+                            id: configurationHeadingLabel
+                            text: "Configuration"
+                            color: !configToggleMa.enabled ? root.sumi
+                                : configToggleMa.containsMouse ? root.seal : root.ink
+                            font.family: root.mono
+                            font.pixelSize: 11
+                        }
+
+                        UiText {
+                            id: configurationDisclosureIndicator
+                            width: 12
+                            text: ollamaPanel.configOpen ? "▾" : "▸"
+                            color: !configToggleMa.enabled ? root.sumi
+                                : configToggleMa.containsMouse ? root.seal : root.ink
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                        }
                     }
                     MouseArea {
                         id: configToggleMa
