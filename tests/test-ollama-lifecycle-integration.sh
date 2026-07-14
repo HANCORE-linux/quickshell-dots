@@ -44,6 +44,8 @@ import time
 root = sys.argv[1]
 log_path = os.path.join(root, "requests.log")
 log_lock = threading.Lock()
+state_lock = threading.Lock()
+delay_next_ps = False
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -51,10 +53,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        global delay_next_ps
         with log_lock:
             with open(log_path, "a", encoding="utf-8") as stream:
                 stream.write(f"{time.monotonic_ns()} {self.path}\n")
                 stream.flush()
+
+        if self.path in (
+            "/test/phase/delayed-open-start",
+            "/test/phase/manual-pending-open-start",
+        ):
+            with state_lock:
+                delay_next_ps = True
+        delayed = False
+        if self.path == "/api/ps":
+            with state_lock:
+                delayed = delay_next_ps
+                delay_next_ps = False
+        if delayed:
+            time.sleep(0.35)
 
         if self.path == "/api/version":
             body = {"version": "fixture"}
@@ -114,6 +131,13 @@ marker_names = [
     "open-end",
     "close-end",
     "manual-end",
+    "manual-steady-end",
+    "delayed-open-start",
+    "delayed-close-start",
+    "delayed-close-end",
+    "manual-pending-open-start",
+    "manual-pending-close-start",
+    "manual-pending-close-end",
     "done",
 ]
 marker_paths = [f"/test/phase/{name}" for name in marker_names]
@@ -141,6 +165,10 @@ segments = {
     "close settle": segment(positions[3] + 1, positions[4]),
     "manual refresh": segment(positions[4] + 1, positions[5]),
     "manual steady": segment(positions[5] + 1, positions[6]),
+    "delayed open": segment(positions[7] + 1, positions[8]),
+    "delayed close": segment(positions[8] + 1, positions[9]),
+    "manual pending open": segment(positions[10] + 1, positions[11]),
+    "manual pending close": segment(positions[11] + 1, positions[12]),
 }
 
 batch = Counter({"/api/version": 1, "/api/tags": 1, "/api/ps": 1})
@@ -160,6 +188,14 @@ if segments["manual refresh"] != batch:
     raise SystemExit(f"manual refresh expected one batch, got {segments['manual refresh']}")
 if segments["manual steady"]:
     raise SystemExit(f"manual refresh did not return to silence: {segments['manual steady']}")
+if segments["delayed open"] != batch:
+    raise SystemExit(f"delayed open expected one in-flight batch, got {segments['delayed open']}")
+if segments["delayed close"]:
+    raise SystemExit(f"timer queued /api/ps after close: {segments['delayed close']}")
+if segments["manual pending open"] != batch:
+    raise SystemExit(f"manual pending setup expected one batch, got {segments['manual pending open']}")
+if segments["manual pending close"] != batch:
+    raise SystemExit(f"manual pending follow-up was lost: {segments['manual pending close']}")
 
 for name, counts in segments.items():
     print(f"{name}: {dict(counts)}")

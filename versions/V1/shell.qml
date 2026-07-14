@@ -32,9 +32,9 @@ ShellRoot {
 
     IpcHandler {
         target: "ollama"
-        function open(): void { theme.ollamaVisible = true }
+        function open(): void { if (theme.ollama.enabled) theme.ollamaVisible = true }
         function close(): void { theme.ollamaVisible = false }
-        function refresh(): void { theme.ollama.refreshAll() }
+        function refresh(): void { if (theme.ollama.enabled) theme.ollama.refreshAll() }
     }
 
     IpcHandler {

@@ -34,6 +34,7 @@ Item {
     property int refreshEpoch: 0
     property bool tagsRefreshPending: false
     property bool loadedRefreshPending: false
+    property bool loadedTimerRefreshPending: false
     property var stopQueue: []
     property int verificationAttempts: 0
     property string verificationKind: ""
@@ -233,9 +234,13 @@ Item {
         tagsProc.running = true
     }
 
-    function refreshLoaded() {
+    function refreshLoaded(fromTimer) {
         if (operationInProgress) return
-        if (loadedProc.running) { loadedRefreshPending = true; return }
+        if (loadedProc.running) {
+            if (fromTimer === true) loadedTimerRefreshPending = true
+            else loadedRefreshPending = true
+            return
+        }
         loadedProc.refreshEpoch = refreshEpoch
         loadedProc.command = buildRequest("GET", "/api/ps")
         loadedProc.running = true
@@ -541,7 +546,11 @@ Item {
         requestOperationModels("initial", operationId)
     }
 
-    onEnabledChanged: if (enabled) refreshAll()
+    onEnabledChanged: {
+        if (enabled) refreshAll()
+        else loadedTimerRefreshPending = false
+    }
+    onPanelVisibleChanged: if (!panelVisible) loadedTimerRefreshPending = false
     Component.onCompleted: if (enabled) refreshAll()
 
     Process {
@@ -584,10 +593,12 @@ Item {
             onStreamFinished: ollama.applyLoaded(this.text, loadedProc.refreshEpoch)
         }
         onExited: {
-            if (ollama.loadedRefreshPending) {
-                ollama.loadedRefreshPending = false
-                ollama.refreshLoaded()
-            }
+            var refreshExplicitly = ollama.loadedRefreshPending
+            var refreshFromTimer = ollama.loadedTimerRefreshPending
+                && ollama.enabled && ollama.panelVisible
+            ollama.loadedRefreshPending = false
+            ollama.loadedTimerRefreshPending = false
+            if (refreshExplicitly || refreshFromTimer) ollama.refreshLoaded()
         }
     }
 
@@ -1028,7 +1039,7 @@ Item {
         running: ollama.enabled && ollama.panelVisible
         repeat: true
         triggeredOnStart: false
-        onTriggered: ollama.refreshLoaded()
+        onTriggered: ollama.refreshLoaded(true)
     }
 
     Timer {

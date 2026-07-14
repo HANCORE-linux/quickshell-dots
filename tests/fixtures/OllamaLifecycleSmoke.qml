@@ -54,6 +54,25 @@ ShellRoot {
             waitFor(300)
         } else if (markerName === "manual-end") {
             waitFor(360)
+        } else if (markerName === "manual-steady-end") {
+            waitFor(1)
+        } else if (markerName === "delayed-open-start") {
+            data.panelVisible = true
+            data.refreshAll()
+            waitFor(180)
+        } else if (markerName === "delayed-close-start") {
+            waitFor(450)
+        } else if (markerName === "delayed-close-end") {
+            waitFor(1)
+        } else if (markerName === "manual-pending-open-start") {
+            data.panelVisible = true
+            data.refreshAll()
+            waitFor(70)
+        } else if (markerName === "manual-pending-close-start") {
+            data.refreshAll()
+            waitFor(450)
+        } else if (markerName === "manual-pending-close-end") {
+            waitFor(1)
         } else if (markerName === "done") {
             finished = true
             console.log("OLLAMA_LIFECYCLE_SEQUENCE_PASS")
@@ -79,15 +98,29 @@ ShellRoot {
         id: phaseTimer
         repeat: false
         onTriggered: {
-            if (!data.enabled) testRoot.mark("disabled-end")
-            else if (!data.panelVisible && testRoot.markerName === "disabled-end")
-                testRoot.mark("enable-closed-end")
-            else if (!data.panelVisible && testRoot.markerName === "enable-closed-end")
-                testRoot.mark("closed-steady-end")
-            else if (data.panelVisible) testRoot.mark("open-end")
+            if (testRoot.markerName === "") testRoot.mark("disabled-end")
+            else if (testRoot.markerName === "disabled-end") testRoot.mark("enable-closed-end")
+            else if (testRoot.markerName === "enable-closed-end") testRoot.mark("closed-steady-end")
+            else if (testRoot.markerName === "closed-steady-end") testRoot.mark("open-end")
             else if (testRoot.markerName === "open-end") testRoot.mark("close-end")
             else if (testRoot.markerName === "close-end") testRoot.mark("manual-end")
-            else if (testRoot.markerName === "manual-end") testRoot.mark("done")
+            else if (testRoot.markerName === "manual-end") testRoot.mark("manual-steady-end")
+            else if (testRoot.markerName === "manual-steady-end")
+                testRoot.mark("delayed-open-start")
+            else if (testRoot.markerName === "delayed-open-start") {
+                data.panelVisible = false
+                testRoot.mark("delayed-close-start")
+            } else if (testRoot.markerName === "delayed-close-start")
+                testRoot.mark("delayed-close-end")
+            else if (testRoot.markerName === "delayed-close-end")
+                testRoot.mark("manual-pending-open-start")
+            else if (testRoot.markerName === "manual-pending-open-start") {
+                data.panelVisible = false
+                testRoot.mark("manual-pending-close-start")
+            } else if (testRoot.markerName === "manual-pending-close-start")
+                testRoot.mark("manual-pending-close-end")
+            else if (testRoot.markerName === "manual-pending-close-end")
+                testRoot.mark("done")
             else testRoot.fail("unexpected phase after " + testRoot.markerName)
         }
     }
