@@ -270,8 +270,31 @@ owned_registry_init() {
     declare -gA OWNED_PIDS=()
     declare -gA OWNED_STARTTIMES=()
     declare -gA OWNED_LABELS=()
+    declare -gA OWNED_HISTORY_ROLES=()
+    declare -gA OWNED_HISTORY_PIDS=()
+    declare -gA OWNED_HISTORY_STARTTIMES=()
+    declare -gA OWNED_HISTORY_LABELS=()
     CALIBRATION_COMMAND_FD=""
     CALIBRATION_WAIT_FD=""
+}
+
+owned_record_history() {
+    local role="$1" pid key state=pending
+    pid="${OWNED_PIDS[$role]:-}"
+    [[ -n "$pid" ]] || return 1
+    key="$role:$pid"
+    OWNED_HISTORY_ROLES["$key"]="$role"
+    OWNED_HISTORY_PIDS["$key"]="$pid"
+    OWNED_HISTORY_STARTTIMES["$key"]="${OWNED_STARTTIMES[$role]:-}"
+    OWNED_HISTORY_LABELS["$key"]="${OWNED_LABELS[$role]:-$role}"
+    [[ -n "${OWNED_STARTTIMES[$role]:-}" ]] && state=captured
+    if [[ -n "${OWNED_HISTORY_FILE:-}" ]]; then
+        jq -nc --arg role "$role" --argjson pid "$pid" \
+            --arg starttime "${OWNED_STARTTIMES[$role]:-}" \
+            --arg label "${OWNED_LABELS[$role]:-$role}" --arg state "$state" \
+            '{role:$role,pid:$pid,starttime:(if $starttime == "" then null else ($starttime|tonumber) end),label:$label,state:$state}' \
+            >> "$OWNED_HISTORY_FILE"
+    fi
 }
 
 owned_role_pid() {
@@ -305,6 +328,7 @@ owned_claim() {
     OWNED_PIDS["$role"]="$pid"
     OWNED_STARTTIMES["$role"]=""
     OWNED_LABELS["$role"]="$label"
+    owned_record_history "$role" || return 1
 }
 
 owned_trace() {
@@ -320,6 +344,7 @@ owned_capture() {
     [[ -n "$pid" ]] || return 1
     if process_starttime "$pid"; then
         OWNED_STARTTIMES["$role"]="$REPLY"
+        owned_record_history "$role" || return 1
         owned_trace "$role"
         return 0
     fi
@@ -350,6 +375,82 @@ owned_stop_all() {
         owned_stop "$role" || failed=1
     done
     ((failed == 0))
+}
+
+write_owned_inventory() {
+    local destination="$1" records tmp
+    local key pid start role label surviving survivor_count
+    records="${destination}.records.tmp"
+    tmp="${destination}.tmp"
+    : > "$records"
+    for key in "${!OWNED_HISTORY_PIDS[@]}"; do
+        pid="${OWNED_HISTORY_PIDS[$key]}"
+        start="${OWNED_HISTORY_STARTTIMES[$key]}"
+        role="${OWNED_HISTORY_ROLES[$key]}"
+        label="${OWNED_HISTORY_LABELS[$key]}"
+        surviving=false
+        if [[ -n "$start" ]]; then
+            identity_alive "$pid" "$start" && surviving=true
+        else
+            kill -0 "$pid" 2>/dev/null && surviving=true
+        fi
+        jq -nc --arg role "$role" --arg label "$label" --argjson pid "$pid" \
+            --arg starttime "$start" --argjson surviving "$surviving" \
+            '{role:$role,label:$label,pid:$pid,
+              starttime:(if $starttime == "" then null else ($starttime|tonumber) end),
+              surviving:$surviving}' >> "$records" || {
+            rm -f -- "$records" "$tmp"
+            return 1
+        }
+    done
+    if ! jq -s '{checked_count:length,
+          survivor_count:([.[] | select(.surviving == true)] | length),
+          processes:(sort_by(.role,.pid))}' "$records" > "$tmp" \
+            || ! jq -e . "$tmp" >/dev/null 2>&1 \
+            || ! mv -f -- "$tmp" "$destination"; then
+        rm -f -- "$records" "$tmp"
+        return 1
+    fi
+    rm -f -- "$records"
+    survivor_count="$(jq -r '.survivor_count' "$destination")"
+    [[ "$survivor_count" == 0 ]]
+}
+
+record_cache_hash() {
+    local phase="$1" path="$2" output="$3" result status digest
+    if result="$(sha256sum -- "$path" 2>&1)"; then
+        status=0
+        digest="${result%% *}"
+    else
+        status=$?
+        digest=""
+    fi
+    jq -nc --arg phase "$phase" --arg path "$path" --arg result "$result" \
+        --arg digest "$digest" --argjson status "$status" \
+        '{phase:$phase,command:["sha256sum","--",$path],exit_status:$status,
+          stdout:$result,sha256:(if $digest == "" then null else $digest end)}' \
+        >> "$output" || return 1
+    REPLY="$digest"
+    ((status == 0))
+}
+
+write_bar_evidence() {
+    local pid="$1" start="$2" prefix="$3" argv_tmp json_tmp
+    local -a argv
+    argv_tmp="${prefix}.argv.nul.tmp"
+    json_tmp="${prefix}.json.tmp"
+    identity_alive "$pid" "$start" || return 1
+    cp -- "/proc/$pid/cmdline" "$argv_tmp" || return 1
+    read_cmdline "$pid" argv || { rm -f -- "$argv_tmp"; return 1; }
+    identity_alive "$pid" "$start" || { rm -f -- "$argv_tmp"; return 1; }
+    if ! printf '%s\0' "${argv[@]}" | jq -Rs --argjson pid "$pid" --arg starttime "$start" \
+            '{pid:$pid,starttime:$starttime,argv:(split("\u0000")[:-1])}' > "$json_tmp" \
+            || ! jq -e . "$json_tmp" >/dev/null 2>&1 \
+            || ! mv -f -- "$argv_tmp" "${prefix}.argv.nul" \
+            || ! mv -f -- "$json_tmp" "${prefix}.json"; then
+        rm -f -- "$argv_tmp" "$json_tmp"
+        return 1
+    fi
 }
 
 close_calibration_fds() {
@@ -417,12 +518,18 @@ stop_run_bar() {
 
 restore_environment() {
     local deadline restored=0 candidate="" stable_candidate="" stable_since=0 now
+    local owned_stopped=true inventory_clean=true
     ((RUN_RESTORED == 0)) || return 0
     close_calibration_fds
-    owned_stop_all || {
+    owned_stop_all || owned_stopped=false
+    if [[ -n "${RUN_OUTPUT:-}" ]]; then
+        mkdir -p "$RUN_OUTPUT/safety"
+        write_owned_inventory "$RUN_OUTPUT/safety/post-run-owned-processes.json" || inventory_clean=false
+    fi
+    if [[ "$owned_stopped" == false || "$inventory_clean" == false ]]; then
         RUN_RESTORATION_OUTCOME=blocked_owned_process
         return 1
-    }
+    fi
     stop_run_bar || {
         RUN_RESTORATION_OUTCOME=blocked_live_benchmark
         return 1
@@ -432,9 +539,21 @@ restore_environment() {
     else
         rm -f -- "$RUN_CACHE_PATH"
     fi
+    if [[ -n "${RUN_CACHE_ORIGINAL_SHA:-}" ]]; then
+        record_cache_hash after-restore "$RUN_CACHE_PATH" \
+            "$RUN_OUTPUT/safety/cache-hashes.jsonl" || {
+            RUN_RESTORATION_OUTCOME=cache_hash_failed
+            return 1
+        }
+        [[ "$REPLY" == "$RUN_CACHE_ORIGINAL_SHA" ]] || {
+            RUN_RESTORATION_OUTCOME=cache_hash_mismatch
+            return 1
+        }
+    fi
 
     if ((RUN_ACTIVE_STOPPED)); then
         if identity_alive "$ACTIVE_BAR_PID" "$ACTIVE_BAR_STARTTIME"; then
+            candidate="$ACTIVE_BAR_PID:$ACTIVE_BAR_STARTTIME"
             restored=1
         else
             "${ACTIVE_BAR_ARGV[@]}" > /dev/null 2>&1 < /dev/null &
@@ -471,6 +590,16 @@ restore_environment() {
         ((restored)) || {
             printf 'failed to verify active bar restoration\n' >> "$RUN_OUTPUT/restoration.log"
             RUN_RESTORATION_OUTCOME=bar_restore_failed
+            return 1
+        }
+        write_bar_evidence "${candidate%%:*}" "${candidate#*:}" \
+            "$RUN_OUTPUT/safety/restored-bar" || {
+            RUN_RESTORATION_OUTCOME=bar_evidence_failed
+            return 1
+        }
+        cmp -s "$RUN_OUTPUT/safety/active-bar.argv.nul" \
+            "$RUN_OUTPUT/safety/restored-bar.argv.nul" || {
+            RUN_RESTORATION_OUTCOME=bar_argv_mismatch
             return 1
         }
     fi
@@ -734,6 +863,28 @@ run_qsg_diagnostic() {
     write_qsg_result "$directory" "$state_ok" "$completed"
 }
 
+sample_artifacts_valid() {
+    local duration="$1" cpu="$2" proc_stat="$3" descendants="$4"
+    local expected=$((duration + 1))
+    [[ -f "$cpu" && -f "$proc_stat" && -f "$descendants" ]] || return 1
+    [[ "$(wc -l < "$cpu")" == "$expected" ]] || return 1
+    [[ "$(wc -l < "$proc_stat")" == $((expected + 1)) ]] || return 1
+    [[ "$(wc -l < "$descendants")" == "$expected" ]] || return 1
+    jq -e -s --argjson duration "$duration" --argjson expected "$expected" '
+      length == $expected and .[0].sample == 0 and .[-1].sample == $duration and
+      all(to_entries[]; .value.sample == .key)
+    ' "$cpu" >/dev/null 2>&1 || return 1
+    jq -e -s --argjson duration "$duration" --argjson expected "$expected" '
+      length == $expected and .[0].sample == 0 and .[-1].sample == $duration and
+      all(to_entries[]; .value.sample == .key and (.value.descendants | type) == "array")
+    ' "$descendants" >/dev/null 2>&1 || return 1
+    awk -F '\t' -v expected="$expected" '
+      NR == 1 { next }
+      $1 != NR - 2 { exit 1 }
+      END { exit !((NR - 1) == expected) }
+    ' "$proc_stat"
+}
+
 run_scenario() {
     local name="$1" source_name="$2" source="$3" enabled="$4" state="$5" duration="$6"
     local directory="$RUN_OUTPUT/scenarios/$name" valid=true pss_json qsg_json calibration_json
@@ -807,6 +958,7 @@ run_scenario() {
             fi
             if [[ "$monitor_ready" == true ]]; then
                 "$sampler" "$RUN_BAR_PID" "$duration" "$directory/cpu-samples.jsonl" \
+                    "$directory/proc-stat.tsv" "$directory/descendant-cpu.jsonl" \
                     "$directory/pss.json" "$window_start" "$window_stop" &
                 sampler_pid=$!
                 owned_claim sampler "$sampler_pid" sampler || {
@@ -840,9 +992,10 @@ run_scenario() {
                     valid=false
                     invalid_reasons+=("Ollama pull started during sampling")
                 fi
-                if [[ "$(wc -l < "$directory/cpu-samples.jsonl" 2>/dev/null || printf 0)" != "$duration" ]]; then
+                if ! sample_artifacts_valid "$duration" "$directory/cpu-samples.jsonl" \
+                        "$directory/proc-stat.tsv" "$directory/descendant-cpu.jsonl"; then
                     valid=false
-                    invalid_reasons+=("CPU sample count mismatch")
+                    invalid_reasons+=("CPU boundary artifact count or sequence mismatch")
                 fi
             else
                 if [[ -n "$monitor_pid" && -n "${monitor_start:-}" ]]; then
@@ -867,6 +1020,8 @@ run_scenario() {
             > "$directory/qsg/result.json"
     fi
     [[ -f "$directory/cpu-samples.jsonl" ]] || : > "$directory/cpu-samples.jsonl"
+    [[ -f "$directory/proc-stat.tsv" ]] || : > "$directory/proc-stat.tsv"
+    [[ -f "$directory/descendant-cpu.jsonl" ]] || : > "$directory/descendant-cpu.jsonl"
     [[ -f "$directory/starts.jsonl" ]] || : > "$directory/starts.jsonl"
     pss_json=null
     [[ -f "$directory/pss.json" ]] && pss_json="$(<"$directory/pss.json")"
@@ -877,13 +1032,14 @@ run_scenario() {
     jq -n --arg name "$name" --arg source "$source_name" --arg state "$state" \
         --argjson duration "$duration" --argjson valid "$valid" \
         --slurpfile samples "$directory/cpu-samples.jsonl" \
+        --slurpfile descendant_cpu "$directory/descendant-cpu.jsonl" \
         --slurpfile starts "$directory/starts.jsonl" \
         --slurpfile reasons "$directory/invalid-reasons.json" \
         --argjson pss "$pss_json" --argjson qsg "$qsg_json" \
         --argjson calibration "$calibration_json" \
         '{name: $name, source: $source, requested_state: $state,
           duration_seconds: $duration, valid: $valid, invalid_reasons: $reasons[0],
-          samples: $samples, pss: $pss, starts: $starts,
+          samples: $samples, descendant_cpu: $descendant_cpu, pss: $pss, starts: $starts,
           calibration: $calibration, qsg: $qsg}' > "$directory/result.json"
 }
 
@@ -899,7 +1055,7 @@ write_manifest() {
         --argjson valid "${RUN_VALID:-false}" --argjson exit_status "${RUN_FINAL_STATUS:-0}" \
         --argjson warmup "$RUN_WARMUP_SECONDS" --argjson qsg_seconds "$RUN_QSG_SECONDS" \
         --argjson active_bar_pid "$ACTIVE_BAR_PID" --arg active_bar_starttime "$ACTIVE_BAR_STARTTIME" \
-        '{schema_version: 1, created_utc: $created, output: $output, valid: $valid,
+        '{schema_version: 2, created_utc: $created, output: $output, valid: $valid,
           refs: {main: {input: $main_ref, sha: $main_sha}, pr: {input: $pr_ref, sha: $pr_sha}},
           timing: {base_scenario_seconds: $duration, open_scenario_seconds: (($duration + 1) / 2 | floor),
                    warmup_seconds: $warmup, qsg_diagnostic_seconds: $qsg_seconds},
@@ -1193,10 +1349,19 @@ run_benchmark() {
     else
         die "widget cache does not exist; refusing to invent a schema"
     fi
+    : > "$RUN_OUTPUT/safety/cache-hashes.jsonl"
+    record_cache_hash before-mutation "$RUN_CACHE_PATH" \
+        "$RUN_OUTPUT/safety/cache-hashes.jsonl" || die "failed to hash original widget cache"
+    RUN_CACHE_ORIGINAL_SHA="$REPLY"
+    record_cache_hash backup "$RUN_CACHE_BACKUP" \
+        "$RUN_OUTPUT/safety/cache-hashes.jsonl" || die "failed to hash widget cache backup"
+    [[ "$REPLY" == "$RUN_CACHE_ORIGINAL_SHA" ]] || die "widget cache backup hash mismatch"
 
     RUN_BAR_PID=""
     RUN_BAR_STARTTIME=""
     RUN_BAR_ROLE=""
+    OWNED_HISTORY_FILE="$RUN_OUTPUT/safety/owned-process-history.jsonl"
+    : > "$OWNED_HISTORY_FILE"
     owned_registry_init
     RUN_ACTIVE_STOPPED=0
     RUN_RESTORED=0
@@ -1317,25 +1482,44 @@ self_test_stat_parser() {
 }
 
 self_test_sampler() {
-    local pid samples="$self_test_tmp/samples.jsonl" pss="$self_test_tmp/pss.json"
+    local pid child child_file="$self_test_tmp/sample-child.pid"
+    local samples="$self_test_tmp/samples.jsonl" proc_stat="$self_test_tmp/proc-stat.tsv"
+    local descendants="$self_test_tmp/descendant-cpu.jsonl" pss="$self_test_tmp/pss.json"
     local unstable_samples="$self_test_tmp/unstable.jsonl"
     local unstable_pss="$self_test_tmp/unstable-pss.json"
     local start="$self_test_tmp/sample.start" stop="$self_test_tmp/sample.stop"
     local unstable_start="$self_test_tmp/unstable.start" unstable_stop="$self_test_tmp/unstable.stop"
 
-    bash -c 'while :; do :; done' &
+    bash -c 'bash -c '\''while :; do :; done'\'' & printf "%s\n" "$!" > "$1"; wait' \
+        _ "$child_file" &
     pid=$!
     self_test_track_pid "$pid"
-    "$sampler" "$pid" 2 "$samples" "$pss" "$start" "$stop"
-    kill "$pid"
+    self_test_wait_for_file "$child_file" 2 || die "sampler descendant fixture did not start"
+    child="$(<"$child_file")"
+    self_test_track_pid "$child"
+    "$sampler" "$pid" 2 "$samples" "$proc_stat" "$descendants" "$pss" "$start" "$stop"
+    kill "$child" "$pid" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 
     jq -e -s '
-        length == 2 and
-        all(.[]; .sample >= 1 and .elapsed_seconds > 0.5 and
-                  .cpu_one_core_percent >= 0 and .own_cpu_one_core_percent >= 0 and
-                  .child_cpu_one_core_percent >= 0 and .starttime > 0)
-    ' "$samples" >/dev/null || die "sampler did not emit two valid elapsed-time samples"
+        length == 3 and
+        .[0].sample == 0 and .[0].boundary == true and
+        .[0].elapsed_seconds == 0 and .[0].cpu_one_core_percent == null and
+        .[0].own_cpu_one_core_percent == null and .[0].child_cpu_one_core_percent == null and
+        all(.[1:][]; .sample >= 1 and .boundary == false and .elapsed_seconds > 0.5 and
+                   .cpu_one_core_percent >= 0 and .own_cpu_one_core_percent >= 0 and
+                   .child_cpu_one_core_percent >= 0 and .starttime > 0) and
+        all(.[]; .clock_tick_hz > 0 and .uptime_seconds > 0 and .utime >= 0 and .stime >= 0 and
+                  .cutime >= 0 and .cstime >= 0)
+    ' "$samples" >/dev/null || die "sampler did not emit initial plus two interval boundaries"
+    [[ "$(wc -l < "$proc_stat")" == 4 ]] || die "proc-stat TSV did not contain a header plus three data rows"
+    jq -e -s --argjson child "$child" '
+        length == 3 and [.[].sample] == [0,1,2] and
+        all(.[]; (.descendants | type) == "array") and
+        any(.[]; any(.descendants[]; .pid == $child and .starttime > 0 and
+                     .utime >= 0 and .stime >= 0))
+    ' "$descendants" >/dev/null || die "sampler omitted stable descendant CPU boundaries"
     jq -e '
         (.before | has("Pss") and has("Pss_Anon") and has("Pss_File") and has("Pss_Shmem")) and
         (.after | has("Pss") and has("Pss_Anon") and has("Pss_File") and has("Pss_Shmem"))
@@ -1344,7 +1528,8 @@ self_test_sampler() {
     bash -c 'read -r -t 0.15 -u "$1" _ || :' _ "$wait_fd" &
     pid=$!
     self_test_track_pid "$pid"
-    if "$sampler" "$pid" 2 "$unstable_samples" "$unstable_pss" \
+    if "$sampler" "$pid" 2 "$unstable_samples" "$self_test_tmp/unstable-proc-stat.tsv" \
+            "$self_test_tmp/unstable-descendants.jsonl" "$unstable_pss" \
             "$unstable_start" "$unstable_stop" 2>/dev/null; then
         die "sampler accepted a process that exited during the window"
     fi
@@ -1515,6 +1700,42 @@ review_case_restore_blocked_by_live_run() (
     [[ "$(<"$cache")" == modified ]]
 )
 
+review_case_restoration_evidence_artifacts() (
+    local safety="$self_test_tmp/restoration-evidence" cache="$self_test_tmp/evidence-cache"
+    local pid start
+    mkdir -p "$safety"
+    printf 'cache-data\n' > "$cache"
+    : > "$safety/cache-hashes.jsonl"
+    record_cache_hash before "$cache" "$safety/cache-hashes.jsonl"
+    record_cache_hash after "$cache" "$safety/cache-hashes.jsonl"
+    jq -e -s --arg path "$cache" '
+      length == 2 and [.[].phase] == ["before","after"] and
+      all(.[]; .command == ["sha256sum","--",$path] and .exit_status == 0 and
+                (.sha256 | test("^[0-9a-f]{64}$")))
+    ' "$safety/cache-hashes.jsonl" >/dev/null || return 1
+
+    bash -c 'read -r -t 10 -u "$1" _ || :' _ "$wait_fd" &
+    pid=$!
+    process_starttime "$pid"
+    start="$REPLY"
+    write_bar_evidence "$pid" "$start" "$safety/restored-bar"
+    jq -e --argjson pid "$pid" --arg start "$start" \
+        '.pid == $pid and .starttime == $start and (.argv | length) > 0' \
+        "$safety/restored-bar.json" >/dev/null || return 1
+    cmp -s "$safety/restored-bar.argv.nul" "/proc/$pid/cmdline" || return 1
+
+    owned_registry_init
+    owned_claim sampler "$pid" sampler
+    OWNED_STARTTIMES[sampler]="$start"
+    owned_record_history sampler
+    owned_stop sampler
+    write_owned_inventory "$safety/post-run-owned-processes.json"
+    jq -e --argjson pid "$pid" '
+      .survivor_count == 0 and .checked_count == 1 and
+      .processes[0].pid == $pid and .processes[0].surviving == false
+    ' "$safety/post-run-owned-processes.json" >/dev/null
+)
+
 review_case_cleanup_finalizes_and_preserves_status() (
     local marker="$self_test_tmp/finalized"
     (
@@ -1611,25 +1832,69 @@ review_case_pss_identity_recheck() (
     ! read_stable_pss 99 100 pss anon file shmem
 )
 
+review_case_sample_boundary_counts() (
+    local duration file cpu tsv descendants index
+    for duration in 120 60; do
+        cpu="$self_test_tmp/count-$duration.jsonl"
+        tsv="$self_test_tmp/count-$duration.tsv"
+        descendants="$self_test_tmp/count-$duration-descendants.jsonl"
+        printf 'sample\tkind\n' > "$tsv"
+        for ((index = 0; index <= duration; index++)); do
+            jq -nc --argjson sample "$index" '{sample:$sample}' >> "$cpu"
+            printf '%d\t%s\n' "$index" "$([[ "$index" == 0 ]] && printf boundary || printf interval)" \
+                >> "$tsv"
+            jq -nc --argjson sample "$index" '{sample:$sample,descendants:[]}' >> "$descendants"
+        done
+        sample_artifacts_valid "$duration" "$cpu" "$tsv" "$descendants" || return 1
+    done
+    printf '%s\n' '{"sample":121}' >> "$self_test_tmp/count-120.jsonl"
+    ! sample_artifacts_valid 120 "$self_test_tmp/count-120.jsonl" \
+        "$self_test_tmp/count-120.tsv" "$self_test_tmp/count-120-descendants.jsonl"
+)
+
 review_case_summary_statistics() (
     local input="$self_test_tmp/statistics-input.json" output="$self_test_tmp/statistics-output.json"
     jq -n '{manifest: {}, scenarios: [{
-      name: "stats", source: "pr", requested_state: "closed", duration_seconds: 6,
+      name: "stats", source: "pr", requested_state: "closed", duration_seconds: 3,
       valid: true, invalid_reasons: [], pss: null, starts: [], calibration: {valid: true},
       qsg: {status: "unavailable", raw_log: "qsg.log"},
       samples: [
-        {elapsed_seconds: 1, cpu_one_core_percent: 10, own_cpu_one_core_percent: 0, child_cpu_one_core_percent: 10},
-        {elapsed_seconds: 1, cpu_one_core_percent: 20, own_cpu_one_core_percent: 10, child_cpu_one_core_percent: 10},
-        {elapsed_seconds: 2, cpu_one_core_percent: 20, own_cpu_one_core_percent: 20, child_cpu_one_core_percent: 0},
-        {elapsed_seconds: 2, cpu_one_core_percent: 30, own_cpu_one_core_percent: 30, child_cpu_one_core_percent: 0}
+        {sample:0, boundary:true, clock_tick_hz:100, uptime_seconds:100, elapsed_seconds:0,
+         utime:100, stime:0, cutime:20, cstime:0, cpu_one_core_percent:null,
+         own_cpu_one_core_percent:null, child_cpu_one_core_percent:null},
+        {sample:1, boundary:false, clock_tick_hz:100, uptime_seconds:101, elapsed_seconds:1,
+         utime:110, stime:0, cutime:20, cstime:0, cpu_one_core_percent:10,
+         own_cpu_one_core_percent:10, child_cpu_one_core_percent:0},
+        {sample:2, boundary:false, clock_tick_hz:100, uptime_seconds:103, elapsed_seconds:2,
+         utime:150, stime:0, cutime:26, cstime:0, cpu_one_core_percent:23,
+         own_cpu_one_core_percent:20, child_cpu_one_core_percent:3}
+      ],
+      descendant_cpu: [
+        {sample:0,uptime_seconds:100,descendants:[
+          {identity:"boot:1:10",pid:1,starttime:10,utime:10,stime:0},
+          {identity:"boot:3:30",pid:3,starttime:30,utime:1,stime:0}]},
+        {sample:1,uptime_seconds:101,descendants:[
+          {identity:"boot:1:10",pid:1,starttime:10,utime:20,stime:0},
+          {identity:"boot:2:20",pid:2,starttime:20,utime:5,stime:0}]},
+        {sample:2,uptime_seconds:103,descendants:[
+          {identity:"boot:1:10",pid:1,starttime:10,utime:50,stime:0},
+          {identity:"boot:2:20",pid:2,starttime:20,utime:15,stime:0},
+          {identity:"boot:3:30",pid:3,starttime:30,utime:101,stime:0}]}
       ]
     }]}' > "$input"
     jq -f "$script_dir/summarize-ollama.jq" "$input" > "$output"
     jq -e '
-      .scenarios[0].cpu.p50_one_core_percent == 20 and
-      .scenarios[0].cpu.p95_one_core_percent == 30 and
-      ((.scenarios[0].cpu.whole_window_own_one_core_percent - 18.333333) | fabs < 0.00001) and
-      ((.scenarios[0].cpu.whole_window_child_one_core_percent - 3.333333) | fabs < 0.00001)
+      .scenarios[0].cpu.boundary_count == 3 and
+      .scenarios[0].cpu.sample_count == 2 and
+      .scenarios[0].cpu.own_p50_one_core_percent == 10 and
+      .scenarios[0].cpu.own_p95_one_core_percent == 20 and
+      ((.scenarios[0].cpu.whole_window_own_one_core_percent - 16.666667) | fabs < 0.00001) and
+      ((.scenarios[0].cpu.whole_window_reaped_child_one_core_percent - 2) | fabs < 0.00001) and
+      .scenarios[0].cpu.live_descendants.positive_delta_jiffies == 50 and
+      .scenarios[0].cpu.live_descendants.identities_with_positive_delta == 2 and
+      ((.scenarios[0].cpu.live_descendants.whole_window_one_core_percent - 16.666667) | fabs < 0.00001) and
+      (.scenarios[0].cpu.live_descendants.identities[] | select(.identity == "boot:3:30") |
+       .positive_delta_jiffies == 0)
     ' "$output" >/dev/null
 )
 
@@ -1655,7 +1920,8 @@ review_case_manifest_records_calibration() (
     RUN_WARMUP_SECONDS=0 RUN_QSG_SECONDS=1 ACTIVE_BAR_PID=1 ACTIVE_BAR_STARTTIME=2
     RUN_CALIBRATION_JSON='[{"scenario":"bad","valid":false,"observed":5}]'
     write_manifest failed
-    jq -e '.observed_calibration[0].observed == 5' "$RUN_OUTPUT/manifest.json" >/dev/null
+    jq -e '.schema_version == 2 and .observed_calibration[0].observed == 5' \
+        "$RUN_OUTPUT/manifest.json" >/dev/null
 )
 
 review_case_qsg_validity() (
@@ -1961,12 +2227,14 @@ self_test_review_findings() {
         term_escalates_to_kill
         launch_identity_failure_stops_child
         restore_blocked_by_live_run
+        restoration_evidence_artifacts
         cleanup_finalizes_and_preserves_status
         ipc_exact_readback
         monitor_boundaries
         empty_cmdline_seed
         utf8_argv
         pss_identity_recheck
+        sample_boundary_counts
         summary_statistics
         calibration_invalidates_run
         manifest_records_calibration

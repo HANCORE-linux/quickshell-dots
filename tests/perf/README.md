@@ -21,8 +21,9 @@ bash tests/perf/benchmark-ollama.sh self-test
 ```
 
 Self-test uses only temporary synthetic processes. It validates stat parsing,
-actual elapsed CPU samples, PSS fields, PID/starttime rejection, 5 ms and 20 ms
-descendant observation, cache mutation on a fixture, and exact git archives. It
+initial-plus-interval CPU boundaries, recursive descendant CPU snapshots, PSS
+fields, PID/starttime rejection, 5 ms and 20 ms descendant observation, cache
+mutation and restoration evidence on fixtures, and exact git archives. It
 snapshots active Quickshell PID/starttime identities and fails if they change;
 it never signals the bar or reads/writes the live widget cache.
 
@@ -73,6 +74,10 @@ while its identity may survive. Identity-capture failure triggers synchronous
 TERM/KILL/reap by PID; failure to prove absence blocks cache and bar restoration.
 Calibration command/wait descriptors are global cleanup state and are closed on
 normal exit, INT, or TERM before registered calibration processes are stopped.
+The safety directory retains original and restored NUL-delimited argv and
+PID/starttime identities, the exact cache hash commands/results before backup and
+after restoration, every owned-process claim/capture, and a final inventory that
+must report zero surviving owned identities.
 
 PR state transitions use the `ollama open` and `ollama close` IPC methods. Before
 every primary and QSG window, the harness reads the live `ollama.enabled` and
@@ -81,14 +86,21 @@ baseline instead requires the Ollama IPC target to be absent.
 
 ## Artifacts
 
-- `manifest.json`: resolved SHAs, timing, host boot ID, monitor calibration, and
-  observed calibration, top-level validity/exit status, and restoration outcome
+- `manifest.json`: schema version 2, resolved SHAs, timing, host boot ID, monitor
+  calibration and observed calibration, top-level validity/exit status, and
+  restoration outcome
 - `sources/{main,pr}/source.tar`: retained immutable git archives
 - `sources/{main,pr}/source/`: read-only extracted sources
-- `safety/`: original bar argv/config/PID and widget-cache backup
-- `scenarios/*/cpu-samples.jsonl`: one record per interval, using real
-  `/proc/uptime` elapsed time, own/child/total jiffy deltas, and own/child/total
-  one-core CPU percentages
+- `safety/`: original/restored bar argv and identities, widget-cache backup and
+  hash transcript, owned-process history, and zero-survivor inventory
+- `scenarios/*/cpu-samples.jsonl`: initial boundary plus one record per interval,
+  with raw parent counters/uptime on every row; sample zero has elapsed zero and
+  null rates
+- `scenarios/*/proc-stat.tsv`: the same raw parent boundaries in tabular form;
+  excluding its header, default scenarios contain 121/121/121/61 data rows
+- `scenarios/*/descendant-cpu.jsonl`: one recursive stable PID/starttime
+  descendant snapshot per parent boundary, including each live descendant's
+  `utime` and `stime`
 - `scenarios/*/pss.json`: before/after `Pss`, `Pss_Anon`, `Pss_File`, and
   `Pss_Shmem` from `smaps_rollup`
 - `scenarios/*/starts.jsonl`: observed descendant identities, argv, curl
@@ -119,12 +131,20 @@ reported as `zero observed starts`. Polling can miss a process that starts and
 exits between scans, so this wording is observation, not mathematical proof
 that no process started.
 
-CPU percentages include `utime`, `stime`, `cutime`, and `cstime`, and are scaled
-so 100% means one fully occupied core. Summaries include nearest-rank p50/p95
-interval values and elapsed-weighted whole-window own, child, and total CPU. PSS
-is a boundary measurement, not a
-continuous memory trace. Results remain sensitive to compositor load, GPU
-driver state, filesystem caches, and unrelated host activity.
+CPU percentages are scaled so 100% means one fully occupied core. Nearest-rank
+p50/p95 values use interval rows only and exclude sample zero. Whole-window
+parent-own and reaped-child values use first-to-last raw counters and actual
+`/proc/uptime` elapsed time. Reaped-child `cutime+cstime` remains separate from
+live-descendant CPU.
+
+Live-descendant CPU is a conservative observed lower bound: only positive
+`utime+stime` deltas for the same PID/starttime identity on adjacent boundaries
+are counted. Processes entirely between boundaries, or disappearing before the
+next boundary, are not observed or inferred. Terminated descendants may later
+appear in reaped-child counters, so the two values must not be blindly added.
+PSS is a boundary measurement, not a continuous memory trace. Results remain
+sensitive to compositor load, GPU driver state, filesystem caches, and unrelated
+host activity.
 
 Artifact finalization does not rely on Bash `errexit`. It prepares manifest,
 results, summary, error-report, and checksum candidates privately, validates all
