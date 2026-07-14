@@ -210,6 +210,7 @@ PanelWindow {
                             id: refreshTip
                             root: ollamaPanel.root
                             owner: refreshButton
+                            placement: "panel"
                             text: "Refresh Ollama state"
                         }
                     }
@@ -244,6 +245,7 @@ PanelWindow {
                             id: closeTip
                             root: ollamaPanel.root
                             owner: closeButton
+                            placement: "panel"
                             text: "Close Ollama panel"
                         }
                     }
@@ -430,6 +432,7 @@ PanelWindow {
                                 id: modelDeleteTip
                                 root: ollamaPanel.root
                                 owner: modelDelete
+                                placement: "panel"
                                 text: "Delete model"
                             }
                         }
@@ -461,6 +464,7 @@ PanelWindow {
                                 id: modelReloadTip
                                 root: ollamaPanel.root
                                 owner: modelReload
+                                placement: "panel"
                                 text: "Renew loaded model"
                             }
                             MouseArea {
@@ -852,6 +856,7 @@ PanelWindow {
                                 id: keepAliveTip
                                 root: ollamaPanel.root
                                 owner: parent
+                                placement: "panel"
                                 text: modelData.value === -1 ? "Keep model loaded indefinitely" : ""
                             }
                         }
@@ -998,6 +1003,7 @@ PanelWindow {
                             id: configBottomTip
                             root: ollamaPanel.root
                             owner: configTile
+                            placement: "panel"
                             text: "Open Ollama config file"
                         }
                         MouseArea {
@@ -1066,6 +1072,7 @@ PanelWindow {
                             id: refreshBottomTip
                             root: ollamaPanel.root
                             owner: refreshTile
+                            placement: "panel"
                             text: "Refresh Ollama state"
                         }
                         MouseArea {

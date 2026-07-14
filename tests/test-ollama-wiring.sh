@@ -235,8 +235,16 @@ assert_file_matches versions/V1/panels/OllamaPanel.qml 'property bool selected: 
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'property bool isCustom: modelData\.value === "custom"[\s\S]*?property bool chipEnabled: !root\.ollama\.controlsLocked[\s\S]*?width: isCustom \? 52 : 40[\s\S]*?horizontalAlignment: Text\.AlignHCenter'
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'text: modelData\.label[\s\S]*?font\.pixelSize: modelData\.value === -1 \? 14 : 10[\s\S]*?text: modelData\.value === -1 \? "Keep model loaded indefinitely" : ""'
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: configTile[\s\S]*?width: 28[\s\S]*?height: 28[\s\S]*?font\.pixelSize: 14'
-assert_contains versions/V1/panels/TooltipOverlay.qml 'var cy = root.tooltipY;'
-assert_contains versions/V1/panels/TooltipOverlay.qml 'Math.max(4, Math.min(parent.height - height - 4, cy - height / 2))'
+assert_contains versions/V1/modules/TooltipMixin.qml 'property string placement: "bar"'
+assert_contains versions/V1/panels/OllamaPanel.qml 'placement: "panel"'
+assert_contains versions/V1/panels/TooltipOverlay.qml 'TooltipPosition.barY'
+assert_contains versions/V1/panels/TooltipOverlay.qml 'TooltipPosition.panelPoint'
+tooltip_mixin_count="$(grep -c 'TooltipMixin {' "$repo_root/versions/V1/panels/OllamaPanel.qml")"
+panel_placement_count="$(grep -c 'placement: "panel"' "$repo_root/versions/V1/panels/OllamaPanel.qml")"
+if [[ "$tooltip_mixin_count" -ne "$panel_placement_count" ]]; then
+    printf 'every Ollama panel TooltipMixin must use panel placement\n' >&2
+    exit 1
+fi
 assert_contains versions/V1/panels/TooltipOverlay.qml 'width: Math.min(parent.width - 8, tipLabel.implicitWidth + padH * 2)'
 assert_contains versions/V1/panels/TooltipOverlay.qml 'wrapMode: Text.Wrap'
 

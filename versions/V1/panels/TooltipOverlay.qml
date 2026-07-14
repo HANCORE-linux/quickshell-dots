@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../modules"
+import "../modules/TooltipPosition.js" as TooltipPosition
 
 PanelWindow {
     id: overlay
@@ -38,14 +39,20 @@ PanelWindow {
         width: Math.min(parent.width - 8, tipLabel.implicitWidth + padH * 2)
         height: tipLabel.implicitHeight + padV * 2
 
-        x: {
-            var cx = root.tooltipX;
-            return Math.max(4, Math.min(parent.width - width - 4, cx - width / 2));
-        }
-        y: {
-            var cy = root.tooltipY;
-            return Math.max(4, Math.min(parent.height - height - 4, cy - height / 2));
-        }
+        readonly property var panelPosition: TooltipPosition.panelPoint(
+            root.tooltipX, root.tooltipY,
+            root.tooltipAnchorWidth, root.tooltipAnchorHeight,
+            width, height, parent.width, parent.height, overlay.gap)
+
+        x: root.tooltipPlacement === "panel"
+            ? panelPosition.x
+            : TooltipPosition.clamp(
+                root.tooltipX + root.tooltipAnchorWidth / 2 - width / 2,
+                4, parent.width - width - 4)
+        y: root.tooltipPlacement === "panel"
+            ? panelPosition.y
+            : TooltipPosition.barY(root.barPosition, parent.height,
+                                   height, overlay.barBottom, overlay.gap)
 
         color: root.barBg   // frosts with the bar's Frost toggle (0.68 ⇄ 0.94)
         border.color: root.pillBorder
