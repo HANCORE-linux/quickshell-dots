@@ -4,6 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 theme="$repo_root/versions/V1/Theme.qml"
 
+for fixture in OllamaDataSmoke.qml OllamaPullIntegrationSmoke.qml; do
+    [[ ! -e "$repo_root/versions/V1/$fixture" ]] || {
+        printf 'test fixture shipped in production payload: %s\n' "$fixture" >&2
+        exit 1
+    }
+done
+
 assert_contains() {
     local file="$theme"
     if [[ $# -eq 2 ]]; then
