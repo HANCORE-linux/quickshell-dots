@@ -14,6 +14,7 @@ TestCase {
     property bool controlsLocked: false
     property bool confirmationVisible: false
     property bool configOpen: false
+    property int deleteClickCount: 0
 
     QtObject {
         id: mockTheme
@@ -42,6 +43,7 @@ TestCase {
             theme: mockTheme
             controlEnabled: !testCase.controlsLocked
             confirmationVisible: testCase.confirmationVisible
+            onClicked: testCase.deleteClickCount += 1
         }
     }
 
@@ -66,6 +68,7 @@ TestCase {
         configOpen = false
         deleteButton.hovered = false
         configurationControl.hovered = false
+        deleteClickCount = 0
     }
 
     function test_actionRowYRemainsStableThroughConfirmation() {
@@ -112,6 +115,21 @@ TestCase {
                         deleteButton.width, deleteButton.height), stableGeometry)
         verify(deleteGlyph.paintedWidth <= deleteGlyph.width)
         verify(deleteGlyph.paintedHeight <= deleteGlyph.height)
+    }
+
+    function test_deleteControlPreservesConfirmationInteraction() {
+        compare(deleteButton.y, 15)
+        compare(deleteButton.confirmationVisible, false)
+
+        deleteButton.clicked()
+        compare(deleteClickCount, 1)
+
+        confirmationVisible = true
+        compare(deleteButton.confirmationVisible, true)
+        compare(deleteButton.y, 15)
+
+        deleteButton.clicked()
+        compare(deleteClickCount, 2)
     }
 
     function test_configurationOpenAndHoverDoNotShiftHeading() {

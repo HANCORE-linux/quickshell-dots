@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Wayland
 import "../modules"
 import "ollama"
-import "ollama/OllamaPanelLayout.js" as OllamaPanelLayout
 
 PanelWindow {
     id: ollamaPanel
@@ -18,18 +17,9 @@ PanelWindow {
 
     readonly property int barBottom: 35
     readonly property int gap: 8
-    property string confirmDeleteModel: ""
-    property string customCtxDisplay: ""
-    property bool configOpen: false
 
     function clearDeleteConfirmation() {
-        confirmDeleteModel = ""
-        deleteConfirmationTimer.stop()
-    }
-
-    function confirmDelete(name) {
-        confirmDeleteModel = name
-        deleteConfirmationTimer.restart()
+        modelsSection.clearDeleteConfirmation()
     }
 
     function setKeepAlive(value) {
@@ -42,25 +32,11 @@ PanelWindow {
         root.ollama.setNumCtx(value)
     }
 
-    Timer {
-        id: deleteConfirmationTimer
-        interval: 8000
-        onTriggered: ollamaPanel.clearDeleteConfirmation()
-    }
-
     Connections {
         target: root
         function onOllamaVisibleChanged() {
             if (!root.ollamaVisible) ollamaPanel.clearDeleteConfirmation()
         }
-    }
-
-    function formatBytes(bytes) {
-        var value = Number(bytes) || 0
-        var gib = 1024 * 1024 * 1024
-        var mib = 1024 * 1024
-        if (value >= gib) return (value / gib).toFixed(1) + " GiB"
-        return Math.round(value / mib) + " MiB"
     }
 
     property real reveal: root.ollamaVisible ? 1 : 0
@@ -79,29 +55,6 @@ PanelWindow {
         onClicked: {
             root.ollamaVisible = false
             ollamaPanel.clearDeleteConfirmation()
-        }
-    }
-
-    component DetailRow: Row {
-        property string k: ""
-        property string v: ""
-        width: parent ? parent.width : 0
-
-        UiText {
-            width: parent.width * 0.45
-            text: k
-            color: ollamaPanel.root.sumiHi
-            font.family: ollamaPanel.root.mono
-            font.pixelSize: 11
-        }
-        UiText {
-            width: parent.width * 0.55
-            text: v
-            color: ollamaPanel.root.ink
-            font.family: ollamaPanel.root.mono
-            font.pixelSize: 11
-            horizontalAlignment: Text.AlignRight
-            elide: Text.ElideRight
         }
     }
 
@@ -125,7 +78,7 @@ PanelWindow {
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
-                if (ollamaPanel.confirmDeleteModel !== "") {
+                if (modelsSection.confirmDeleteModel !== "") {
                     ollamaPanel.clearDeleteConfirmation()
                 } else {
                     root.ollamaVisible = false
@@ -151,904 +104,72 @@ PanelWindow {
                 width: scroller.width
                 spacing: 8
 
-                Item {
-                    width: parent.width
-                    height: 24
-
-                    UiText {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "OLLAMA"
-                        color: root.ink
-                        font.family: root.mono
-                        font.pixelSize: 13
-                        font.letterSpacing: 2
-                        font.weight: Font.Medium
+                OllamaPanelHeader {
+                    root: ollamaPanel.root
+                    data: root.ollama
+                    onRefreshRequested: {
+                        ollamaPanel.clearDeleteConfirmation()
+                        root.ollama.refreshAll()
                     }
-
-                    UiText {
-                        anchors.right: refreshButton.left
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: root.ollama.connected && root.ollama.version !== ""
-                            ? "v" + root.ollama.version : "OFFLINE"
-                        color: root.ollama.connected && root.ollama.version !== "" ? root.seal : root.sumi
-                        font.family: root.mono
-                        font.pixelSize: 10
-                        font.letterSpacing: 1
-                    }
-
-                    Item {
-                        id: refreshButton
-                        anchors.right: closeButton.left
-                        anchors.rightMargin: 6
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 24
-                        height: 24
-                        opacity: refreshMa.enabled ? 1 : 0.35
-
-                        IconText {
-                            anchors.centerIn: parent
-                            text: "\uE5D5"
-                            color: refreshMa.containsMouse ? root.seal : root.sumi
-                            font.pixelSize: 14
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                        }
-                        MouseArea {
-                            id: refreshMa
-                            anchors.fill: parent
-                            enabled: !root.ollama.refreshRunning && !root.ollama.controlsLocked
-                            hoverEnabled: enabled
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onEntered: refreshTip.show()
-                            onExited: refreshTip.hide()
-                            onEnabledChanged: if (!enabled) refreshTip.hide()
-                            onClicked: {
-                                ollamaPanel.clearDeleteConfirmation()
-                                root.ollama.refreshAll()
-                            }
-                        }
-                        TooltipMixin {
-                            id: refreshTip
-                            root: ollamaPanel.root
-                            owner: refreshButton
-                            placement: "panel"
-                            text: "Refresh Ollama state"
-                        }
-                    }
-
-                    Item {
-                        id: closeButton
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 24
-                        height: 24
-
-                        UiText {
-                            anchors.centerIn: parent
-                            text: "\u2715"
-                            color: closeMa.containsMouse ? root.seal : root.sumi
-                            font.pixelSize: 12
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                        }
-                        MouseArea {
-                            id: closeMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onEntered: closeTip.show()
-                            onExited: closeTip.hide()
-                            onClicked: {
-                                root.ollamaVisible = false
-                                ollamaPanel.clearDeleteConfirmation()
-                            }
-                        }
-                        TooltipMixin {
-                            id: closeTip
-                            root: ollamaPanel.root
-                            owner: closeButton
-                            placement: "panel"
-                            text: "Close Ollama panel"
-                        }
+                    onCloseRequested: {
+                        root.ollamaVisible = false
+                        ollamaPanel.clearDeleteConfirmation()
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
-                DetailRow {
-                    k: "GPU"
-                    v: root.ollama.gpuPercent >= 0 ? root.ollama.gpuPercent + "%" : "N/A"
-                }
-                DetailRow {
-                    k: "Ollama VRAM"
-                    v: ollamaPanel.formatBytes(root.ollama.loadedVramBytes)
-                }
-                DetailRow {
-                    k: "Loaded models"
-                    v: String(root.ollama.loadedModels.length)
+                OllamaSummarySection {
+                    root: ollamaPanel.root
+                    data: root.ollama
                 }
 
-                DetailRow {
-                    k: "Context"
-                    v: {
-                        if (root.ollama.loadedModels.length === 1 && root.ollama.effectiveContextLength > 0)
-                            return String(root.ollama.effectiveContextLength)
-                        return root.ollama.selectedNumCtx === null ? "auto"
-                            : String(root.ollama.selectedNumCtx)
+                OllamaModelsSection {
+                    id: modelsSection
+                    root: ollamaPanel.root
+                    data: root.ollama
+                    onLoadRequested: function(name) {
+                        root.ollama.loadModel(name)
+                    }
+                    onEjectRequested: function(name) {
+                        root.ollama.ejectModel(name)
+                    }
+                    onDeleteRequested: function(name) {
+                        root.ollama.deleteModel(name)
                     }
                 }
 
-                DetailRow {
-                    k: "Keep Alive"
-                    v: root.ollama.keepAliveStatus
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.operationInProgress
-                    text: root.ollama.operationMessage
-                    color: root.seal
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.busy && !root.ollama.operationInProgress
-                    text: "Working on " + root.ollama.pendingModel + "..."
-                    color: root.seal
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.connected
-                        && !root.ollama.operationInProgress
-                        && root.ollama.loadedModels.length === 0
-                        && root.ollama.models.length > 0
-                        && root.ollama.displayError === ""
-                    text: "No model loaded"
-                    color: root.sumiHi
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: !root.ollama.connected
-                    text: "Ollama is disconnected"
-                    color: root.sumiHi
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.displayError !== ""
-                    text: root.ollama.displayError
-                    color: root.sealRaw
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.connected
-                        && root.ollama.models.length === 0
-                        && root.ollama.displayError === ""
-                    text: "No models installed"
-                    color: root.sumiHi
-                    font.family: root.mono
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                Repeater {
-                    model: root.ollama.models
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        width: contentColumn.width
-                        height: ollamaPanel.confirmDeleteModel === modelData.name ? 86 : 58
-                        radius: root.tileRadius
-                        color: modelData.loaded ? root.fillActive : root.fillIdle
-                        border.color: modelData.loaded ? root.seal : root.sep
-                        border.width: 1
-
-                        UiText {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 10
-                            anchors.right: modelDelete.left
-                            anchors.rightMargin: 8
-                            anchors.top: parent.top
-                            anchors.topMargin: 8
-                            text: modelData.name
-                            color: root.ink
-                            font.family: root.mono
-                            font.pixelSize: 11
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                        }
-
-                        UiText {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 10
-                            anchors.right: modelDelete.left
-                            anchors.rightMargin: 8
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 8
-                            text: ollamaPanel.formatBytes(modelData.size)
-                                + (modelData.parameterSize ? "  \u00B7  " + modelData.parameterSize : "")
-                                + (modelData.quantization ? "  \u00B7  " + modelData.quantization : "")
-                                + (modelData.loaded ? "  \u00B7  LOADED" : "")
-                            color: modelData.loaded ? root.seal : root.sumiHi
-                            font.family: root.mono
-                            font.pixelSize: 9
-                            elide: Text.ElideRight
-                            visible: ollamaPanel.confirmDeleteModel !== modelData.name
-                        }
-
-                        OllamaDeleteButton {
-                            id: modelDelete
-                            anchors.right: modelReload.visible ? modelReload.left : modelAction.left
-                            anchors.rightMargin: 8
-                            theme: root
-                            controlEnabled: !root.ollama.controlsLocked
-                            confirmationVisible: ollamaPanel.confirmDeleteModel === modelData.name
-                            onEntered: modelDeleteTip.show()
-                            onExited: modelDeleteTip.hide()
-                            onControlEnabledChanged: if (!controlEnabled) modelDeleteTip.hide()
-                            onClicked: ollamaPanel.confirmDelete(modelData.name)
-                        }
-                        TooltipMixin {
-                            id: modelDeleteTip
-                            root: ollamaPanel.root
-                            owner: modelDelete
-                            placement: "panel"
-                            text: "Delete model"
-                        }
-
-                        Rectangle {
-                            id: modelReload
-                            visible: modelData.loaded
-                            anchors.right: modelAction.left
-                            anchors.rightMargin: 8
-                            y: OllamaPanelLayout.modelActionY(
-                                ollamaPanel.confirmDeleteModel === modelData.name)
-                            width: 28
-                            height: 28
-                            radius: root.tileRadius
-                            color: !modelReloadMa.enabled ? root.fillIdle
-                                : modelReloadMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
-                            border.color: modelReloadMa.containsMouse ? root.seal : root.sep
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            IconText {
-                                anchors.centerIn: parent
-                                text: "\uE5D5"
-                                color: !modelReloadMa.enabled ? root.sumi
-                                    : modelReloadMa.containsMouse ? root.seal : root.ink
-                                font.pixelSize: 13
-                            }
-                            TooltipMixin {
-                                id: modelReloadTip
-                                root: ollamaPanel.root
-                                owner: modelReload
-                                placement: "panel"
-                                text: "Renew loaded model"
-                            }
-                            MouseArea {
-                                id: modelReloadMa
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                hoverEnabled: enabled
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onEntered: modelReloadTip.show()
-                                onExited: modelReloadTip.hide()
-                                onEnabledChanged: if (!enabled) modelReloadTip.hide()
-                                onClicked: {
-                                    ollamaPanel.clearDeleteConfirmation()
-                                    root.ollama.loadModel(modelData.name)
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            id: modelAction
-                            anchors.right: parent.right
-                            anchors.rightMargin: 8
-                            y: OllamaPanelLayout.modelActionY(
-                                ollamaPanel.confirmDeleteModel === modelData.name)
-                            width: 50
-                            height: 28
-                            radius: root.tileRadius
-                            color: !modelActionMa.enabled ? root.fillIdle
-                                : modelActionMa.containsMouse ? root.fillPrimaryHover
-                                : modelData.loaded ? root.fillHover : root.seal
-                            border.color: modelData.loaded ? root.seal : "transparent"
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            UiText {
-                                anchors.centerIn: parent
-                                text: root.ollama.operationInProgress && root.ollama.pendingModel === modelData.name
-                                    ? (root.ollama.operationState === "loading" ? "Loading" : "Wait")
-                                    : modelData.loaded ? "Eject" : "Load"
-                                color: !modelActionMa.enabled ? root.sumi
-                                    : modelData.loaded ? root.seal : root.paper
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            MouseArea {
-                                id: modelActionMa
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                hoverEnabled: true
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    ollamaPanel.clearDeleteConfirmation()
-                                    if (modelData.loaded) root.ollama.ejectModel(modelData.name)
-                                    else root.ollama.loadModel(modelData.name)
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            visible: ollamaPanel.confirmDeleteModel === modelData.name
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 8
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 8
-                            height: 28
-                            radius: root.tileRadius
-                            color: root.fillIdle
-                            border.color: root.seal
-                            border.width: 1
-
-                            UiText {
-                                id: deleteConfirmationText
-                                anchors.left: parent.left
-                                anchors.leftMargin: 8
-                                anchors.right: deleteConfirmationActions.left
-                                anchors.rightMargin: 6
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "Delete " + ollamaPanel.confirmDeleteModel + "?"
-                                color: root.ink
-                                font.family: root.mono
-                                font.pixelSize: 10
-                                elide: Text.ElideRight
-                            }
-                            Row {
-                                id: deleteConfirmationActions
-                                anchors.right: parent.right
-                                anchors.rightMargin: 4
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 4
-
-                                Rectangle {
-                                    width: 46
-                                    height: 22
-                                    radius: root.tileRadius
-                                    color: cancelDeleteMa.containsMouse ? root.fillHover : root.fillIdle
-                                    UiText { anchors.centerIn: parent; text: "Cancel"; color: root.ink; font.family: root.mono; font.pixelSize: 9 }
-                                    MouseArea {
-                                        id: cancelDeleteMa
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: ollamaPanel.clearDeleteConfirmation()
-                                    }
-                                }
-                                Rectangle {
-                                    width: 76
-                                    height: 22
-                                    radius: root.tileRadius
-                                    color: deleteModelMa.containsMouse ? root.sealRaw : root.seal
-                                    UiText { anchors.centerIn: parent; text: "Delete model"; color: root.paper; font.family: root.mono; font.pixelSize: 9 }
-                                    MouseArea {
-                                        id: deleteModelMa
-                                        anchors.fill: parent
-                                        enabled: !root.ollama.controlsLocked
-                                        hoverEnabled: enabled
-                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                        onClicked: {
-                                            root.ollama.deleteModel(ollamaPanel.confirmDeleteModel)
-                                            ollamaPanel.clearDeleteConfirmation()
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                OllamaPullSection {
+                    root: ollamaPanel.root
+                    data: root.ollama
+                    onPullRequested: function(name) {
+                        ollamaPanel.clearDeleteConfirmation()
+                        root.ollama.pullModel(name)
+                    }
+                    onCancelRequested: {
+                        ollamaPanel.clearDeleteConfirmation()
+                        root.ollama.cancelPull()
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
-                Column {
-                    width: parent.width
-                    height: 78
-                    spacing: 6
-
-                    Row {
-                        width: parent.width
-                        height: 32
-                        spacing: 6
-                        visible: !root.ollama.pullBusy
-
-                        Rectangle {
-                            width: parent.width - pullButton.width - parent.spacing
-                            height: 32
-                            radius: root.tileRadius
-                            color: root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
-
-                            TextInput {
-                                id: pullInput
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
-                                verticalAlignment: Text.AlignVCenter
-                                font.family: root.mono
-                                font.pixelSize: 11
-                                color: root.ink
-                                clip: true
-                                selectByMouse: true
-                            }
-
-                            UiText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 10
-                                text: "Model name or URL..."
-                                color: root.sumiHi
-                                font.family: root.mono
-                                font.pixelSize: 11
-                                visible: !pullInput.text && !pullInput.activeFocus
-                            }
-                        }
-
-                        Rectangle {
-                            id: pullButton
-                            width: 64
-                            height: 32
-                            radius: root.tileRadius
-                            color: !pullMa.enabled ? root.fillIdle
-                                : pullMa.containsMouse ? root.fillPrimaryHover : root.seal
-                            border.color: !pullMa.enabled ? root.sep : "transparent"
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            UiText {
-                                anchors.centerIn: parent
-                                text: "Pull"
-                                color: !pullMa.enabled ? root.sumi : root.paper
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            MouseArea {
-                                id: pullMa
-                                anchors.fill: parent
-                                enabled: !root.ollama.controlsLocked
-                                    && String(pullInput.text).trim() !== ""
-                                hoverEnabled: enabled
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    ollamaPanel.clearDeleteConfirmation()
-                                    root.ollama.pullModel(pullInput.text)
-                                    pullInput.text = ""
-                                }
-                            }
-                        }
+                OllamaConfigSection {
+                    root: ollamaPanel.root
+                    data: root.ollama
+                    onKeepAliveRequested: function(value) {
+                        ollamaPanel.setKeepAlive(value)
                     }
-
-                    Column {
-                        width: parent.width
-                        spacing: 4
-                        visible: root.ollama.pullBusy
-
-                        UiText {
-                            width: parent.width
-                            text: root.ollama.pullStatus || "Starting..."
-                            color: root.seal
-                            font.family: root.mono
-                            font.pixelSize: 10
-                            elide: Text.ElideRight
-                        }
-
-                        UiText {
-                            width: parent.width
-                            text: root.ollama.pullProgressText
-                                || "Current layer · Calculating..."
-                            color: root.sumiHi
-                            font.family: root.mono
-                            font.pixelSize: 10
-                            elide: Text.ElideRight
-                        }
-
-                        Rectangle {
-                            width: parent.width
-                            height: 6
-                            radius: 3
-                            color: root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
-
-                            Rectangle {
-                                width: Math.min(parent.width - 2,
-                                    Math.max(6, (parent.width - 2) * root.ollama.pullProgress))
-                                height: parent.height - 2
-                                anchors.left: parent.left
-                                anchors.leftMargin: 1
-                                anchors.verticalCenter: parent.verticalCenter
-                                radius: 2
-                                color: root.seal
-                                Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                            }
-                        }
-
-                        Rectangle {
-                            id: cancelPullButton
-                            width: parent.width
-                            height: 24
-                            visible: root.ollama.pullCanCancel
-                            radius: root.tileRadius
-                            color: cancelPullMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
-                            border.color: root.sep
-                            border.width: 1
-
-                            UiText {
-                                anchors.centerIn: parent
-                                text: "Cancel"
-                                color: root.seal
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-                            MouseArea {
-                                id: cancelPullMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                ollamaPanel.clearDeleteConfirmation()
-                                root.ollama.cancelPull()
-                            }
-                            }
-                        }
+                    onContextRequested: function(value) {
+                        ollamaPanel.setContext(value)
                     }
-
-                    UiText {
-                        width: parent.width
-                        visible: !root.ollama.pullBusy && root.ollama.pullResultText !== ""
-                        text: root.ollama.pullResultText
-                        color: root.ollama.pullState === "success" ? root.seal : root.sealRaw
-                        font.family: root.mono
-                        font.pixelSize: 10
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.Wrap
+                    onOpenRuntimeConfigRequested: {
+                        root.ollamaVisible = false
+                        root.ollama.openRuntimeConfig()
                     }
-                }
-
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
-                // ── CONFIGURATION (collapsible) ──
-                OllamaConfigurationToggle {
-                    width: parent.width
-                    theme: root
-                    controlEnabled: !root.ollama.controlsLocked
-                    open: ollamaPanel.configOpen
-                    onClicked: ollamaPanel.configOpen = !ollamaPanel.configOpen
-                }
-
-                Column {
-                    width: parent.width
-                    spacing: 8
-                    visible: ollamaPanel.configOpen
-
-                Row {
-                    width: parent.width
-                    height: 28
-                    spacing: 6
-
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 70
-                        text: "Keep Alive"
-                        color: root.sumiHi
-                        font.family: root.mono
-                        font.pixelSize: 11
+                    onApplyRequested: {
+                        ollamaPanel.clearDeleteConfirmation()
+                        root.ollama.applyRuntimeConfiguration()
                     }
-
-                    Repeater {
-                        model: [
-                            { label: "5m", value: "5m" },
-                            { label: "30m", value: "30m" },
-                            { label: "∞", value: -1 }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            property bool selected: root.ollama.selectedKeepAlive === modelData.value
-                            property bool chipEnabled: !root.ollama.controlsLocked
-                            width: 36
-                            height: 28
-                            radius: root.tileRadius
-                            color: !chipEnabled ? root.fillIdle
-                                : selected ? root.seal
-                                : keepAliveMa.containsMouse ? root.fillHover : root.fillIdle
-                            border.color: !chipEnabled ? root.sep
-                                : selected || keepAliveMa.containsMouse ? root.seal : root.sep
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            UiText {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
-                                font.family: root.mono
-                                font.pixelSize: modelData.value === -1 ? 14 : 10
-                            }
-                            MouseArea {
-                                id: keepAliveMa
-                                anchors.fill: parent
-                                enabled: chipEnabled
-                                hoverEnabled: enabled
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onEntered: keepAliveTip.show()
-                                onExited: keepAliveTip.hide()
-                                onEnabledChanged: if (!enabled) keepAliveTip.hide()
-                                onClicked: ollamaPanel.setKeepAlive(modelData.value)
-                            }
-                            TooltipMixin {
-                                id: keepAliveTip
-                                root: ollamaPanel.root
-                                owner: parent
-                                placement: "panel"
-                                text: modelData.value === -1 ? "Keep model loaded indefinitely" : ""
-                            }
-                        }
-                    }
-                }
-
-                Row {
-                    width: parent.width
-                    height: 28
-                    spacing: 6
-
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 70
-                        text: "Context"
-                        color: root.sumiHi
-                        font.family: root.mono
-                        font.pixelSize: 11
-                    }
-
-                    Repeater {
-                        model: [
-                            { label: "auto", value: null },
-                            { label: "8k", value: 8192 },
-                            { label: "16k", value: 16384 },
-                            { label: "32k", value: 32768 },
-                            { label: "Custom", value: "custom" }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            property bool isCustom: modelData.value === "custom"
-                            property bool selected: isCustom
-                                ? root.ollama.selectedNumCtx !== null && ![8192,16384,32768].includes(root.ollama.selectedNumCtx)
-                                : root.ollama.selectedNumCtx === modelData.value
-                            property bool chipEnabled: !root.ollama.controlsLocked
-                            width: isCustom ? 52 : 40
-                            height: 28
-                            radius: root.tileRadius
-                            color: !chipEnabled ? root.fillIdle
-                                : selected ? root.seal
-                                : contextChipMa.containsMouse ? root.fillHover : root.fillIdle
-                            border.color: !chipEnabled ? root.sep
-                                : selected || contextChipMa.containsMouse ? root.seal : root.sep
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            UiText {
-                                visible: !isCustom
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            TextInput {
-                                id: customInput
-                                visible: isCustom
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
-                                verticalAlignment: Text.AlignVCenter
-                                horizontalAlignment: Text.AlignHCenter
-                                font.family: root.mono
-                                font.pixelSize: 10
-                                enabled: chipEnabled && isCustom
-                                color: enabled ? root.ink : root.sumi
-                                clip: true
-                                selectByMouse: true
-                                text: isCustom && selected
-                                    ? (ollamaPanel.customCtxDisplay !== "" ? ollamaPanel.customCtxDisplay : String(root.ollama.selectedNumCtx))
-                                    : ""
-                                onEditingFinished: {
-                                    var raw = String(text).trim()
-                                    if (!raw) return
-                                    var n = root.ollama.parseContextInput(raw)
-                                    if (n !== null) {
-                                        ollamaPanel.customCtxDisplay = raw
-                                        ollamaPanel.setContext(n)
-                                    }
-                                }
-                            }
-
-                            UiText {
-                                visible: isCustom && (!selected || customInput.text === "")
-                                    && !customInput.activeFocus
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: "Custom"
-                                color: selected ? root.paper : chipEnabled ? root.ink : root.sumi
-                                font.family: root.mono
-                                font.pixelSize: 10
-                            }
-
-                            MouseArea {
-                                id: contextChipMa
-                                anchors.fill: parent
-                                enabled: chipEnabled && !isCustom
-                                hoverEnabled: enabled
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    ollamaPanel.setContext(modelData.value)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                UiText {
-                    width: parent.width
-                    visible: root.ollama.configDirty
-                    text: "Configuration pending — press Apply to reload model"
-                    color: root.seal
-                    font.family: root.mono
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                }
-                }  // configOpen Column
-
-                Rectangle { width: parent.width; height: 1; color: root.sep }
-
-                Row {
-                    width: parent.width
-                    height: 28
-                    spacing: 8
-
-                    Rectangle {
-                        id: configTile
-                        width: 28
-                        height: 28
-                        radius: root.tileRadius
-                        color: configBottomMa.containsMouse ? root.fillHover : root.fillIdle
-                        border.color: configBottomMa.containsMouse ? root.seal : root.sep
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        IconText {
-                            anchors.centerIn: parent
-                            text: "\uE8B8"
-                            color: configBottomMa.containsMouse ? root.seal : root.ink
-                            font.pixelSize: 14
-                        }
-                        TooltipMixin {
-                            id: configBottomTip
-                            root: ollamaPanel.root
-                            owner: configTile
-                            placement: "panel"
-                            text: "Open Ollama config file"
-                        }
-                        MouseArea {
-                            id: configBottomMa
-                            anchors.fill: parent
-                            enabled: !root.ollama.controlsLocked
-                            hoverEnabled: enabled
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onEntered: configBottomTip.show()
-                            onExited: configBottomTip.hide()
-                            onEnabledChanged: if (!enabled) configBottomTip.hide()
-                            onClicked: {
-                                configBottomTip.hide()
-                                root.ollamaVisible = false
-                                root.ollama.openRuntimeConfig()
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: parent.width - refreshTile.width - configTile.width - 2 * parent.spacing
-                        height: parent.height
-                        radius: root.tileRadius
-                        color: applyMa.enabled
-                            ? (applyMa.containsMouse ? root.fillPrimaryHover : root.seal)
-                            : root.fillIdle
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        UiText {
-                            anchors.centerIn: parent
-                            text: "Apply configuration"
-                            color: applyMa.enabled ? root.paper : root.sumi
-                            font.family: root.mono
-                            font.pixelSize: 11
-                        }
-                        MouseArea {
-                            id: applyMa
-                            anchors.fill: parent
-                            enabled: !root.ollama.controlsLocked && root.ollama.configDirty
-                            hoverEnabled: enabled
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                ollamaPanel.clearDeleteConfirmation()
-                                root.ollama.applyRuntimeConfiguration()
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        id: refreshTile
-                        width: 28
-                        height: 28
-                        radius: root.tileRadius
-                        color: refreshBottomMa.containsMouse ? root.fillHover : root.fillIdle
-                        border.color: refreshBottomMa.containsMouse ? root.seal : root.sep
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        IconText {
-                            anchors.centerIn: parent
-                            text: "\uE5D5"
-                            color: refreshBottomMa.containsMouse ? root.seal : root.ink
-                            font.pixelSize: 14
-                        }
-                        TooltipMixin {
-                            id: refreshBottomTip
-                            root: ollamaPanel.root
-                            owner: refreshTile
-                            placement: "panel"
-                            text: "Refresh Ollama state"
-                        }
-                        MouseArea {
-                            id: refreshBottomMa
-                            anchors.fill: parent
-                            enabled: !root.ollama.controlsLocked
-                            hoverEnabled: enabled
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onEntered: refreshBottomTip.show()
-                            onExited: refreshBottomTip.hide()
-                            onEnabledChanged: if (!enabled) refreshBottomTip.hide()
-                            onClicked: {
-                                refreshBottomTip.hide()
-                                ollamaPanel.clearDeleteConfirmation()
-                                root.ollama.refreshAll()
-                            }
-                        }
+                    onRefreshRequested: {
+                        ollamaPanel.clearDeleteConfirmation()
+                        root.ollama.refreshAll()
                     }
                 }
             }

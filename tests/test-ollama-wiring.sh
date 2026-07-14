@@ -89,6 +89,21 @@ assert_file_matches() {
     }
 }
 
+assert_file_order() {
+    local file="$repo_root/$1"
+    shift
+    local previous=0
+    local text line
+    for text in "$@"; do
+        line="$(grep -nFm1 -- "$text" "$file" | cut -d: -f1 || true)"
+        if [[ -z "$line" || "$line" -le "$previous" ]]; then
+            printf 'expected ordered %s in %s\n' "$text" "$file" >&2
+            exit 1
+        fi
+        previous="$line"
+    done
+}
+
 while IFS= read -r static_import; do
     imported_file="${static_import##*/}"
     grep -Fq "versions/V1/modules/$imported_file" \
@@ -212,35 +227,86 @@ if grep -Fq 'ollama rm' "$repo_root/versions/V1/modules/OllamaData.qml"; then
     exit 1
 fi
 
-assert_contains versions/V1/panels/OllamaPanel.qml 'model: root.ollama.models'
-assert_contains versions/V1/panels/OllamaPanel.qml 'visible: root.ollama.operationInProgress'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.operationMessage'
-assert_contains versions/V1/panels/OllamaPanel.qml 'enabled: !root.ollama.controlsLocked'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.loadModel(modelData.name)'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.ejectModel(modelData.name)'
-assert_contains versions/V1/panels/OllamaPanel.qml 'id: modelReload'
-assert_contains versions/V1/panels/OllamaPanel.qml 'visible: modelData.loaded'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Renew loaded model"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "No model loaded"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.displayError === ""'
-assert_contains versions/V1/panels/OllamaPanel.qml 'visible: root.ollama.displayError !== ""'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.displayError'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Keep Alive"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.keepAliveStatus'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Context"'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'required property var root'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'required property var data'
+assert_not_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'ollamaVisible ='
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'signal refreshRequested()'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'signal closeRequested()'
+assert_contains versions/V1/panels/OllamaPanel.qml 'OllamaPanelHeader {'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'required property var root'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'required property var data'
+assert_not_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'ollamaVisible ='
+assert_contains versions/V1/panels/ollama/OllamaDetailRow.qml 'property string k: ""'
+assert_contains versions/V1/panels/OllamaPanel.qml 'OllamaSummarySection {'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'required property var root'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'required property var data'
+assert_not_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'ollamaVisible ='
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'function clearDeleteConfirmation()'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal loadRequested(string name)'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal ejectRequested(string name)'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'signal deleteRequested(string name)'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'required property var modelData'
+assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.loadModel('
+assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.ejectModel('
+assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml '.deleteModel('
+assert_contains versions/V1/panels/OllamaPanel.qml 'OllamaModelsSection {'
+assert_contains versions/V1/panels/ollama/OllamaPullSection.qml 'required property var root'
+assert_contains versions/V1/panels/ollama/OllamaPullSection.qml 'required property var data'
+assert_not_contains versions/V1/panels/ollama/OllamaPullSection.qml 'ollamaVisible ='
+assert_contains versions/V1/panels/ollama/OllamaPullSection.qml 'signal pullRequested(string name)'
+assert_contains versions/V1/panels/ollama/OllamaPullSection.qml 'signal cancelRequested()'
+assert_not_contains versions/V1/panels/ollama/OllamaPullSection.qml '.pullModel('
+assert_not_contains versions/V1/panels/ollama/OllamaPullSection.qml '.cancelPull('
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'required property var root'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'required property var data'
+assert_not_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'ollamaVisible ='
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'signal openRuntimeConfigRequested()'
+assert_not_contains versions/V1/panels/ollama/OllamaConfigSection.qml '.openRuntimeConfig('
+assert_not_contains versions/V1/panels/ollama/OllamaConfigSection.qml '.applyRuntimeConfiguration('
+assert_not_contains versions/V1/panels/ollama/OllamaConfigSection.qml '.refreshAll('
+
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'model: modelsSection.data.models'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'height: Math\.min\(contentColumn\.implicitHeight \+ 24,\s*parent\.height - 2 \* \(barBottom \+ gap\)\)'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: scroller\s*anchors\.fill: parent\s*anchors\.margins: 12\s*contentWidth: width\s*contentHeight: contentColumn\.implicitHeight\s*clip: true\s*interactive: contentHeight > height\s*boundsBehavior: Flickable\.StopAtBounds'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'Keys\.onPressed: function\(event\) \{\s*if \(event\.key === Qt\.Key_Escape\) \{\s*if \(modelsSection\.confirmDeleteModel !== ""\) \{\s*ollamaPanel\.clearDeleteConfirmation\(\)\s*\} else \{\s*root\.ollamaVisible = false'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'MouseArea \{\s*anchors\.fill: parent\s*onClicked: \{\s*root\.ollamaVisible = false\s*ollamaPanel\.clearDeleteConfirmation\(\)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'focus: root.ollamaVisible'
+assert_file_matches versions/V1/panels/OllamaPanel.qml 'WlrLayershell\.keyboardFocus: root\.ollamaVisible\s*\? WlrKeyboardFocus\.Exclusive : WlrKeyboardFocus\.None'
+assert_file_matches versions/V1/panels/ollama/OllamaModelRow.qml 'height: confirmationVisible \? 86 : 58'
+assert_file_order versions/V1/panels/OllamaPanel.qml \
+    'OllamaPanelHeader {' \
+    'OllamaSummarySection {' \
+    'OllamaModelsSection {' \
+    'OllamaPullSection {' \
+    'OllamaConfigSection {'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'visible: summarySection.data.operationInProgress'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'text: summarySection.data.operationMessage'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'enabled: !modelRow.data.controlsLocked'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.loadModel(name)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.ejectModel(name)'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'id: modelReload'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'visible: modelRow.modelData.loaded'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'text: "Renew loaded model"'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'text: "No model loaded"'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'summarySection.data.displayError === ""'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'visible: summarySection.data.displayError !== ""'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'text: summarySection.data.displayError'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'k: "Keep Alive"'
+assert_contains versions/V1/panels/ollama/OllamaSummarySection.qml 'v: summarySection.data.keepAliveStatus'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Context"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setKeepAlive'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.setNumCtx'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.parseContextInput(raw)'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'configSection.data.parseContextInput(raw)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'function setKeepAlive(value)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'function setContext(value)'
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setKeepAlive\(value\)\s*\{\s*clearDeleteConfirmation\(\)\s*root\.ollama\.setKeepAlive\(value\)'
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setContext\(value\)\s*\{\s*clearDeleteConfirmation\(\)\s*root\.ollama\.setNumCtx\(value\)'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: pullMa\s*anchors\.fill: parent\s*enabled: !root\.ollama\.controlsLocked\s*&& String\(pullInput\.text\)\.trim\(\) !== ""\s*hoverEnabled: enabled'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: cancelPullButton[\s\S]*?visible: root\.ollama\.pullCanCancel'
+assert_file_matches versions/V1/panels/ollama/OllamaPullSection.qml 'id: pullMa\s*anchors\.fill: parent\s*enabled: !pullSection\.data\.controlsLocked\s*&& String\(pullInput\.text\)\.trim\(\) !== ""\s*hoverEnabled: enabled'
+assert_file_matches versions/V1/panels/ollama/OllamaPullSection.qml 'id: cancelPullButton[\s\S]*?visible: pullSection\.data\.pullCanCancel'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.applyRuntimeConfiguration()'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Apply configuration"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Open Ollama config file"'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Apply configuration"'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Refresh Ollama state"'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Open Ollama config file"'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.openRuntimeConfig()'
 assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool refreshRunning: versionProc.running || tagsProc.running || loadedProc.running'
 assert_contains versions/V1/modules/OllamaData.qml 'OllamaGpuSampler {'
@@ -258,47 +324,47 @@ assert_contains versions/V1/modules/OllamaGpuSampler.qml '"--loop-ms=" + cadence
 assert_not_contains versions/V1/modules/OllamaGpuSampler.qml '"bash"'
 assert_not_contains versions/V1/modules/OllamaGpuSampler.qml '"cat"'
 assert_contains versions/V1/modules/OllamaWidget.qml 'text: "GPU max"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'enabled: !root.ollama.refreshRunning'
-assert_contains versions/V1/panels/OllamaPanel.qml 'opacity: refreshMa.enabled ? 1 : 0.35'
-assert_contains versions/V1/panels/OllamaPanel.qml 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: root.ollama.connected && root.ollama.version !== ""'
-assert_contains versions/V1/panels/OllamaPanel.qml 'color: root.ollama.connected && root.ollama.version !== "" ? root.seal : root.sumi'
-assert_contains versions/V1/panels/OllamaPanel.qml 'id: deleteConfirmationTimer'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Delete " + ollamaPanel.confirmDeleteModel + "?"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Cancel"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Delete model"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.deleteModel(ollamaPanel.confirmDeleteModel)'
-assert_not_contains versions/V1/panels/OllamaPanel.qml 'function onModelsChanged() { ollamaPanel.clearDeleteConfirmation() }'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'enabled: !header.data.refreshRunning && !header.data.controlsLocked'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'opacity: refreshMa.enabled ? 1 : 0.35'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'text: header.data.connected && header.data.version !== ""'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml '? header.root.seal : header.root.sumi'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'id: deleteConfirmationTimer'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'text: "Delete " + modelRow.modelData.name + "?"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'text: "Cancel"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'text: "Delete model"'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.deleteModel(name)'
+assert_not_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'function onModelsChanged()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'function clearDeleteConfirmation()'
-assert_contains versions/V1/panels/OllamaPanel.qml 'function confirmDelete(name)'
+assert_contains versions/V1/panels/ollama/OllamaModelsSection.qml 'function confirmDelete(name)'
 assert_contains versions/V1/panels/OllamaPanel.qml 'import "ollama"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'import "ollama/OllamaPanelLayout.js" as OllamaPanelLayout'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'OllamaDeleteButton\s*\{[\s\S]*?id: modelDelete[\s\S]*?confirmationVisible: ollamaPanel\.confirmDeleteModel === modelData\.name'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: modelReload[\s\S]*?y: OllamaPanelLayout\.modelActionY\(\s*ollamaPanel\.confirmDeleteModel === modelData\.name\)'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: modelAction[\s\S]*?y: OllamaPanelLayout\.modelActionY\(\s*ollamaPanel\.confirmDeleteModel === modelData\.name\)'
-assert_contains versions/V1/panels/OllamaPanel.qml 'owner: refreshButton'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Refresh Ollama state"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'owner: closeButton'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Close Ollama panel"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'owner: modelDelete'
-assert_contains versions/V1/panels/OllamaPanel.qml 'text: "Delete model"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'owner: configTile'
-assert_contains versions/V1/panels/OllamaPanel.qml 'owner: refreshTile'
-assert_contains versions/V1/panels/OllamaPanel.qml 'hoverEnabled: enabled'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'import "OllamaPanelLayout.js" as PanelLayout'
+assert_file_matches versions/V1/panels/ollama/OllamaModelRow.qml 'OllamaDeleteButton\s*\{[\s\S]*?id: modelDelete[\s\S]*?confirmationVisible: modelRow\.confirmationVisible'
+assert_file_matches versions/V1/panels/ollama/OllamaModelRow.qml 'id: modelReload[\s\S]*?y: PanelLayout\.modelActionY\(modelRow\.confirmationVisible\)'
+assert_file_matches versions/V1/panels/ollama/OllamaModelRow.qml 'id: modelAction[\s\S]*?y: PanelLayout\.modelActionY\(modelRow\.confirmationVisible\)'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'owner: refreshButton'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'text: "Refresh Ollama state"'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'owner: closeButton'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'text: "Close Ollama panel"'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'owner: modelDelete'
+assert_contains versions/V1/panels/ollama/OllamaModelRow.qml 'text: "Delete model"'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'owner: configTile'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'owner: refreshTile'
+assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'hoverEnabled: enabled'
 assert_file_matches versions/V1/panels/ollama/OllamaConfigurationToggle.qml 'id: toggleMouseArea[\s\S]*?hoverEnabled: enabled[\s\S]*?cursorShape: enabled \? Qt\.PointingHandCursor : Qt\.ArrowCursor'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'OllamaConfigurationToggle\s*\{[\s\S]*?open: ollamaPanel\.configOpen[\s\S]*?onClicked: ollamaPanel\.configOpen = !ollamaPanel\.configOpen'
-assert_not_contains versions/V1/panels/OllamaPanel.qml 'id: modelDeleteGlyph'
-assert_not_contains versions/V1/panels/OllamaPanel.qml 'id: configurationHeadingGroup'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'property bool selected: root\.ollama\.selectedKeepAlive === modelData\.value[\s\S]*?property bool chipEnabled: !root\.ollama\.controlsLocked[\s\S]*?hoverEnabled: enabled[\s\S]*?cursorShape: enabled \? Qt\.PointingHandCursor : Qt\.ArrowCursor'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'property bool isCustom: modelData\.value === "custom"[\s\S]*?property bool chipEnabled: !root\.ollama\.controlsLocked[\s\S]*?width: isCustom \? 52 : 40[\s\S]*?horizontalAlignment: Text\.AlignHCenter'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'text: modelData\.label[\s\S]*?font\.pixelSize: modelData\.value === -1 \? 14 : 10[\s\S]*?text: modelData\.value === -1 \? "Keep model loaded indefinitely" : ""'
-assert_file_matches versions/V1/panels/OllamaPanel.qml 'id: configTile[\s\S]*?width: 28[\s\S]*?height: 28[\s\S]*?font\.pixelSize: 14'
+assert_file_matches versions/V1/panels/ollama/OllamaConfigSection.qml 'OllamaConfigurationToggle\s*\{[\s\S]*?open: configSection\.configOpen[\s\S]*?onClicked: configSection\.configOpen = !configSection\.configOpen'
+assert_not_contains versions/V1/panels/ollama/OllamaModelRow.qml 'id: modelDeleteGlyph'
+assert_not_contains versions/V1/panels/ollama/OllamaConfigurationToggle.qml 'id: configurationHeadingGroup'
+assert_file_matches versions/V1/panels/ollama/OllamaConfigSection.qml 'property bool selected: configSection\.data\.selectedKeepAlive\s*=== modelData\.value[\s\S]*?property bool chipEnabled: !configSection\.data\.controlsLocked[\s\S]*?hoverEnabled: enabled[\s\S]*?cursorShape: enabled \? Qt\.PointingHandCursor : Qt\.ArrowCursor'
+assert_file_matches versions/V1/panels/ollama/OllamaConfigSection.qml 'property bool isCustom: modelData\.value === "custom"[\s\S]*?property bool chipEnabled: !configSection\.data\.controlsLocked[\s\S]*?width: isCustom \? 52 : 40[\s\S]*?horizontalAlignment: Text\.AlignHCenter'
+assert_file_matches versions/V1/panels/ollama/OllamaConfigSection.qml 'text: modelData\.label[\s\S]*?font\.pixelSize: modelData\.value === -1 \? 14 : 10[\s\S]*?text: modelData\.value === -1\s*\? "Keep model loaded indefinitely" : ""'
+assert_file_matches versions/V1/panels/ollama/OllamaConfigSection.qml 'id: configTile[\s\S]*?width: 28[\s\S]*?height: 28[\s\S]*?font\.pixelSize: 14'
 assert_contains versions/V1/modules/TooltipMixin.qml 'property string placement: "bar"'
-assert_contains versions/V1/panels/OllamaPanel.qml 'placement: "panel"'
+assert_contains versions/V1/panels/ollama/OllamaPanelHeader.qml 'placement: "panel"'
 assert_contains versions/V1/panels/TooltipOverlay.qml 'TooltipPosition.barY'
 assert_contains versions/V1/panels/TooltipOverlay.qml 'TooltipPosition.panelPoint'
-tooltip_mixin_count="$(grep -c 'TooltipMixin {' "$repo_root/versions/V1/panels/OllamaPanel.qml")"
-panel_placement_count="$(grep -c 'placement: "panel"' "$repo_root/versions/V1/panels/OllamaPanel.qml")"
+tooltip_mixin_count="$(grep -h 'TooltipMixin {' "$repo_root"/versions/V1/panels/ollama/*.qml | wc -l)"
+panel_placement_count="$(grep -h 'placement: "panel"' "$repo_root"/versions/V1/panels/ollama/*.qml | wc -l)"
 if [[ "$tooltip_mixin_count" -ne "$panel_placement_count" ]]; then
     printf 'every Ollama panel TooltipMixin must use panel placement\n' >&2
     exit 1
@@ -310,7 +376,10 @@ assert_contains versions/V1/panels/ControlPanel.qml 'label: "Ollama";      activ
 assert_contains versions/V1/panels/ControlPanel.qml 'label: "Ollama";     active: root.compactOllama'
 assert_contains README.md 'Ollama management'
 
-if grep -Eq 'sudo|pkexec|systemctl|ollama stop|ollama rm|ollama serve' "$repo_root/versions/V1/modules/OllamaData.qml" "$repo_root/versions/V1/panels/OllamaPanel.qml"; then
+if grep -Eq 'sudo|pkexec|systemctl|ollama stop|ollama rm|ollama serve' \
+    "$repo_root/versions/V1/modules/OllamaData.qml" \
+    "$repo_root/versions/V1/panels/OllamaPanel.qml" \
+    "$repo_root"/versions/V1/panels/ollama/*.qml; then
     printf 'Ollama widget must not use sudo/systemctl/ollama CLI commands\n' >&2
     exit 1
 fi
