@@ -97,18 +97,20 @@ Item {
         for (var i = 0; i < cardProbes.count; i++) {
             var probe = cardProbes.itemAt(i)
             if (probe) probe.beginDetection(epoch)
-            else cardDetectionComplete(epoch, i, "", "", "")
+            else cardDetectionComplete(epoch, i, "", "", "", "", false)
         }
     }
 
-    function cardDetectionComplete(epoch, probeIndex, cardNumber, uevent, vendor, busy) {
+    function cardDetectionComplete(epoch, probeIndex, cardNumber, uevent, vendor, busy,
+                                   busyReadable) {
         if (epoch !== _detectionEpoch || _providerState !== "detecting") return
         _detectionRecords[probeIndex] = {
             probeIndex: probeIndex,
             cardNumber: cardNumber,
             uevent: uevent,
             vendor: vendor,
-            busy: busy
+            busy: busy,
+            busyReadable: busyReadable
         }
         _detectionPending -= 1
         if (_detectionPending !== 0) return
@@ -253,6 +255,7 @@ Item {
             property bool ueventDone: false
             property bool vendorDone: false
             property bool busyDone: false
+            property bool busyReadable: false
             property string ueventText: ""
             property string vendorText: ""
             property string busyText: ""
@@ -264,6 +267,7 @@ Item {
                 ueventDone = false
                 vendorDone = false
                 busyDone = false
+                busyReadable = false
                 ueventText = ""
                 vendorText = ""
                 busyText = ""
@@ -275,7 +279,8 @@ Item {
             function completeDetectionIfReady() {
                 if (!ueventDone || !vendorDone || !busyDone) return
                 sampler.cardDetectionComplete(detectionEpoch, index, cardNumber,
-                                              ueventText, vendorText, busyText)
+                                              ueventText, vendorText, busyText,
+                                              busyReadable)
             }
 
             function requestSample(epoch) {
@@ -284,8 +289,9 @@ Item {
                 busyFile.reload()
             }
 
-            function busyLoaded(value) {
+            function busyLoaded(value, readable) {
                 busyText = value
+                busyReadable = readable
                 busyDone = true
                 completeDetectionIfReady()
                 if (!samplePending) return
@@ -330,8 +336,8 @@ Item {
                 path: sampler.sysfsRoot + "/class/drm/card" + cardProbe.cardNumber
                       + "/device/gpu_busy_percent"
                 printErrors: false
-                onLoaded: cardProbe.busyLoaded(String(this.text() || ""))
-                onLoadFailed: cardProbe.busyLoaded("")
+                onLoaded: cardProbe.busyLoaded(String(this.text() || ""), true)
+                onLoadFailed: cardProbe.busyLoaded("", false)
             }
         }
     }

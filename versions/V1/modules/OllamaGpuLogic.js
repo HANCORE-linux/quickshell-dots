@@ -39,9 +39,9 @@ function providerSelection(records) {
         var driver = driverFromUevent(record.uevent)
         var vendor = String(record.vendor || "").trim().toLowerCase()
         var percent = parsePercent(record.busy)
-        if (driver === "amdgpu" && percent >= 0) {
+        if (driver === "amdgpu" && record.busyReadable === true) {
             amdSources.push(record.probeIndex)
-            initialPercent = Math.max(initialPercent, percent)
+            if (percent >= 0) initialPercent = Math.max(initialPercent, percent)
         }
         if (driver === "nvidia" || vendor === "0x10de") hasNvidia = true
     }

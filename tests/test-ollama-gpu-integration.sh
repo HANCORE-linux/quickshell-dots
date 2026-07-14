@@ -66,6 +66,10 @@ run_case() {
             make_card "$sysfs_root" card1 nvidia 0x10de
             make_card "$sysfs_root" card3 amdgpu 0x1002 82
             ;;
+        amd-initial-invalid)
+            make_card "$sysfs_root" card0 amdgpu 0x1002 101
+            make_card "$sysfs_root" card1 nvidia 0x10de
+            ;;
         nvidia)
             make_card "$sysfs_root" card47 nvidia 0x10de
             ;;
@@ -94,7 +98,7 @@ run_case() {
     local starts
     starts="$(wc -l <"$start_log")"
     case "$case_name" in
-        amd|no-source)
+        amd|amd-initial-invalid|no-source)
             [[ "$starts" -eq 0 ]] || {
                 printf '%s started nvidia-smi %s times\n' "$case_name" "$starts" >&2
                 exit 1
@@ -147,6 +151,7 @@ run_hardware_amd() {
 }
 
 run_case amd
+run_case amd-initial-invalid
 run_case nvidia
 run_case broken-nvidia
 run_case no-source

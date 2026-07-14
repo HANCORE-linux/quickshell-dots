@@ -61,6 +61,29 @@ ShellRoot {
         }
     }
 
+    function checkAmdInitiallyInvalid() {
+        if (phase === 0 && sampler.providerState === "active") {
+            if (!check(sampler.providerKind === "amdgpu-sysfs",
+                       "initially invalid AMD provider selection")) return
+            if (!check(sampler.percent === -1, "initially invalid AMD percent")) return
+            if (!check(sampler.history.length === 0,
+                       "initially invalid AMD appended history")) return
+            amdFirst.setText("63\n")
+            phase = 1
+            phaseTimer.restart()
+        } else if (phase === 1) {
+            sampler.sampleNow()
+            phase = 2
+            phaseTimer.restart()
+        } else if (phase === 2 && sampler.percent === 63) {
+            if (!check(sampler.providerKind === "amdgpu-sysfs",
+                       "AMD provider changed during recovery")) return
+            if (!check(sampler.history.length === 1,
+                       "recovered AMD sample history")) return
+            pass()
+        }
+    }
+
     function checkNvidia() {
         if (phase === 0 && sampler.providerState === "active" && sampler.percent === 70) {
             if (!check(sampler.providerKind === "nvidia", "NVIDIA provider selection")) return
@@ -133,6 +156,7 @@ ShellRoot {
     function advance() {
         if (finished) return
         if (testCase === "amd") checkAmd()
+        else if (testCase === "amd-initial-invalid") checkAmdInitiallyInvalid()
         else if (testCase === "nvidia") checkNvidia()
         else if (testCase === "broken-nvidia") checkBrokenNvidia()
         else if (testCase === "no-source") checkNoSource()
