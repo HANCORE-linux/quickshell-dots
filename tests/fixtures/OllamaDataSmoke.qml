@@ -72,6 +72,9 @@ ShellRoot {
         check(typeof data.operations.loadModel === "function", "operations load method")
         check(typeof data.operations.ejectModel === "function", "operations eject method")
         check(typeof data.operations.deleteModel === "function", "operations delete method")
+        check(data.pull !== null, "pull controller")
+        check(typeof data.pull.pullModel === "function", "pull start method")
+        check(typeof data.pull.cancelPull === "function", "pull cancel method")
 
         check(data.selectedKeepAlive === "5m", "default keep alive")
         check(data.selectedNumCtx === null, "default num ctx")

@@ -139,14 +139,14 @@ PanelWindow {
 
                 OllamaPullSection {
                     root: ollamaPanel.root
-                    data: root.ollama
+                    data: root.ollama.pull
                     onPullRequested: function(name) {
                         ollamaPanel.clearDeleteConfirmation()
-                        root.ollama.pullModel(name)
+                        root.ollama.pull.pullModel(name)
                     }
                     onCancelRequested: {
                         ollamaPanel.clearDeleteConfirmation()
-                        root.ollama.cancelPull()
+                        root.ollama.pull.cancelPull()
                     }
                 }
 

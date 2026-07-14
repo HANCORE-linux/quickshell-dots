@@ -208,6 +208,8 @@ assert_contains versions/V1/modules/OllamaData.qml 'readonly property alias conf
 assert_contains versions/V1/modules/OllamaData.qml 'property alias selectedKeepAlive: runtimeConfig.selectedKeepAlive'
 assert_contains versions/V1/modules/OllamaData.qml 'property alias selectedNumCtx: runtimeConfig.selectedNumCtx'
 assert_contains versions/V1/modules/OllamaData.qml 'property alias configDirty: runtimeConfig.dirty'
+assert_contains versions/V1/modules/OllamaData.qml 'readonly property alias runtimeConfigPath: runtimeConfig.path'
+assert_contains versions/V1/modules/OllamaData.qml 'function applyRuntimeConfigFile()'
 assert_contains versions/V1/modules/OllamaData.qml 'function buildLoadPayload(modelName)'
 assert_contains versions/V1/modules/OllamaData.qml 'function applyRuntimeConfiguration()'
 assert_contains versions/V1/modules/OllamaData.qml 'OllamaRuntimeConfig {'
@@ -258,14 +260,20 @@ assert_contains versions/V1/modules/OllamaModelOperations.qml 'if (ok) operation
 assert_contains versions/V1/modules/OllamaData.qml 'function loadModel(name) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function applyAction(raw) {'
 assert_contains versions/V1/modules/OllamaData.qml 'function runModelAction(name, keepAlive, actionName) {'
+assert_contains versions/V1/modules/OllamaData.qml 'readonly property alias pull: pullController'
 assert_contains versions/V1/modules/OllamaData.qml 'function pullModel(name) {'
-assert_contains versions/V1/modules/OllamaData.qml 'property string pullLastLine: ""'
-assert_contains versions/V1/modules/OllamaData.qml 'readonly property bool pullCanCancel:'
-assert_contains versions/V1/modules/OllamaData.qml 'property var reconciliationClock:'
-assert_contains versions/V1/modules/OllamaData.qml 'OllamaPullLogic.nextReconcileDelayMs('
-assert_contains versions/V1/modules/OllamaData.qml '--fail-with-body'
-assert_contains versions/V1/modules/OllamaData.qml 'stdout: SplitParser {'
-assert_contains versions/V1/modules/OllamaData.qml 'ollama.applyPullProgress(text)'
+assert_contains versions/V1/modules/OllamaPullController.qml 'property string pullLastLine: ""'
+assert_contains versions/V1/modules/OllamaPullController.qml 'readonly property bool pullCanCancel:'
+assert_contains versions/V1/modules/OllamaPullController.qml 'property var reconciliationClock:'
+assert_contains versions/V1/modules/OllamaPullController.qml 'signal installedModelsAccepted(var models)'
+assert_contains versions/V1/modules/OllamaPullController.qml 'OllamaPullLogic.nextReconcileDelayMs('
+assert_contains versions/V1/modules/OllamaPullController.qml '--fail-with-body'
+assert_contains versions/V1/modules/OllamaPullController.qml 'stdout: SplitParser {'
+for process_id in pullProc pullReconcileTimer; do
+    assert_not_contains versions/V1/modules/OllamaData.qml "id: $process_id"
+    assert_contains versions/V1/modules/OllamaPullController.qml "id: $process_id"
+done
+assert_contains versions/V1/modules/OllamaPullController.qml 'id: pullReconcileProc'
 assert_contains versions/V1/modules/OllamaData.qml 'property int loadedPollIntervalMs: 2000'
 assert_contains versions/V1/modules/OllamaData.qml 'property bool loadedTimerRefreshPending: false'
 assert_contains versions/V1/modules/OllamaData.qml 'if (!panelVisible) loadedTimerRefreshPending = false'
@@ -279,17 +287,17 @@ assert_not_contains versions/V1/modules/OllamaData.qml 'onTriggered: ollama.refr
 assert_file_matches versions/V1/modules/OllamaData.qml 'interval: ollama\.loadedPollIntervalMs\s*running: ollama\.enabled && ollama\.panelVisible\s*repeat: true\s*triggeredOnStart: false\s*onTriggered: ollama\.refreshLoaded\(true\)'
 assert_file_matches versions/V1/Theme.qml 'onOllamaVisibleChanged:\s*\{\s*popupOpened\("ollamaVisible"\)\s*if \(ollamaVisible && ollama\.enabled\) ollama\.refreshAll\(\)'
 
-if grep -Fq 'pullOutputPath\|pullProgressTimer\|progressReaderProc' "$repo_root/versions/V1/modules/OllamaData.qml"; then
+if grep -Fq 'pullOutputPath\|pullProgressTimer\|progressReaderProc' "$repo_root/versions/V1/modules/OllamaPullController.qml"; then
     printf 'pull must not use file polling or pullProgressTimer\n' >&2
     exit 1
 fi
 
-if grep -Fq '/tmp/ollama_pull_output' "$repo_root/versions/V1/modules/OllamaData.qml"; then
+if grep -Fq '/tmp/ollama_pull_output' "$repo_root/versions/V1/modules/OllamaPullController.qml"; then
     printf 'pull progress must not use a shared predictable /tmp file\n' >&2
     exit 1
 fi
 
-if grep -Fq 'ollama rm' "$repo_root/versions/V1/modules/OllamaData.qml"; then
+if grep -Fq 'ollama rm' "$repo_root"/versions/V1/modules/Ollama*.qml; then
     printf 'exclusive loading must not use ollama rm\n' >&2
     exit 1
 fi
@@ -380,6 +388,9 @@ assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setKeepAlive\(v
 assert_file_matches versions/V1/panels/OllamaPanel.qml 'function setContext\(value\)\s*\{\s*clearDeleteConfirmation\(\)\s*root\.ollama\.config\.setNumCtx\(value\)'
 assert_file_matches versions/V1/panels/ollama/OllamaPullSection.qml 'id: pullMa\s*anchors\.fill: parent\s*enabled: !pullSection\.data\.controlsLocked\s*&& String\(pullInput\.text\)\.trim\(\) !== ""\s*hoverEnabled: enabled'
 assert_file_matches versions/V1/panels/ollama/OllamaPullSection.qml 'id: cancelPullButton[\s\S]*?visible: pullSection\.data\.pullCanCancel'
+assert_contains versions/V1/panels/OllamaPanel.qml 'data: root.ollama.pull'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.pull.pullModel(name)'
+assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.pull.cancelPull()'
 assert_contains versions/V1/panels/OllamaPanel.qml 'root.ollama.operations.applyRuntimeConfiguration()'
 assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Apply configuration"'
 assert_contains versions/V1/panels/ollama/OllamaConfigSection.qml 'text: "Refresh Ollama state"'
@@ -454,7 +465,7 @@ assert_contains versions/V1/panels/ControlPanel.qml 'label: "Ollama";     active
 assert_contains README.md 'Ollama management'
 
 if grep -Eq 'sudo|pkexec|systemctl|ollama stop|ollama rm|ollama serve' \
-    "$repo_root/versions/V1/modules/OllamaData.qml" \
+    "$repo_root"/versions/V1/modules/Ollama*.qml \
     "$repo_root/versions/V1/panels/OllamaPanel.qml" \
     "$repo_root"/versions/V1/panels/ollama/*.qml; then
     printf 'Ollama widget must not use sudo/systemctl/ollama CLI commands\n' >&2
