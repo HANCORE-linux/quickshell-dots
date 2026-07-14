@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "OllamaDataLogic.js" as OllamaDataLogic
+import "OllamaPullLogic.js" as OllamaPullLogic
 
 Item {
     id: ollama
@@ -41,6 +42,7 @@ Item {
     property string pullState: "idle"
     readonly property bool pullBusy: pullState === "streaming" || pullState === "cancelling"
         || pullState === "reconciling"
+    readonly property bool pullCanCancel: pullState === "streaming" || pullState === "cancelling"
     property string pullModelName: ""
     property double pullProgress: 0
     property int pullPercent: 0
@@ -68,6 +70,9 @@ Item {
         Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
     property string pullLastLine: ""
     property int pullReconcileAttempts: 0
+    property double pullReconcileStartedAtMs: 0
+    property double pullReconcileDeadlineAtMs: 0
+    property var reconciliationClock: systemReconciliationClock
     readonly property int effectiveContextLength: loadedModels.length === 1
         ? loadedModels[0].contextLength : 0
     readonly property string keepAliveStatus: {
@@ -97,6 +102,13 @@ Item {
         pullRate.etaSeconds, pullStableRateSamples)
     readonly property string pullResultText: OllamaDataLogic.pullResultText(
         pullState, pullError, pullElapsedSeconds)
+
+    QtObject {
+        id: systemReconciliationClock
+        function nowMs() { return Date.now() }
+        function timerIntervalMs(logicalMs) { return logicalMs }
+        function delayElapsed(logicalMs) {}
+    }
 
     function decodeResponse(raw) {
         return OllamaDataLogic.decodeResponse(raw)
@@ -545,13 +557,13 @@ Item {
             onStreamFinished: {
                 tagsProc.streamDone = true
                 ollama.applyTags(this.text, tagsProc.refreshEpoch, tagsProc.pullAttempt)
-                ollama.handlePullTags(tagsProc.pullAttempt, this.text)
+                ollama.handlePullTags(tagsProc.pullAttempt, this.text, tagsProc.refreshEpoch)
             }
         }
         onExited: {
             if (!streamDone && pullAttempt === ollama.pullAttempt
                     && ollama.pullState === "reconciling") {
-                ollama.handlePullTags(pullAttempt, "")
+                ollama.handlePullTags(pullAttempt, "", refreshEpoch)
             }
             if (ollama.tagsRefreshPending) {
                 ollama.tagsRefreshPending = false
@@ -775,6 +787,8 @@ Item {
         pullElapsedSeconds = 0
         pullLastLine = ""
         pullReconcileAttempts = 0
+        pullReconcileStartedAtMs = 0
+        pullReconcileDeadlineAtMs = 0
         pullReconcileTimer.stop()
         pullResultTimer.stop()
         pullProc.attempt = pullAttempt
@@ -828,13 +842,31 @@ Item {
             pullStatus = "Cancelling locally..."
             pullReconcileTimer.stop()
             pullProc.running = false
-        } else if (pullState === "reconciling") {
-            pullReconcileTimer.stop()
-            pullState = "cancelled"
-            pullStatus = "Cancelled locally"
-            pullError = ""
-            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
         }
+    }
+
+    function failPullReconciliation() {
+        pullReconcileTimer.stop()
+        pullState = "failed"
+        pullStatus = "Failed"
+        pullError = "Pull finalization timed out: model was not listed"
+        pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
+    }
+
+    function schedulePullReconciliation(attempt) {
+        if (attempt !== pullAttempt || pullState !== "reconciling") return
+        var nowMs = reconciliationClock.nowMs()
+        if (nowMs >= pullReconcileDeadlineAtMs) {
+            failPullReconciliation()
+            return
+        }
+        var logicalDelayMs = OllamaPullLogic.nextReconcileDelayMs(
+            pullReconcileAttempts, nowMs, pullReconcileDeadlineAtMs)
+        pullReconcileTimer.attempt = attempt
+        pullReconcileTimer.logicalDelayMs = logicalDelayMs
+        pullReconcileTimer.interval = Math.max(1,
+            reconciliationClock.timerIntervalMs(logicalDelayMs))
+        pullReconcileTimer.restart()
     }
 
     function finishPull(attempt, exitCode) {
@@ -853,11 +885,12 @@ Item {
             pullProgress = 1
             pullState = "reconciling"
             pullStatus = "Finalizing..."
+            pullReconcileStartedAtMs = reconciliationClock.nowMs()
+            pullReconcileDeadlineAtMs = pullReconcileStartedAtMs + 180000
             refreshEpoch += 1
             tagsRefreshPending = false
             pullReconcileAttempts = 0
-            pullReconcileTimer.attempt = attempt
-            pullReconcileTimer.restart()
+            schedulePullReconciliation(attempt)
             refreshLoaded()
         } else {
             pullError = state.error
@@ -869,8 +902,12 @@ Item {
 
     function requestPullReconciliation(attempt) {
         if (attempt !== pullAttempt || pullState !== "reconciling") return
+        if (reconciliationClock.nowMs() >= pullReconcileDeadlineAtMs) {
+            failPullReconciliation()
+            return
+        }
         if (tagsProc.running) {
-            pullReconcileTimer.restart()
+            schedulePullReconciliation(attempt)
             return
         }
         pullReconcileAttempts += 1
@@ -880,13 +917,15 @@ Item {
         tagsProc.running = true
     }
 
-    function handlePullTags(attempt, raw) {
+    function handlePullTags(attempt, raw, requestEpoch) {
         if (attempt !== pullAttempt || pullState !== "reconciling") return
+        if (requestEpoch !== refreshEpoch) return
         var visible = false
+        var models = null
         try {
             var response = decodeResponse(raw)
             if (successful(response)) {
-                var models = parseTags(response.body)
+                models = parseTags(response.body)
                 for (var i = 0; i < models.length; i++) {
                     if (models[i].name === pullModelName) {
                         visible = true
@@ -896,18 +935,14 @@ Item {
             }
         } catch (error) {}
         if (visible) {
+            installedModels = models
             pullState = "success"
             pullStatus = "Done"
             pullError = ""
             pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
             pullResultTimer.restart()
-        } else if (pullReconcileAttempts >= 8) {
-            pullState = "failed"
-            pullStatus = "Failed"
-            pullError = "Pull finalization timed out: model was not listed"
-            pullElapsedSeconds = Math.max(0, (Date.now() - pullStartedAtMs) / 1000)
         } else {
-            pullReconcileTimer.restart()
+            schedulePullReconciliation(attempt)
         }
     }
 
@@ -943,9 +978,14 @@ Item {
     Timer {
         id: pullReconcileTimer
         property int attempt: 0
+        property double logicalDelayMs: 0
         interval: 1000
         repeat: false
-        onTriggered: ollama.requestPullReconciliation(attempt)
+        onTriggered: {
+            if (attempt !== ollama.pullAttempt || ollama.pullState !== "reconciling") return
+            ollama.reconciliationClock.delayElapsed(logicalDelayMs)
+            ollama.requestPullReconciliation(attempt)
+        }
     }
 
     Timer {

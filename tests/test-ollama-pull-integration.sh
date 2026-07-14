@@ -15,6 +15,7 @@ mkdir -p "$test_config_root/modules"
 cp "$config_path" "$test_config_path"
 cp "$repo_root/versions/V1/modules/OllamaData.qml" \
     "$repo_root/versions/V1/modules/OllamaDataLogic.js" \
+    "$repo_root/versions/V1/modules/OllamaPullLogic.js" \
     "$test_config_root/modules/"
 
 cleanup() {
@@ -61,11 +62,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         tags += 1
         log("tags")
-        if mode == "stale":
+        if mode == "reconcile-cancel" and tags == 1:
             time.sleep(0.4)
-            self.reply('{"models":[{"name":"stale:model","details":{}}]}')
+            self.reply('{"models":[]}')
             return
-        visible = mode in ("success", "retry") or (mode == "delayed" and tags >= 3)
+        visible = (
+            mode in ("success", "retry")
+            or (mode == "delayed" and tags >= 3)
+            or (mode == "delayed-125s" and tags >= 16)
+            or (mode == "reconcile-cancel" and tags >= 2)
+        )
         self.reply(json.dumps({"models": [{"name": "fixture:model", "details": {}}] if visible else []}))
 
     def do_POST(self):
@@ -148,7 +154,8 @@ run_case() {
 run_case cancel
 run_case success
 run_case delayed
+run_case delayed-125s
 run_case timeout
 run_case retry
-run_case stale
+run_case reconcile-cancel
 printf '%s\n' "ollama pull integration: PASS"

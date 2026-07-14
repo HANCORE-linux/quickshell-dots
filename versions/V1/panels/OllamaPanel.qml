@@ -721,8 +721,10 @@ PanelWindow {
                         }
 
                         Rectangle {
+                            id: cancelPullButton
                             width: parent.width
                             height: 24
+                            visible: root.ollama.pullCanCancel
                             radius: root.tileRadius
                             color: cancelPullMa.containsMouse ? root.fillPrimaryHover : root.fillIdle
                             border.color: root.sep
