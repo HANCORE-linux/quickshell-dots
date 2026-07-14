@@ -693,6 +693,7 @@ PanelWindow {
                         UiText {
                             width: parent.width
                             text: root.ollama.pullProgressText
+                                || "Current layer · Calculating..."
                             color: root.sumiHi
                             font.family: root.mono
                             font.pixelSize: 10

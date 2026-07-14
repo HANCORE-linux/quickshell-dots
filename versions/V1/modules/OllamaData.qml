@@ -97,9 +97,13 @@ Item {
     readonly property string displayError: operationError !== "" ? operationError : lastError
     readonly property string operationMessage:
         OllamaDataLogic.operationMessage(operationState, pendingModel)
-    readonly property string pullProgressText: OllamaDataLogic.pullProgressText(
-        pullCompletedBytes, pullTotalBytes, pullRate.rateBytesPerSecond,
-        pullRate.etaSeconds, pullStableRateSamples)
+    readonly property string pullProgressText: OllamaPullLogic.currentLayerText({
+        completed: pullCompletedBytes,
+        total: pullTotalBytes,
+        rateBytesPerSecond: pullRate.rateBytesPerSecond,
+        etaSeconds: pullRate.etaSeconds,
+        stableSamples: pullStableRateSamples
+    })
     readonly property string pullResultText: OllamaDataLogic.pullResultText(
         pullState, pullError, pullElapsedSeconds)
 
@@ -817,21 +821,33 @@ Item {
                 digest: pullDigest, completed: pullCompletedBytes, total: pullTotalBytes
             })
             pullStatus = event.status
-            if (event.total > 0) {
-                pullDigest = event.digest
-                pullCompletedBytes = event.completed
-                pullTotalBytes = event.total
-                pullProgress = Math.min(1, event.completed / event.total)
+            var layer = OllamaPullLogic.nextLayerProgress({
+                digest: pullDigest,
+                completed: pullCompletedBytes,
+                total: pullTotalBytes,
+                sampledAtMs: pullRate.sampledAtMs,
+                rateBytesPerSecond: pullRate.rateBytesPerSecond,
+                etaSeconds: pullRate.etaSeconds,
+                stableSamples: pullStableRateSamples
+            }, text, Date.now())
+            pullDigest = layer.digest
+            pullCompletedBytes = layer.completed
+            pullTotalBytes = layer.total
+            pullRate = {
+                digest: layer.digest,
+                completed: layer.completed,
+                total: layer.total,
+                sampledAtMs: layer.sampledAtMs,
+                rateBytesPerSecond: layer.rateBytesPerSecond,
+                etaSeconds: layer.etaSeconds
+            }
+            pullStableRateSamples = layer.stableSamples
+            if (layer.total > 0) {
+                pullProgress = Math.min(1, layer.completed / layer.total)
                 pullPercent = Math.round(pullProgress * 100)
-                var previousRate = pullRate
-                if (event.digest !== previousRate.digest) pullStableRateSamples = 0
-                pullRate = OllamaDataLogic.pullRateState({
-                    digest: previousRate.digest,
-                    completed: previousRate.completed,
-                    total: event.total,
-                    sampledAtMs: previousRate.sampledAtMs
-                }, event.digest, event.completed, Date.now())
-                if (pullRate.rateBytesPerSecond > 0) pullStableRateSamples += 1
+            } else {
+                pullProgress = 0
+                pullPercent = 0
             }
         } catch (e) {}
     }

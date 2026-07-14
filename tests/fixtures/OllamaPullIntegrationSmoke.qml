@@ -11,6 +11,8 @@ ShellRoot {
     property bool sawFinalizing: false
     property bool retryStarted: false
     property bool deadlineAdvanced: false
+    property bool sawSecondLayerReset: false
+    property bool sawSecondLayerProgress: false
     property bool finished: false
 
     QtObject {
@@ -48,6 +50,27 @@ ShellRoot {
         onTriggered: {
             if (data.pullStatus === "Finalizing...") testRoot.sawFinalizing = true
 
+            if (testRoot.testCase === "multi-digest") {
+                var userFacing = data.pullStatus + " " + data.pullProgressText
+                if (userFacing.indexOf("sha256:") >= 0)
+                    testRoot.fail("user-facing status exposed a raw digest")
+                if (data.pullDigest === "sha256:bbbbbbbb") {
+                    if (!testRoot.sawSecondLayerReset) {
+                        if (data.pullCompletedBytes !== 0 || data.pullTotalBytes !== 0
+                                || data.pullRate.rateBytesPerSecond !== 0
+                                || data.pullRate.etaSeconds !== 0
+                                || data.pullStableRateSamples !== 0) {
+                            testRoot.fail("second layer retained first-layer progress")
+                        } else {
+                            testRoot.sawSecondLayerReset = true
+                        }
+                    } else if (data.pullCompletedBytes === 25
+                            && data.pullTotalBytes === 200) {
+                        testRoot.sawSecondLayerProgress = true
+                    }
+                }
+            }
+
             if ((testRoot.testCase === "cancel" || testRoot.testCase === "retry")
                     && data.pullState === "streaming"
                     && !testRoot.cancelRequested) {
@@ -82,6 +105,16 @@ ShellRoot {
             if ((testRoot.testCase === "delayed" || testRoot.testCase === "success")
                     && data.pullState === "success") {
                 if (!testRoot.sawFinalizing) testRoot.fail("success skipped finalizing")
+                else testRoot.pass()
+            }
+
+            if (testRoot.testCase === "multi-digest" && data.pullState === "success") {
+                if (!testRoot.sawSecondLayerReset)
+                    testRoot.fail("second layer reset was not observed")
+                else if (!testRoot.sawSecondLayerProgress)
+                    testRoot.fail("second layer progress was not observed")
+                else if (data.pullProgressText.indexOf("Current layer") !== 0)
+                    testRoot.fail("progress is not labeled as the current layer")
                 else testRoot.pass()
             }
 

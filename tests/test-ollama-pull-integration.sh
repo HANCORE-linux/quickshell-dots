@@ -71,7 +71,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.reply('{"models":[{"name":"fixture:model","details":{}}]}')
             return
         visible = (
-            mode in ("success", "retry")
+            mode in ("success", "retry", "multi-digest")
             or (mode == "delayed" and tags >= 3)
             or (mode == "delayed-125s" and tags >= 16)
             or (mode == "reconcile-cancel" and tags >= 2)
@@ -89,6 +89,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Connection", "close")
         self.end_headers()
+        if mode == "multi-digest":
+            events = [
+                {"status": "downloading", "digest": "sha256:aaaaaaaa", "completed": 100, "total": 1000},
+                {"status": "downloading", "digest": "sha256:aaaaaaaa", "completed": 300, "total": 1000},
+                {"status": "downloading", "digest": "sha256:aaaaaaaa", "completed": 500, "total": 1000},
+                {"status": "downloading", "digest": "sha256:bbbbbbbb"},
+                {"status": "downloading", "digest": "sha256:bbbbbbbb", "completed": 25, "total": 200},
+            ]
+            for event in events:
+                self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
+                self.wfile.flush()
+                time.sleep(0.15)
+            self.wfile.write(b'{"status":"success"}\n')
+            self.wfile.flush()
+            return
         self.wfile.write(b'{"status":"downloading","completed":1,"total":2}\n')
         self.wfile.flush()
         if mode == "cancel" or (mode == "retry" and pulls == 1):
@@ -163,4 +178,5 @@ run_case timeout
 run_case retry
 run_case reconcile-cancel
 run_case late-response
+run_case multi-digest
 printf '%s\n' "ollama pull integration: PASS"
