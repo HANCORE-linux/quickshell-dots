@@ -6,6 +6,7 @@ Column {
 
     required property var root
     required property var data
+    required property bool controlsLocked
     property string customCtxDisplay: ""
     property bool configOpen: false
 
@@ -22,7 +23,7 @@ Column {
         parent: configSection
         width: parent.width
         theme: configSection.root
-        controlEnabled: !configSection.data.controlsLocked
+        controlEnabled: !configSection.controlsLocked
         open: configSection.configOpen
         onClicked: configSection.configOpen = !configSection.configOpen
     }
@@ -57,7 +58,7 @@ Column {
                     required property var modelData
                     property bool selected: configSection.data.selectedKeepAlive
                         === modelData.value
-                    property bool chipEnabled: !configSection.data.controlsLocked
+                    property bool chipEnabled: !configSection.controlsLocked
                     width: 36
                     height: 28
                     radius: configSection.root.tileRadius
@@ -132,7 +133,7 @@ Column {
                             && ![8192, 16384, 32768].includes(
                                 configSection.data.selectedNumCtx)
                         : configSection.data.selectedNumCtx === modelData.value
-                    property bool chipEnabled: !configSection.data.controlsLocked
+                    property bool chipEnabled: !configSection.controlsLocked
                     width: isCustom ? 52 : 40
                     height: 28
                     radius: configSection.root.tileRadius
@@ -212,7 +213,7 @@ Column {
 
         UiText {
             width: parent.width
-            visible: configSection.data.configDirty
+            visible: configSection.data.dirty
             text: "Configuration pending \u2014 press Apply to reload model"
             color: configSection.root.seal
             font.family: configSection.root.mono
@@ -263,7 +264,7 @@ Column {
             MouseArea {
                 id: configBottomMa
                 anchors.fill: parent
-                enabled: !configSection.data.controlsLocked
+                enabled: !configSection.controlsLocked
                 hoverEnabled: enabled
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onEntered: configBottomTip.show()
@@ -297,8 +298,8 @@ Column {
             MouseArea {
                 id: applyMa
                 anchors.fill: parent
-                enabled: !configSection.data.controlsLocked
-                    && configSection.data.configDirty
+                enabled: !configSection.controlsLocked
+                    && configSection.data.dirty
                 hoverEnabled: enabled
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: configSection.applyRequested()
@@ -334,7 +335,7 @@ Column {
             MouseArea {
                 id: refreshBottomMa
                 anchors.fill: parent
-                enabled: !configSection.data.controlsLocked
+                enabled: !configSection.controlsLocked
                 hoverEnabled: enabled
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onEntered: refreshBottomTip.show()

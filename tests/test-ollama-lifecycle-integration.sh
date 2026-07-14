@@ -22,6 +22,7 @@ mkdir -p "$test_config_root/modules"
 cp "$config_path" "$test_config_path"
 cp "$repo_root/versions/V1/modules/OllamaData.qml" \
     "$repo_root/versions/V1/modules/OllamaDataLogic.js" \
+    "$repo_root/versions/V1/modules/OllamaRuntimeConfig.qml" \
     "$repo_root/versions/V1/modules/OllamaPullLogic.js" \
     "$repo_root/versions/V1/modules/OllamaGpuSampler.qml" \
     "$repo_root/versions/V1/modules/OllamaGpuLogic.js" \

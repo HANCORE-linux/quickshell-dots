@@ -24,12 +24,12 @@ PanelWindow {
 
     function setKeepAlive(value) {
         clearDeleteConfirmation()
-        root.ollama.setKeepAlive(value)
+        root.ollama.config.setKeepAlive(value)
     }
 
     function setContext(value) {
         clearDeleteConfirmation()
-        root.ollama.setNumCtx(value)
+        root.ollama.config.setNumCtx(value)
     }
 
     Connections {
@@ -152,7 +152,8 @@ PanelWindow {
 
                 OllamaConfigSection {
                     root: ollamaPanel.root
-                    data: root.ollama
+                    data: root.ollama.config
+                    controlsLocked: root.ollama.controlsLocked
                     onKeepAliveRequested: function(value) {
                         ollamaPanel.setKeepAlive(value)
                     }
@@ -161,7 +162,7 @@ PanelWindow {
                     }
                     onOpenRuntimeConfigRequested: {
                         root.ollamaVisible = false
-                        root.ollama.openRuntimeConfig()
+                        root.ollama.config.openEditor()
                     }
                     onApplyRequested: {
                         ollamaPanel.clearDeleteConfirmation()

@@ -147,6 +147,7 @@ ShellRoot {
         property string pullState: "idle"
         property string selectedKeepAlive: "5m"
         property bool configDirty: false
+        property bool dirty: false
         property int loadCalls: 0
         property int ejectCalls: 0
         property int deleteCalls: 0
@@ -208,6 +209,7 @@ ShellRoot {
                 id: configSection
                 root: theme
                 data: fakeData
+                controlsLocked: fakeData.controlsLocked
             }
         }
     }

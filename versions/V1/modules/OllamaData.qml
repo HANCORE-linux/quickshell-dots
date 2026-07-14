@@ -61,17 +61,15 @@ Item {
     property double pullElapsedSeconds: 0
     property bool panelVisible: false
     property int loadedPollIntervalMs: 2000
-    property var selectedKeepAlive: "5m"
-    property var selectedNumCtx: null
-    property bool configDirty: false
-    property bool _runtimeConfigEditorExited: false
+    readonly property alias config: runtimeConfig
+    property alias selectedKeepAlive: runtimeConfig.selectedKeepAlive
+    property alias selectedNumCtx: runtimeConfig.selectedNumCtx
+    property alias configDirty: runtimeConfig.dirty
     signal runtimeConfigLoaded()
     signal runtimeConfigReloaded()
 
     readonly property double loadedVramBytes: sumLoadedVram(loadedModels)
     readonly property var models: reconcileModels(installedModels, loadedModels)
-    readonly property string runtimeConfigPath:
-        Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
     property string pullLastLine: ""
     property int pullReconcileAttempts: 0
     property double pullReconcileStartedAtMs: 0
@@ -490,39 +488,19 @@ Item {
     }
 
     function openConfiguration() {}
-    function reloadConfiguration() { runtimeConfigFile.reload() }
-
-    function applyRuntimeConfigFile() {
-        var text = String(runtimeConfigFile.text() || "").trim()
-        if (!text) return
-        var state = OllamaDataLogic.runtimeConfigState(text)
-        if (!state.valid) return
-        selectedKeepAlive = state.keepAlive
-        selectedNumCtx = state.numCtx
-        configDirty = state.dirty
-    }
-
-    function saveRuntimeConfig() {
-        var cfg = { keepAlive: selectedKeepAlive, numCtx: selectedNumCtx, dirty: configDirty }
-        runtimeConfigFile.setText(JSON.stringify(cfg, null, 2))
-    }
+    function reloadConfiguration() { runtimeConfig.reload() }
+    function saveRuntimeConfig() { runtimeConfig.save() }
 
     function parseContextInput(raw) {
-        return OllamaDataLogic.parseContextInput(raw)
+        return runtimeConfig.parseContextInput(raw)
     }
 
     function setKeepAlive(value) {
-        if (value !== "5m" && value !== "30m" && value !== -1) return
-        selectedKeepAlive = value
-        configDirty = true
-        saveRuntimeConfig()
+        runtimeConfig.setKeepAlive(value)
     }
 
     function setNumCtx(value) {
-        if (value !== null && !(typeof value === "number" && value > 0)) return
-        selectedNumCtx = value
-        configDirty = true
-        saveRuntimeConfig()
+        runtimeConfig.setNumCtx(value)
     }
 
     function applyRuntimeConfiguration() {
@@ -730,42 +708,14 @@ Item {
         id: gpuSampler
     }
 
-    FileView {
-        id: runtimeConfigFile
-        path: runtimeConfigPath
-        watchChanges: true
-        printErrors: false
-        onFileChanged: runtimeConfigFile.reload()
-        onLoaded: {
-            ollama.applyRuntimeConfigFile()
-            ollama.runtimeConfigLoaded()
-            if (ollama._runtimeConfigEditorExited) {
-                ollama._runtimeConfigEditorExited = false
-                ollama.runtimeConfigReloaded()
-            }
-        }
+    OllamaRuntimeConfig {
+        id: runtimeConfig
+        onLoaded: ollama.runtimeConfigLoaded()
+        onReloaded: ollama.runtimeConfigReloaded()
+        onErrorOccurred: function(message) { ollama.actionError = message }
     }
 
-    function openRuntimeConfig() {
-        var parsed = OllamaDataLogic.parseEditorCommand(Quickshell.env("EDITOR") || "nvim")
-        if (!parsed.valid) {
-            actionError = parsed.error
-            return
-        }
-        runtimeConfigEditProc.command = [
-            "omarchy-launch-floating-terminal-with-presentation",
-            OllamaDataLogic.buildEditorShellCommand(parsed.argv, runtimeConfigPath)
-        ]
-        runtimeConfigEditProc.running = true
-    }
-
-    Process {
-        id: runtimeConfigEditProc
-        onExited: {
-            ollama._runtimeConfigEditorExited = true
-            ollama.reloadConfiguration()
-        }
-    }
+    function openRuntimeConfig() { runtimeConfig.openEditor() }
 
     function pullModel(name) {
         if (controlsLocked || !name) return
