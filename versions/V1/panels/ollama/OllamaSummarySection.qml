@@ -52,8 +52,8 @@ Column {
             if (summarySection.data.loadedModels.length === 1
                     && summarySection.data.effectiveContextLength > 0)
                 return String(summarySection.data.effectiveContextLength)
-            return summarySection.data.selectedNumCtx === null ? "auto"
-                : String(summarySection.data.selectedNumCtx)
+            return summarySection.data.config.selectedNumCtx === null ? "auto"
+                : String(summarySection.data.config.selectedNumCtx)
         }
     }
     OllamaDetailRow {
@@ -66,8 +66,8 @@ Column {
     UiText {
         parent: summarySection
         width: parent.width
-        visible: summarySection.data.operationInProgress
-        text: summarySection.data.operationMessage
+        visible: summarySection.data.operations.operationInProgress
+        text: summarySection.data.operations.operationMessage
         color: summarySection.root.seal
         font.family: summarySection.root.mono
         font.pixelSize: 11
@@ -78,9 +78,9 @@ Column {
     UiText {
         parent: summarySection
         width: parent.width
-        visible: summarySection.data.busy
-            && !summarySection.data.operationInProgress
-        text: "Working on " + summarySection.data.pendingModel + "..."
+        visible: summarySection.data.operations.busy
+            && !summarySection.data.operations.operationInProgress
+        text: "Working on " + summarySection.data.operations.pendingModel + "..."
         color: summarySection.root.seal
         font.family: summarySection.root.mono
         font.pixelSize: 11
@@ -91,7 +91,7 @@ Column {
         parent: summarySection
         width: parent.width
         visible: summarySection.data.connected
-            && !summarySection.data.operationInProgress
+            && !summarySection.data.operations.operationInProgress
             && summarySection.data.loadedModels.length === 0
             && summarySection.data.models.length > 0
             && summarySection.data.displayError === ""

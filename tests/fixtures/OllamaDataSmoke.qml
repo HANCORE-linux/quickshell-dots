@@ -68,6 +68,10 @@ ShellRoot {
         check(data.actionError === "", "action-error default")
         check(data.operationError === "", "operation-error default")
         check(data.displayError === "", "display-error default")
+        check(data.operations !== null, "operations controller")
+        check(typeof data.operations.loadModel === "function", "operations load method")
+        check(typeof data.operations.ejectModel === "function", "operations eject method")
+        check(typeof data.operations.deleteModel === "function", "operations delete method")
 
         check(data.selectedKeepAlive === "5m", "default keep alive")
         check(data.selectedNumCtx === null, "default num ctx")

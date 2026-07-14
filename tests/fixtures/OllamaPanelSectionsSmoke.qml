@@ -113,6 +113,21 @@ ShellRoot {
     }
 
     QtObject {
+        id: fakeOperations
+
+        property bool operationInProgress: false
+        property string operationMessage: ""
+        property bool busy: false
+        property string pendingModel: ""
+    }
+
+    QtObject {
+        id: fakeConfig
+
+        property var selectedNumCtx: null
+    }
+
+    QtObject {
         id: fakeData
 
         property var models: [{
@@ -138,6 +153,8 @@ ShellRoot {
         property string operationMessage: ""
         property bool busy: false
         property string displayError: ""
+        property var operations: fakeOperations
+        property var config: fakeConfig
         property bool pullBusy: false
         property string pullStatus: ""
         property string pullProgressText: ""

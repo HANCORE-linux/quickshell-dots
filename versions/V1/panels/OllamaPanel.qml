@@ -125,15 +125,15 @@ PanelWindow {
                 OllamaModelsSection {
                     id: modelsSection
                     root: ollamaPanel.root
-                    data: root.ollama
+                    data: root.ollama.operations
                     onLoadRequested: function(name) {
-                        root.ollama.loadModel(name)
+                        root.ollama.operations.loadModel(name)
                     }
                     onEjectRequested: function(name) {
-                        root.ollama.ejectModel(name)
+                        root.ollama.operations.ejectModel(name)
                     }
                     onDeleteRequested: function(name) {
-                        root.ollama.deleteModel(name)
+                        root.ollama.operations.deleteModel(name)
                     }
                 }
 
@@ -166,7 +166,7 @@ PanelWindow {
                     }
                     onApplyRequested: {
                         ollamaPanel.clearDeleteConfirmation()
-                        root.ollama.applyRuntimeConfiguration()
+                        root.ollama.operations.applyRuntimeConfiguration()
                     }
                     onRefreshRequested: {
                         ollamaPanel.clearDeleteConfirmation()
