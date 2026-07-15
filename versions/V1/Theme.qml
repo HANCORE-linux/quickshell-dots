@@ -3,11 +3,19 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.UPower
+import "modules"
 import "Palette.js" as Palette
 
 Item {
     id: theme
     signal reactorTest(string kind, string arg)
+
+    OllamaData {
+        id: ollamaData
+        enabled: theme.modOllama
+        panelVisible: theme.ollamaVisible
+    }
+    property alias ollama: ollamaData
 
     property string omarchyCurrentRoot: Quickshell.env("HOME") + "/.config/omarchy/current"
     property string omarchyInstallRoot: Quickshell.env("HOME") + "/.local/share/omarchy"
@@ -35,7 +43,6 @@ Item {
         if (!omarchyCurrentRootResolved) return
         themeReloadDebounce.restart()
     }
-
     property color paper:   "#181616"
     property color ink:     "#c5c9c5"
     property color inkDeep: "#c8c093"
@@ -119,6 +126,7 @@ Item {
         || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
         || workspaceVisible || imagePickerVisible || mediaBrowserVisible || notifVisible
         || powerProfileVisible || archVisible || trayVisible || trayMenuVisible
+        || ollamaVisible
     readonly property bool keyboardPopupVisible: imagePickerVisible || mediaBrowserVisible
 
     function registerBarLayoutController(screenName, controller) {
@@ -222,6 +230,7 @@ Item {
     function resetCompactDisplayModes() {
         var changed = compactNetwork || compactBattery || compactBrightness || compactCpu
                    || compactMemory || compactVolume || compactBluetooth || compactPower
+                   || compactOllama
         _compactResetting = true
         compactNetwork = false
         compactBattery = false
@@ -231,6 +240,7 @@ Item {
         compactVolume = false
         compactBluetooth = false
         compactPower = false
+        compactOllama = false
         _compactResetting = false
         if (changed && _widgetsLoaded) saveWidgets()
     }
@@ -324,6 +334,7 @@ Item {
         else if (name === "mpris") mprisBarX = x
         else if (name === "weather") weatherBarX = x
         else if (name === "launcher") launcherBarX = x
+        else if (name === "ollama") ollamaBarX = x
         else if (name === "trayMenu") trayMenuX = x
     }
 
@@ -384,6 +395,7 @@ Item {
         if (except !== "archVisible") archVisible = false
         if (except !== "trayVisible") trayVisible = false
         if (except !== "trayMenuVisible") trayMenuVisible = false
+        if (except !== "ollamaVisible") ollamaVisible = false
         hideTooltip()
         _closingPopups = false
     }
@@ -464,14 +476,20 @@ Item {
     property string tooltipText: ""
     property real tooltipX: 0
     property real tooltipY: 0
+    property string tooltipPlacement: "bar"
+    property real tooltipAnchorWidth: 0
+    property real tooltipAnchorHeight: 0
     property bool tooltipShown: false
     property var tooltipOwner: null   // the widget currently owning the tooltip
 
-    function showTooltip(text, x, y, owner) {
+    function showTooltip(text, x, y, owner, placement, anchorWidth, anchorHeight) {
         if (!text) return;
         tooltipText = text;
         tooltipX = x;
         tooltipY = y;
+        tooltipPlacement = placement;
+        tooltipAnchorWidth = anchorWidth;
+        tooltipAnchorHeight = anchorHeight;
         tooltipOwner = owner !== undefined ? owner : null;
         tooltipShown = true;
     }
@@ -1396,6 +1414,7 @@ Item {
     property bool modQuick:      true    // G10 group pill (idle-inhibitor · media · theme)
     property bool modMpris:      true    // G9 now-playing / mpris pill
     property bool modClaude:     false   // default off (toggle in ControlPanel)
+    property bool modOllama:     false
 
     // Per-widget compact display modes. Defaults are full-width for backwards
     // compatibility; ControlPanel toggles persist these below.
@@ -1407,6 +1426,7 @@ Item {
     property bool compactVolume:     false
     property bool compactBluetooth:  false
     property bool compactPower:      false
+    property bool compactOllama:     false
 
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
     // ControlPanel uses this to hide the Brightness toggle on desktops without one.
@@ -1444,6 +1464,7 @@ Item {
     onModCpuChanged:        if (_widgetsLoaded) saveWidgets()
     onModVolumeChanged:     if (_widgetsLoaded) saveWidgets()
     onModMprisChanged:      if (_widgetsLoaded) saveWidgets()
+    onModOllamaChanged:     if (_widgetsLoaded) saveWidgets()
     onAiToolChanged:        if (_widgetsLoaded) saveWidgets()
     onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
     onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
@@ -1463,6 +1484,7 @@ Item {
     onCompactVolumeChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactBluetoothChanged:  if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactPowerChanged:      if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactOllamaChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleShadowChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleFrostChanged:       if (_widgetsLoaded) saveWidgets()
@@ -1507,7 +1529,9 @@ Item {
                  + (compactVolume     ? "1" : "0") + " "  // +28
                  + (compactBluetooth  ? "1" : "0") + " "  // +29
                  + (compactPower      ? "1" : "0") + " "  // +30
-                 + (archBadgeShell    ? "1" : "0")        // +31 updater shell badge
+                 + (archBadgeShell    ? "1" : "0") + " "  // +31 updater shell badge
+                 + (modOllama         ? "1" : "0") + " "  // +32
+                 + (compactOllama     ? "1" : "0")        // +33
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1714,6 +1738,8 @@ Item {
                     if (parts.length > wsField + 29) theme.compactBluetooth  = parts[wsField + 29] === "1"
                     if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
                     if (parts.length > wsField + 31) theme.archBadgeShell    = parts[wsField + 31] !== "0"
+                    if (parts.length > wsField + 32) theme.modOllama = parts[wsField + 32] === "1"
+                    if (parts.length > wsField + 33) theme.compactOllama = parts[wsField + 33] === "1"
                 }
                 theme._widgetsLoaded = true
             }
@@ -1737,6 +1763,11 @@ Item {
     onWeatherVisibleChanged: popupOpened("weatherVisible")
     property bool workspaceVisible: false
     onWorkspaceVisibleChanged: popupOpened("workspaceVisible")
+    property bool ollamaVisible: false
+    onOllamaVisibleChanged: {
+        popupOpened("ollamaVisible")
+        if (ollamaVisible && ollama.enabled) ollama.refreshAll()
+    }
 
     // ── Image picker state (theme/wallpaper carousel) ──
     property bool   imagePickerVisible:  false
@@ -2190,6 +2221,7 @@ Item {
     property real powerBarX:      0
     property real mprisBarX:      0
     property real weatherBarX:    0
+    property real ollamaBarX:     0
     property real launcherBarX:   6   // ControlPanel follows the Launcher/Control group
 
     // ── Tray context-menu state (themed menu, rendered by TrayMenu.qml) ──

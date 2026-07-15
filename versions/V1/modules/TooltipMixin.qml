@@ -9,6 +9,7 @@ Item {
     required property var root      // Theme — provides showTooltip()/hideTooltip()
     required property var owner     // the widget Item: anchor + tooltip owner key
     property string text: ""
+    property string placement: "bar"
     property int    delay: 320
 
     function show() { if (text) delayTimer.restart() }
@@ -23,8 +24,9 @@ Item {
         interval: mixin.delay
         onTriggered: {
             if (!mixin.text) return
-            var p = mixin.owner.mapToItem(null, mixin.owner.width / 2, mixin.owner.height / 2)
-            mixin.root.showTooltip(mixin.text, p.x, p.y, mixin.owner)
+            var p = mixin.owner.mapToItem(null, 0, 0)
+            mixin.root.showTooltip(mixin.text, p.x, p.y, mixin.owner,
+                                   mixin.placement, mixin.owner.width, mixin.owner.height)
         }
     }
 }
