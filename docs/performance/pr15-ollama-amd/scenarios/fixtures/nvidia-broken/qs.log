@@ -1,6 +1,6 @@
-  INFO: Launching config: "/tmp/opencode/task12-fixture-tmp/tmp.KIPmhC30hS/tests/fixtures/OllamaGpuSmoke.qml"
-  INFO: Shell ID: "14df4c1325ee8626f7db9f2f673f3078" Path ID "14df4c1325ee8626f7db9f2f673f3078"
-  INFO: Saving logs to "/run/user/1000/quickshell/by-id/ehj4wt96it/log.qslog"
+  INFO: Launching config: "/tmp/opencode/task12-rerun-fixture-tmp/tmp.bv0KImnjo1/tests/fixtures/OllamaGpuSmoke.qml"
+  INFO: Shell ID: "f9bf517de8816c77f264591cf868e208" Path ID "f9bf517de8816c77f264591cf868e208"
+  INFO: Saving logs to "/run/user/1000/quickshell/by-id/wo592qd6it/log.qslog"
   WARN: --- WARNING ---
   WARN: WAYLAND_DISPLAY is present but QT_QPA_PLATFORM is "offscreen"
   WARN: If you are actually running wayland, set QT_QPA_PLATFORM to "wayland" or most functionality will be broken.

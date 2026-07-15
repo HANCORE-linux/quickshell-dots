@@ -1,32 +1,32 @@
-2026-07-14 17:51:06.365  INFO: Launching config: "/tmp/opencode/.task-12-full-run.work.ZJkTiQ/sources/pr/source/versions/V1/shell.qml"
-2026-07-14 17:51:06.365  INFO: Shell ID: "4d00d4b891dc1a9fd8cf1360193bd574" Path ID "4d00d4b891dc1a9fd8cf1360193bd574"
-2026-07-14 17:51:06.365  INFO: Saving logs to "/run/user/1000/quickshell/by-id/z1546d96it/log.qslog"
-2026-07-14 17:51:06.780  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "enabledChanged"
-2026-07-14 17:51:06.780  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "panelVisibleChanged"
-2026-07-14 17:51:06.782  INFO: Configuration Loaded
-target picker
-  function screenshots(): void
-  function theme(): void
-  function wallpaper(): void
-  function videos(): void
-target theme
-  function apply(payload: string): void
-  function reload(): void
-  function applyLauncher(payload: string): void
-target reactor
-  function test(kind: string, arg: string): void
-  function monsweep(): void
-  function clear(): void
+2026-07-14 19:16:59.754  INFO: Launching config: "/tmp/opencode/.task-12-full-boundary.work.jmvwcc/sources/pr/source/versions/V1/shell.qml"
+2026-07-14 19:16:59.754  INFO: Shell ID: "de7ae06fbca937497e3bfd9c65125ce0" Path ID "de7ae06fbca937497e3bfd9c65125ce0"
+2026-07-14 19:16:59.755  INFO: Saving logs to "/run/user/1000/quickshell/by-id/x8r8bcd6it/log.qslog"
+2026-07-14 19:17:00.167  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "enabledChanged"
+2026-07-14 19:17:00.167  WARN scene: QML IpcHandler at @shell.qml[33:5]: Signal detected: "panelVisibleChanged"
+2026-07-14 19:17:00.169  INFO: Configuration Loaded
 target ollama
   function open(): void
-  function close(): void
   function refresh(): void
-  property enabled: bool
+  function close(): void
   property panelVisible: bool
+  property enabled: bool
   signal panelVisibleChanged()
   signal enabledChanged()
 target omarchy.system-update
   function refresh(): void
+target theme
+  function applyLauncher(payload: string): void
+  function reload(): void
+  function apply(payload: string): void
+target reactor
+  function test(kind: string, arg: string): void
+  function monsweep(): void
+  function clear(): void
+target picker
+  function screenshots(): void
+  function videos(): void
+  function theme(): void
+  function wallpaper(): void
 target layout
   function unlock(): void
   function lock(): void

@@ -1,22 +1,22 @@
-2026-07-14 17:48:18.609  INFO: Launching config: "/tmp/opencode/.task-12-full-run.work.ZJkTiQ/sources/main/source/versions/V1/shell.qml"
-2026-07-14 17:48:18.609  INFO: Shell ID: "2410337584df86240a9919df4f999210" Path ID "2410337584df86240a9919df4f999210"
-2026-07-14 17:48:18.609  INFO: Saving logs to "/run/user/1000/quickshell/by-id/nv04i896it/log.qslog"
-2026-07-14 17:48:18.999  INFO: Configuration Loaded
+2026-07-14 19:14:13.172  INFO: Launching config: "/tmp/opencode/.task-12-full-boundary.work.jmvwcc/sources/main/source/versions/V1/shell.qml"
+2026-07-14 19:14:13.173  INFO: Shell ID: "bf67320e7608a5836ac23be94bfa2c97" Path ID "bf67320e7608a5836ac23be94bfa2c97"
+2026-07-14 19:14:13.173  INFO: Saving logs to "/run/user/1000/quickshell/by-id/mgf8p7d6it/log.qslog"
+2026-07-14 19:14:13.569  INFO: Configuration Loaded
+target picker
+  function wallpaper(): void
+  function videos(): void
+  function theme(): void
+  function screenshots(): void
 target layout
-  function lock(): void
   function unlock(): void
+  function lock(): void
 target reactor
-  function monsweep(): void
   function clear(): void
   function test(kind: string, arg: string): void
-target omarchy.system-update
-  function refresh(): void
+  function monsweep(): void
 target theme
   function applyLauncher(payload: string): void
   function apply(payload: string): void
   function reload(): void
-target picker
-  function wallpaper(): void
-  function theme(): void
-  function screenshots(): void
-  function videos(): void
+target omarchy.system-update
+  function refresh(): void
