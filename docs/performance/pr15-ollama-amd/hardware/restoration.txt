@@ -1,8 +1,0 @@
-harness_restoration_status=restored
-harness_restoration_log=restored active bar as 207587:934731
-cache_backup_sha256=edb95a090e19f559e7bf981dddf9f6ad584164a219239d4d78a2adca825398b0
-cache_restored_sha256=edb95a090e19f559e7bf981dddf9f6ad584164a219239d4d78a2adca825398b0
-cache_byte_compare=identical
-restored_bar_pid=207587
-restored_bar_starttime=934731
-bar_argv_byte_compare=identical

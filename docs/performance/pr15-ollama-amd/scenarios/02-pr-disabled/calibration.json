@@ -1,9 +1,0 @@
-{
-  "expected_5ms": 3,
-  "expected_20ms": 3,
-  "observed_5ms": 3,
-  "observed_20ms": 3,
-  "expected": 6,
-  "observed": 6,
-  "valid": true
-}

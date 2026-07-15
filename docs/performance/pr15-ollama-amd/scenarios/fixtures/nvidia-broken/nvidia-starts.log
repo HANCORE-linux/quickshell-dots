@@ -1,2 +1,0 @@
---query-gpu=index,utilization.gpu --format=csv,noheader,nounits --loop-ms=120
---query-gpu=index,utilization.gpu --format=csv,noheader,nounits --loop-ms=120
