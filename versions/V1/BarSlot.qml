@@ -195,6 +195,11 @@ PanelWindow {
     }
 
     property var layoutController: ({
+        ready: function () {
+            return barSlot._orderLoaded
+                && island._splitsLoaded
+                && barSlot.backingWindowVisible
+        },
         splitAll: function () {
             island.leftSplits     = [true, true, true, true, true, true]
             island.rightSplits    = [true, true, true, true, true, true]

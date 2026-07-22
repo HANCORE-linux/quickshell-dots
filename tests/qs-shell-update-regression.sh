@@ -4,9 +4,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECK="${CHECK:-$REPO_ROOT/scripts/qs-shell-check-update.sh}"
 APPLY="${APPLY:-$REPO_ROOT/scripts/qs-shell-apply-update.sh}"
+PUBLISHED_MIGRATION_COMMIT="4dbf830548e28c43494b89abfcf8ba00f06c74d7"
+PUBLISHED_CHECK_BLOB="6d1a2903c84f129fab630f128c42100ad50fbab1"
+PUBLISHED_APPLY_BLOB="812a5aaa10f0e825d0643a20a7ef88420ee0d4f1"
 WORK="$(mktemp -d /tmp/qs-shell-update-test.XXXXXX)"
 
 cleanup() {
+  if [ -n "${KEEP_WORK:-}" ]; then
+    printf 'Kept test fixtures: %s\n' "$WORK" >&2
+    return
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -50,7 +57,7 @@ notify_log() {
 write_payload() {
   local repo="$1" label="$2" mode="${3:-ok}"
   rm -rf "$repo/versions" "$repo/scripts" "$repo/systemd" "$repo/hooks"
-  mkdir -p "$repo/versions/V1" "$repo/scripts" "$repo/systemd" "$repo/hooks"
+  mkdir -p "$repo/versions/V1/variants/V2" "$repo/scripts" "$repo/systemd" "$repo/hooks"
   case "$mode" in
     missing-shell) ;;
     invalid-shell) printf 'import QtQuick\nItem {\n' > "$repo/versions/V1/shell.qml" ;;
@@ -100,6 +107,12 @@ QML
       ;;
     *) printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/shell.qml" ;;
   esac
+  printf 'import QtQuick\nItem { required property var variantHost }\n' > "$repo/versions/V1/VariantRoot.qml"
+  if [ "$mode" = "invalid-v2-root" ]; then
+    printf 'import QtQuick\nItem {\n' > "$repo/versions/V1/variants/V2/VariantRoot.qml"
+  else
+    printf 'import QtQuick\nItem { required property var variantHost }\n' > "$repo/versions/V1/variants/V2/VariantRoot.qml"
+  fi
   printf '%s\n' "$label" > "$repo/versions/V1/payload.txt"
   printf '%s\n' "$label" > "$repo/scripts/companion.txt"
   mkdir -p "$repo/contrib/post-boot.d"
@@ -205,6 +218,39 @@ commit_payload() {
   git -C "$repo" commit -m "payload-$label" >/dev/null
 }
 
+materialize_published_migration_updater() {
+  local root="$1" actual_check actual_apply
+
+  git -C "$REPO_ROOT" cat-file -e "$PUBLISHED_MIGRATION_COMMIT^{commit}" 2>/dev/null || \
+    fail "published migration commit is unavailable; fetch full repository history"
+  actual_check="$(git -C "$REPO_ROOT" rev-parse \
+    "$PUBLISHED_MIGRATION_COMMIT:scripts/qs-shell-check-update.sh")"
+  actual_apply="$(git -C "$REPO_ROOT" rev-parse \
+    "$PUBLISHED_MIGRATION_COMMIT:scripts/qs-shell-apply-update.sh")"
+  assert_eq "$PUBLISHED_CHECK_BLOB" "$actual_check" "published checker provenance"
+  assert_eq "$PUBLISHED_APPLY_BLOB" "$actual_apply" "published apply provenance"
+
+  git -C "$REPO_ROOT" show \
+    "$PUBLISHED_MIGRATION_COMMIT:scripts/qs-shell-check-update.sh" > "$root/published-check"
+  git -C "$REPO_ROOT" show \
+    "$PUBLISHED_MIGRATION_COMMIT:scripts/qs-shell-apply-update.sh" > "$root/published-apply"
+  chmod 755 "$root/published-check" "$root/published-apply"
+}
+
+commit_integrated_migration_target() {
+  local repo="$1"
+
+  rm -rf "$repo/versions" "$repo/scripts" "$repo/systemd" "$repo/hooks" "$repo/contrib"
+  mkdir -p "$repo/versions/V1" "$repo/scripts" "$repo/systemd" "$repo/hooks" "$repo/contrib"
+  cp -a "$REPO_ROOT/versions/V1/." "$repo/versions/V1/"
+  cp -a "$REPO_ROOT/scripts/." "$repo/scripts/"
+  cp -a "$REPO_ROOT/systemd/." "$repo/systemd/"
+  cp -a "$REPO_ROOT/hooks/." "$repo/hooks/"
+  cp -a "$REPO_ROOT/contrib/." "$repo/contrib/"
+  git -C "$repo" add -A >/dev/null
+  git -C "$repo" commit -m "integrated-v1-v2-generation" >/dev/null
+}
+
 install_fake_process_tools() {
   local root="$1"
   mkdir -p "$root/bin"
@@ -228,6 +274,35 @@ printf 'pkill %s\n' "$*" >> "$HOME/process-tools.log"
 exit 1
 SCRIPT
   chmod 755 "$root/bin/qs" "$root/bin/pgrep" "$root/bin/pkill"
+}
+
+install_fake_barctl() {
+  local root="$1" status="$2" status_rc="${3:-0}"
+  mkdir -p "$root/home/.config/quickshell/bin"
+  printf '%s\n' "$status" > "$root/home/barctl.status"
+  printf '%s\n' "$status_rc" > "$root/home/barctl.status-rc"
+  printf '0\n' > "$root/home/barctl.stop-rc"
+  cat > "$root/home/.config/quickshell/bin/qs-barctl" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$HOME/barctl.log"
+case "${1:-}" in
+  status)
+    cat "$HOME/barctl.status"
+    exit "$(cat "$HOME/barctl.status-rc")"
+    ;;
+  start-wait)
+    ;;
+  stop-wait)
+    exit "$(cat "$HOME/barctl.stop-rc")"
+    ;;
+  switch-wait)
+    exit 99
+    ;;
+  *) exit 2 ;;
+esac
+SCRIPT
+  chmod 755 "$root/home/.config/quickshell/bin/qs-barctl"
 }
 
 init_fixture() {
@@ -799,6 +874,136 @@ test_apply_restarts_bar_in_own_systemd_unit() {
   assert_progress_state "$root" running restarting 5 "successful apply did not reach restarting phase"
 }
 
+test_published_updater_migrates_legacy_v1_to_integrated_generation() {
+  local root="$WORK/published-updater-migration" target
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  materialize_published_migration_updater "$root"
+
+  # Recreate the public pre-integration shape: one V1 payload and no variant
+  # host or nested V2 tree. The marker keeps the published checker on V1.
+  rm -rf "$root/repo/versions/V1/VariantRoot.qml" "$root/repo/versions/V1/variants"
+  git -C "$root/repo" add -A >/dev/null
+  git -C "$root/repo" commit -m "legacy-v1-base" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+  rm -rf "$root/dest"
+  mkdir -p "$root/dest"
+  git -C "$root/repo" archive HEAD:versions/V1 | tar -x -C "$root/dest"
+  printf 'V1\n' > "$root/dest/.qsrise"
+  git -C "$root/repo" rev-parse HEAD > "$root/dest/.qsrise-commit"
+
+  commit_integrated_migration_target "$root/repo"
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+  target="$(git -C "$root/repo" rev-parse HEAD)"
+  mkdir -p "$root/home/.local/share"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+
+  HOME="$root/home" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+    "$root/published-check"
+  jq -e --arg target "$target" \
+    '(.schemaVersion == 5) and (.behind > 0) and (.version == "V1")
+      and (.targetCommit == $target)' "$(state_file "$root")" >/dev/null
+
+  assert_process_tools_isolated "$root"
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+  QS_SHELL_SMOKE_PLATFORM=offscreen \
+  QS_SHELL_SMOKE_TIMEOUT=4 \
+    "$root/published-apply"
+
+  assert_eq V1 "$(tr -d '[:space:]' < "$root/dest/.qsrise")" \
+    "published updater preserved the legacy user's V1 selection"
+  assert_eq "$target" "$(tr -d '[:space:]' < "$root/dest/.qsrise-commit")" \
+    "published updater deployed the integrated target commit"
+  [ -f "$root/dest/VariantRoot.qml" ] || fail "published updater omitted integrated V1 root"
+  [ -f "$root/dest/variants/V2/VariantRoot.qml" ] || fail "published updater omitted nested V2 root"
+  assert_contains 'property string committedVariant: "v1"' \
+    "$root/dest/core/StateService.qml" "integrated host default variant"
+  [ ! -e "$root/state/quickshell-rise/active-variant" ] || \
+    fail "migration unexpectedly created or changed persistent variant state"
+
+  cmp -s "$REPO_ROOT/scripts/qs-barctl" \
+    "$root/home/.config/quickshell/bin/qs-barctl" || \
+    fail "published updater did not install the lifecycle controller"
+  cmp -s "$REPO_ROOT/scripts/qs-proj" "$root/home/.local/bin/qs-proj" || \
+    fail "published updater did not install the compatibility switcher"
+  cmp -s "$REPO_ROOT/scripts/qs-shell-check-update.sh" \
+    "$root/home/.config/quickshell/bin/qs-shell-check-update.sh" || \
+    fail "published updater did not install the new checker"
+  cmp -s "$REPO_ROOT/scripts/qs-shell-apply-update.sh" \
+    "$root/home/.config/quickshell/bin/qs-shell-apply-update.sh" || \
+    fail "published updater did not install the new apply updater"
+  assert_eq 1 "$(grep -Fc 'qs -n -c bar' "$root/home/systemd-run.log")" \
+    "published updater one-time legacy restart"
+  assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" \
+    "published updater cleared the completed migration"
+}
+
+test_integrated_v1_update_restarts_through_controller() {
+  local root="$WORK/controller-active-v1"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  install_fake_barctl "$root" v1
+  make_update_and_check "$root" A
+
+  run_apply_with_restart "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  assert_contains 'status' "$root/home/barctl.log" "updater did not inspect the live controller state"
+  assert_contains 'stop-wait' "$root/home/barctl.log" "integrated V1 host was not stopped through the controller"
+  assert_contains 'start-wait' "$root/home/barctl.log" "integrated V1 host was not restarted through the controller"
+  assert_not_contains 'switch-wait' "$root/home/barctl.log" "updater used the obsolete cross-process switch path"
+  [ ! -e "$root/home/systemd-run.log" ] || \
+    assert_not_contains 'qs -n -c bar' "$root/home/systemd-run.log" "active V1 bypassed the controller during restart"
+}
+
+test_integrated_v2_update_restarts_without_switching_variant() {
+  local root="$WORK/controller-active-v2"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  install_fake_barctl "$root" v2
+  make_update_and_check "$root" A
+
+  run_apply_with_restart "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  assert_contains 'status' "$root/home/barctl.log" "updater did not inspect the integrated V2 host"
+  assert_contains 'stop-wait' "$root/home/barctl.log" "integrated V2 host was not stopped through the controller"
+  assert_contains 'start-wait' "$root/home/barctl.log" "integrated V2 host was not restarted through the controller"
+  assert_not_contains 'switch-wait' "$root/home/barctl.log" "V2 update changed the selected UI variant"
+  [ ! -e "$root/home/systemd-run.log" ] || \
+    assert_not_contains 'qs -n -c bar' "$root/home/systemd-run.log" "inactive V1 update launched a second bar"
+}
+
+test_legacy_controller_without_safe_stop_aborts_before_swap() {
+  local root="$WORK/controller-legacy-no-stop" before
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  install_fake_barctl "$root" v2
+  printf '2\n' > "$root/home/barctl.stop-rc"
+  make_update_and_check "$root" A
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply_with_restart "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "updater swapped payload while legacy controller could not stop V2 safely"
+  fi
+
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_contains 'stop-wait' "$root/home/barctl.log" "legacy controller safe-stop was not attempted"
+  [ ! -e "$root/home/systemd-run.log" ] || \
+    assert_not_contains 'qs -n -c bar' "$root/home/systemd-run.log" "failed migration launched a second bar"
+}
+
 test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails() {
   local root="$WORK/restart-systemd-fail-closed"
   init_fixture "$root"
@@ -1064,6 +1269,21 @@ test_missing_component_fails_smoke_and_keeps_old_deploy() {
   assert_pending_state_preserved "$root" "$before"
 }
 
+test_invalid_inactive_v2_fails_smoke_and_keeps_old_deploy() {
+  local root="$WORK/invalid-v2-root"
+  init_fixture "$root"
+  make_update_and_check "$root" invalid-v2 invalid-v2-root
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with an invalid inactive V2 VariantRoot"
+  fi
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "invalid V2 did not fail in testing phase"
+}
+
 test_qs_module_import_passes_smoke() {
   local root="$WORK/qs-module-import"
   init_fixture "$root"
@@ -1072,6 +1292,7 @@ test_qs_module_import_passes_smoke() {
   run_apply "$root" >/dev/null
   assert_dest_label "$root" qs-module
   [ ! -e "$root/dest/.qs-shell-smoke.qml" ] || fail "smoke wrapper leaked into deployed payload"
+  [ ! -e "$root/dest/.qs-variant-smoke.qml" ] || fail "variant smoke wrapper leaked into deployed payload"
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
@@ -1151,6 +1372,10 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
 
   cmp -s "$repo/contrib/post-boot.d/quickshell-rise" "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" || \
     fail "installed post-boot hook was not refreshed"
+  cmp -s "$repo/scripts/qs-barctl" "$root/home/.config/quickshell/bin/qs-barctl" || \
+    fail "lifecycle controller was not installed by the post-update companion"
+  cmp -s "$repo/scripts/qs-proj" "$root/home/.local/bin/qs-proj" || \
+    fail "compatibility switcher was not installed by the post-update companion"
 
   rm -rf "$root/home/.config/omarchy/hooks/post-boot.d"
   HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
@@ -1160,6 +1385,10 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
     fail "post-update installed opt-in post-boot hook unexpectedly"
   grep -Fxq '.config/omarchy/hooks/post-boot.d/quickshell-rise' "$repo/scripts/qs-shell-post-update.targets" || \
     fail "post-boot hook is missing from companion rollback targets"
+  grep -Fxq '.config/quickshell/bin/qs-barctl' "$repo/scripts/qs-shell-post-update.targets" || \
+    fail "lifecycle controller is missing from companion rollback targets"
+  grep -Fxq '.local/bin/qs-proj' "$repo/scripts/qs-shell-post-update.targets" || \
+    fail "compatibility switcher is missing from companion rollback targets"
 }
 
 make_minimal_legacy_companion() {
@@ -1357,6 +1586,10 @@ test_dirty_repo_is_preserved_while_deploying_checked_target
 test_shell_apply_launcher_uses_systemd_unit
 test_shell_apply_ui_requires_checked_target_and_dismisses_failure
 test_apply_restarts_bar_in_own_systemd_unit
+test_published_updater_migrates_legacy_v1_to_integrated_generation
+test_integrated_v1_update_restarts_through_controller
+test_integrated_v2_update_restarts_without_switching_variant
+test_legacy_controller_without_safe_stop_aborts_before_swap
 test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails
 test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit
 test_progress_success_complete_and_ack
@@ -1370,6 +1603,7 @@ test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy
 test_invalid_import_fails_smoke_and_keeps_old_deploy
 test_bad_local_import_fails_smoke_and_keeps_old_deploy
 test_missing_component_fails_smoke_and_keeps_old_deploy
+test_invalid_inactive_v2_fails_smoke_and_keeps_old_deploy
 test_qs_module_import_passes_smoke
 test_successful_smoke_exits_without_timeout
 test_qs_module_with_qmldir_smoke_does_not_execute_side_effect

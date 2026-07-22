@@ -7,6 +7,7 @@ import "Palette.js" as Palette
 
 Item {
     id: theme
+    property var variantHost: null
     signal reactorTest(string kind, string arg)
 
     property string omarchyCurrentRoot: Quickshell.env("HOME") + "/.config/omarchy/current"
@@ -2324,36 +2325,53 @@ Item {
         }
     }
 
-    IpcHandler {
-        target: "theme"
-        function apply(payload: string): void {
-            let p;
-            try { p = JSON.parse(payload); }
-            catch (e) { console.warn("theme.apply: bad payload —", e); return; }
-            if (!p || !p.colors) return;
-            Palette.apply(theme, Palette.mapKeys(p.colors));
-            theme.lastAppliedName = p.name || "";
-        }
-        function applyLauncher(payload: string): void {
-            let p;
-            try { p = JSON.parse(payload); }
-            catch (e) { console.warn("theme.applyLauncher: bad payload —", e); return; }
-            theme.applyLauncherConfig(p);
-        }
-        function reload(): void {
-            paletteReader.running = false;
-            paletteReader.running = true;
+    function ipcApplyTheme(payload) {
+        let p;
+        try { p = JSON.parse(payload); }
+        catch (e) { console.warn("theme.apply: bad payload —", e); return; }
+        if (!p || !p.colors) return;
+        Palette.apply(theme, Palette.mapKeys(p.colors));
+        theme.lastAppliedName = p.name || "";
+    }
+
+    function ipcApplyLauncher(payload) {
+        let p;
+        try { p = JSON.parse(payload); }
+        catch (e) { console.warn("theme.applyLauncher: bad payload —", e); return; }
+        theme.applyLauncherConfig(p);
+    }
+
+    function ipcReloadTheme() {
+        paletteReader.running = false;
+        paletteReader.running = true;
+    }
+
+    function ipcOpenPicker(mode) {
+        if (mode === "theme" || mode === "wallpaper") openImagePicker(mode)
+        else if (mode === "screenshots" || mode === "videos") openMediaBrowser(mode)
+    }
+
+    // Standalone compatibility while the integrated bootstrap is being rolled
+    // out. VariantRoot supplies variantHost, so only the common IPC router owns
+    // these targets in integrated mode.
+    LazyLoader {
+        active: theme.variantHost === null
+        IpcHandler {
+            target: "theme"
+            function apply(payload: string): void { theme.ipcApplyTheme(payload) }
+            function applyLauncher(payload: string): void { theme.ipcApplyLauncher(payload) }
+            function reload(): void { theme.ipcReloadTheme() }
         }
     }
 
-    // entry point for keybinds: `qs -c bar ipc call picker theme|wallpaper|...`
-    // (unqualified access → resolves to the Theme root's properties; avoids the
-    //  function name `theme` shadowing the `id: theme`)
-    IpcHandler {
-        target: "picker"
-        function theme(): void       { openImagePicker("theme") }
-        function wallpaper(): void   { openImagePicker("wallpaper") }
-        function screenshots(): void { openMediaBrowser("screenshots") }
-        function videos(): void      { openMediaBrowser("videos") }
+    LazyLoader {
+        active: theme.variantHost === null
+        IpcHandler {
+            target: "picker"
+            function theme(): void { ipcOpenPicker("theme") }
+            function wallpaper(): void { ipcOpenPicker("wallpaper") }
+            function screenshots(): void { ipcOpenPicker("screenshots") }
+            function videos(): void { ipcOpenPicker("videos") }
+        }
     }
 }

@@ -23,6 +23,15 @@ PanelWindow {
     property bool powerOpen: false
     property bool wsOpen: false   // Workspaces collapsible inside the WW fly-out
     property bool compactOpen: false
+    readonly property string barctlPath: Quickshell.env("HOME") + "/.config/quickshell/bin/qs-barctl"
+
+    function switchBar(version) {
+        root.controlVisible = false
+        if (root.variantHost)
+            root.variantHost.requestSwitch(version)
+        else
+            Quickshell.execDetached([barctlPath, "switch", version])
+    }
 
     property real reveal: root.controlVisible ? 1 : 0
     Behavior on reveal {
@@ -164,10 +173,31 @@ PanelWindow {
                 text: "ACTIONS"
                 color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
-            Tile {
+            Grid {
                 width: parent.width
-                label: "Reload QS-Config"
-                onActivated: { root.controlVisible = false; Quickshell.reload(false) }
+                columns: 3
+                columnSpacing: 6
+                Tile {
+                    width: root.evenW((col.width - 12) / 3)
+                    label: "Reload"
+                    onActivated: { root.controlVisible = false; Quickshell.reload(false) }
+                }
+                Tile {
+                    width: root.evenW((col.width - 12) / 3)
+                    label: "V1"
+                    active: root.variantHost ? root.variantHost.runningVariant === "v1" : true
+                    enabled: root.variantHost ? !root.variantHost.switching && root.variantHost.runningVariant !== "v1" : false
+                    opacity: active ? 1.0 : (enabled ? 1.0 : 0.4)
+                    onActivated: ctrlPanel.switchBar("v1")
+                }
+                Tile {
+                    width: root.evenW((col.width - 12) / 3)
+                    label: "V2"
+                    active: root.variantHost ? root.variantHost.runningVariant === "v2" : false
+                    enabled: root.variantHost ? !root.variantHost.switching && root.variantHost.runningVariant !== "v2" : true
+                    opacity: active ? 1.0 : (enabled ? 1.0 : 0.4)
+                    onActivated: ctrlPanel.switchBar("v2")
+                }
             }
 
             // ── POWER (collapsed sub-menu; nothing destructive pre-shown) ──

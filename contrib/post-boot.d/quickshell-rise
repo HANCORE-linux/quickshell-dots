@@ -2,6 +2,7 @@
 # Quickshell Rise — runtime helpers and non-blocking Omarchy post-boot launcher.
 
 QSR_CONFIG_PATH="${QSR_CONFIG_PATH:-$HOME/.config/quickshell/bar/shell.qml}"
+QSR_BARCTL="${QSR_BARCTL:-$HOME/.config/quickshell/bin/qs-barctl}"
 QSR_RUNTIME_ROOT="${QSR_RUNTIME_ROOT:-${XDG_RUNTIME_DIR:-/run/user/$UID}/quickshell}"
 QSR_PROC_ROOT="${QSR_PROC_ROOT:-/proc}"
 QSR_STATE_ROOT="${QSR_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/quickshell-rise}"
@@ -138,6 +139,38 @@ qsr_start_bar() {
   command -v qs >/dev/null 2>&1 || return 1
   command -v setsid >/dev/null 2>&1 || return 1
   setsid qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
+}
+
+qsr_start_selected_bar() {
+  local status="" rc=0
+
+  if [[ ! -x $QSR_BARCTL ]]; then
+    qsr_start_bar
+    return
+  fi
+  status="$("$QSR_BARCTL" status 2>/dev/null)" || rc=$?
+  if ((rc == 0)) && [[ $status == v1 || $status == v2 ]]; then
+    return 0
+  fi
+  "$QSR_BARCTL" start >/dev/null 2>&1
+}
+
+qsr_wait_for_selected_bar() {
+  local attempt status="" rc=0
+
+  if [[ ! -x $QSR_BARCTL ]]; then
+    qsr_wait_for_bar
+    return
+  fi
+  for ((attempt = 0; attempt < QSR_READY_ROUNDS; attempt++)); do
+    rc=0
+    status="$("$QSR_BARCTL" status 2>/dev/null)" || rc=$?
+    if ((rc == 0)) && [[ $status == v1 || $status == v2 ]]; then
+      return 0
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+  return 1
 }
 
 qsr_term_pid() {
@@ -290,7 +323,7 @@ qsr_warn_stock_bar_hide_failure() {
 qsr_post_boot_main() {
   qsr_export_omarchy_path
 
-  if ! qsr_start_bar || ! qsr_wait_for_bar; then
+  if ! qsr_start_selected_bar || ! qsr_wait_for_selected_bar; then
     qsr_warn 'Rise did not become ready; preserving or restoring only Rise-owned stock-bar state.'
     if qsr_has_quattro && ! qsr_release_owned_stock_bar; then
       qsr_warn 'Could not restore the Rise-owned Omarchy bar state.'

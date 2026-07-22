@@ -9,6 +9,8 @@
 .local/share/qs-aur-blacklist.txt.pending
 .config/quickshell/bin/qs-shell-check-update.sh
 .config/quickshell/bin/qs-shell-apply-update.sh
+.config/quickshell/bin/qs-barctl
+.local/bin/qs-proj
 .config/quickshell/bin/qs-theme-update-check.sh
 .config/quickshell/bin/qs-theme-apply-update.sh
 .config/omarchy/hooks/post-boot.d/quickshell-rise

@@ -74,8 +74,16 @@ else
 fi
 
 # ── keep the updater itself current (check + apply + this hook) ─
-put "$repo/scripts/qs-shell-check-update.sh" "$qsbin/qs-shell-check-update.sh" 755 || rc=1
-put "$repo/scripts/qs-shell-apply-update.sh" "$qsbin/qs-shell-apply-update.sh" 755 || rc=1
+for critical_script in qs-barctl qs-proj qs-shell-check-update.sh qs-shell-apply-update.sh; do
+  if [ -f "$repo/scripts/$critical_script" ]; then
+    case "$critical_script" in
+      qs-proj) put "$repo/scripts/$critical_script" "$bin/$critical_script" 755 || rc=1 ;;
+      *) put "$repo/scripts/$critical_script" "$qsbin/$critical_script" 755 || rc=1 ;;
+    esac
+  elif [ "$require_post_boot_source" = "1" ]; then
+    rc=1
+  fi
+done
 put "$repo/systemd/qs-shell-update-check.service" "$units/qs-shell-update-check.service" 644 || rc=1
 put "$repo/systemd/qs-shell-update-check.timer"   "$units/qs-shell-update-check.timer"   644 || rc=1
 

@@ -125,13 +125,15 @@ SCRIPT
 build_installer_fixture() {
   local repo="$WORK/installer-source"
 
-  mkdir -p "$repo/contrib/post-boot.d" "$repo/versions/V1" \
+  mkdir -p "$repo/contrib/post-boot.d" "$repo/versions/V1/variants/V2" \
     "$repo/scripts" "$repo/systemd"
   printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/shell.qml"
+  printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/VariantRoot.qml"
+  printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/variants/V2/VariantRoot.qml"
 
-  # The real lifecycle helper has dedicated coverage elsewhere in this suite.
-  # This fixture records which existing installer branch was selected without
-  # touching host processes or the real Omarchy toggle state.
+  # Stock-bar ownership remains isolated from the host. Installer readiness is
+  # intentionally not stubbed here: the fixture ships the real qs-barctl below
+  # and provides only a deterministic Quickshell registry/IPC transport.
   cat > "$repo/contrib/post-boot.d/quickshell-rise" <<'SCRIPT'
 #!/usr/bin/env bash
 QSR_STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/quickshell-rise"
@@ -161,9 +163,7 @@ qsr_stop_bar_instances() {
 qsr_start_bar() {
   printf 'start\n' >> "${QSR_TEST_LOG:?}"
 }
-qsr_wait_for_bar() {
-  printf 'ready\n' >> "${QSR_TEST_LOG:?}"
-}
+qsr_wait_for_bar() { printf 'legacy-ready\n' >> "${QSR_TEST_LOG:?}"; }
 qsr_hide_stock_bar_owned() {
   printf 'hide\n' >> "${QSR_TEST_LOG:?}"
   qsr_stock_bar_hidden && return 0
@@ -178,6 +178,12 @@ qsr_warn_stock_bar_hide_failure() {
 }
 SCRIPT
 
+  cp "$REPO_ROOT/scripts/qs-barctl" "$repo/scripts/qs-barctl"
+  cat > "$repo/scripts/qs-proj" <<'SCRIPT'
+#!/usr/bin/env bash
+exec "$HOME/.config/quickshell/bin/qs-barctl" "$@"
+SCRIPT
+
   cat > "$repo/scripts/qs-shell-check-update.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 exit 0
@@ -189,6 +195,7 @@ SCRIPT
   printf '[Unit]\nDescription=fixture\n' > "$repo/systemd/qs-shell-update-check.service"
   printf '[Unit]\nDescription=fixture\n' > "$repo/systemd/qs-shell-update-check.timer"
   chmod 0755 "$repo/contrib/post-boot.d/quickshell-rise" \
+    "$repo/scripts/qs-barctl" "$repo/scripts/qs-proj" \
     "$repo/scripts/qs-shell-check-update.sh" "$repo/scripts/qs-shell-apply-update.sh"
 
   git init "$repo" >/dev/null
@@ -208,9 +215,61 @@ make_installer_case() {
   : > "$root/actions.log"
   make_fake_tools "$root"
 
+  : > "$root/instances.tsv"
   cat > "$root/bin/qs" <<'SCRIPT'
 #!/usr/bin/env bash
-exit 0
+set -euo pipefail
+state="${QSR_TEST_INSTANCE_STATE:?}"
+
+case "${1:-}" in
+  list)
+    while IFS=$'\t' read -r id pid path display ready version; do
+      [[ -n $id ]] || continue
+      printf 'Instance %s:\n' "$id"
+      printf '  Process ID: %s\n' "$pid"
+      printf '  Config path: %s\n' "$path"
+      printf '  Display connection: %s\n\n' "$display"
+    done < "$state"
+    ;;
+  -n)
+    path=""
+    shift
+    while (($#)); do
+      if [[ $1 == -p ]]; then path="$2"; break; fi
+      shift
+    done
+    [[ -n $path ]] || exit 2
+    variant="${QSR_TEST_CONTROLLER_STATUS:-}"
+    if [[ -z $variant ]]; then
+      variant="$(tr -d '[:space:]' < "${XDG_STATE_HOME:?}/quickshell-rise/active-variant")"
+    fi
+    printf 'installer-bar\t%s\t%s\tfixture/display\t%s\t%s\n' \
+      "$$" "$path" "${QSR_TEST_CONTROLLER_READY:-true}" "${variant^^}" > "$state"
+    ;;
+  ipc)
+    shift
+    [[ ${1:-} == -i ]] || exit 2
+    id="$2"
+    shift 2
+    [[ ${1:-} == call ]] || exit 2
+    target="$2"
+    function="$3"
+    printf 'ipc %s %s\n' "$target" "$function" >> "${QSR_TEST_LOG:?}"
+    row="$(awk -F '\t' -v wanted="$id" '$1 == wanted { print; exit }' "$state")"
+    [[ -n $row ]] || exit 1
+    IFS=$'\t' read -r _ _ _ _ ready version <<< "$row"
+    case "$target:$function" in
+      lifecycle:version) printf '%s\n' "$version" ;;
+      lifecycle:ready) printf '%s\n' "$ready" ;;
+      variant:state) printf 'active\n' ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  kill)
+    : > "$state"
+    ;;
+  *) exit 2 ;;
+esac
 SCRIPT
   cat > "$root/bin/checkupdates" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -225,8 +284,22 @@ SCRIPT
 printf 'systemctl %s\n' "$*" >> "${QSR_TEST_LOG:?}"
 exit 0
 SCRIPT
+  cat > "$root/bin/systemd-run" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'systemd-run %s\n' "$*" >> "${QSR_TEST_LOG:?}"
+while (($#)); do
+  case "$1" in
+    --setenv=*) export "${1#--setenv=}" ;;
+    --) shift; break ;;
+  esac
+  shift
+done
+(($#)) || exit 2
+"$@"
+SCRIPT
   chmod 0755 "$root/bin/qs" "$root/bin/checkupdates" "$root/bin/fc-list" \
-    "$root/bin/systemctl"
+    "$root/bin/systemctl" "$root/bin/systemd-run"
 
   cat > "$root/run-installer" <<SCRIPT
 #!/usr/bin/env bash
@@ -235,6 +308,14 @@ export XDG_RUNTIME_DIR="$root/run"
 export XDG_STATE_HOME="$root/state"
 export QSR_TOGGLE_ROOT="$root/toggles"
 export QSR_TEST_LOG="$root/actions.log"
+export QSR_TEST_INSTANCE_STATE="$root/instances.tsv"
+export QSR_SKIP_INSTANCE_VALIDATION=1
+export QSR_DISPLAY_MATCH=fixture/display
+export QSR_READY_ROUNDS=3
+export QSR_STOP_ROUNDS=3
+export QSR_STABLE_ROUNDS=2
+export QSR_POLL_INTERVAL=0
+export QSR_COMMAND_TIMEOUT=1
 export PATH="$root/bin:/usr/bin:/bin"
 exec /usr/bin/bash "$WORK/install-under-test.sh" V1 --no-ai-backend "\$@"
 SCRIPT
@@ -257,8 +338,31 @@ run_installer_without_tty() {
   local root="$1"
   shift
 
-  /usr/bin/setsid -f -w "$root/run-installer" "$@" </dev/null \
+  QSR_TEST_CONTROLLER_READY="${QSR_TEST_CONTROLLER_READY:-true}" \
+  QSR_TEST_CONTROLLER_STATUS="${QSR_TEST_CONTROLLER_STATUS:-}" \
+    /usr/bin/setsid -f -w "$root/run-installer" "$@" </dev/null \
     > "$root/installer.out" 2>&1
+}
+
+run_installer_preserving_without_tty() {
+  local root="$1"
+
+  HOME="$root/home" \
+  XDG_RUNTIME_DIR="$root/run" \
+  XDG_STATE_HOME="$root/state" \
+  QSR_TOGGLE_ROOT="$root/toggles" \
+  QSR_TEST_LOG="$root/actions.log" \
+  QSR_TEST_INSTANCE_STATE="$root/instances.tsv" \
+  QSR_SKIP_INSTANCE_VALIDATION=1 \
+  QSR_DISPLAY_MATCH=fixture/display \
+  QSR_READY_ROUNDS=3 \
+  QSR_STOP_ROUNDS=3 \
+  QSR_STABLE_ROUNDS=2 \
+  QSR_POLL_INTERVAL=0 \
+  QSR_COMMAND_TIMEOUT=1 \
+  PATH="$root/bin:/usr/bin:/bin" \
+    /usr/bin/bash "$WORK/install-under-test.sh" --no-ai-backend --no-autostart \
+      > "$root/installer.out" 2>&1
 }
 
 assert_installer_autostart() {
@@ -268,7 +372,7 @@ assert_installer_autostart() {
   assert_file "$root/state/quickshell-rise/owns-omarchy-bar-off" "$message marker"
   assert_file "$root/toggles/bar-off" "$message stock flag"
   assert_contains "omarchy toggle bar on" "$root/actions.log" "$message toggle"
-  assert_before "ready" "omarchy toggle bar on" "$root/actions.log" "$message health-before-hide"
+  assert_before "ipc lifecycle ready" "omarchy toggle bar on" "$root/actions.log" "$message health-before-hide"
 }
 
 assert_installer_manual_mode() {
@@ -348,6 +452,82 @@ case_installer_interactive_prompt_matrix() {
   assert_no_file "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" "legacy hook"
   assert_not_contains "omarchy toggle bar" "$root/actions.log" "legacy toggle"
   assert_contains "pkill -x waybar" "$root/actions.log" "legacy Waybar behavior"
+
+  root="$WORK/installer-v2"
+  make_installer_case "$root"
+  run_installer_without_tty "$root" V2 --no-autostart
+  assert_eq V1 "$(tr -d '[:space:]' < "$root/home/.config/quickshell/bar/.qsrise")" \
+    "integrated payload marker"
+  assert_eq v2 "$(tr -d '[:space:]' < "$root/state/quickshell-rise/active-variant")" \
+    "fresh V2 initial selection"
+  assert_file "$root/home/.config/quickshell/bar/variants/V2/VariantRoot.qml" \
+    "integrated V2 payload"
+  assert_contains "ipc lifecycle ready" "$root/actions.log" \
+    "fresh V2 lifecycle readiness"
+
+  root="$WORK/installer-preserve-v2"
+  make_installer_case "$root"
+  mkdir -p "$root/home/.config/quickshell/bar" "$root/state/quickshell-rise"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  printf 'old config\n' > "$root/home/.config/quickshell/bar/shell.qml"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-variant"
+  run_installer_preserving_without_tty "$root"
+  assert_eq v2 "$(tr -d '[:space:]' < "$root/state/quickshell-rise/active-variant")" \
+    "reinstall preserved active V2"
+  assert_contains "Keeping previously active UI variant" "$root/installer.out" \
+    "reinstall preserve message"
+
+  root="$WORK/installer-legacy-v2-active"
+  make_installer_case "$root"
+  mkdir -p "$root/home/.config/quickshell/bar" "$root/home/.config/quickshell/bin"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  printf 'old config\n' > "$root/home/.config/quickshell/bar/shell.qml"
+  cat > "$root/home/.config/quickshell/bin/qs-barctl" <<'SCRIPT'
+#!/usr/bin/env bash
+case "${1:-}" in
+  status) printf 'v2\n' ;;
+  stop-wait) exit 2 ;;
+  *) exit 2 ;;
+esac
+SCRIPT
+  chmod 0755 "$root/home/.config/quickshell/bin/qs-barctl"
+  if run_installer_without_tty "$root" --no-autostart; then
+    fail "installer replaced files while a legacy V2 controller remained active"
+  fi
+  assert_contains "old config" "$root/home/.config/quickshell/bar/shell.qml" \
+    "legacy V2 migration preserved old config"
+  assert_contains "still reports 'v2'" "$root/installer.out" \
+    "legacy V2 migration diagnostic"
+
+  root="$WORK/installer-readiness-rollback"
+  make_installer_case "$root"
+  mkdir -p "$root/home/.config/quickshell/bar" "$root/state/quickshell-rise"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  printf 'old config\n' > "$root/home/.config/quickshell/bar/shell.qml"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-variant"
+  if QSR_TEST_CONTROLLER_READY=false run_installer_without_tty "$root" --no-autostart; then
+    fail "installer accepted a new payload that never became ready"
+  fi
+  assert_contains "old config" "$root/home/.config/quickshell/bar/shell.qml" \
+    "readiness rollback restored old payload"
+  assert_eq v2 "$(tr -d '[:space:]' < "$root/state/quickshell-rise/active-variant")" \
+    "readiness rollback restored active variant"
+
+  root="$WORK/installer-variant-fallback-rollback"
+  make_installer_case "$root"
+  mkdir -p "$root/home/.config/quickshell/bar" "$root/state/quickshell-rise"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  printf 'old config\n' > "$root/home/.config/quickshell/bar/shell.qml"
+  printf 'v1\n' > "$root/state/quickshell-rise/active-variant"
+  if QSR_TEST_CONTROLLER_STATUS=v1 run_installer_without_tty "$root" V2 --no-autostart; then
+    fail "installer accepted a ready fallback instead of the requested V2"
+  fi
+  assert_contains "old config" "$root/home/.config/quickshell/bar/shell.qml" \
+    "variant fallback restored old payload"
+  assert_eq v1 "$(tr -d '[:space:]' < "$root/state/quickshell-rise/active-variant")" \
+    "variant fallback restored previous active variant"
+  assert_contains "Requested 'v2', but the integrated host became ready as 'v1'" \
+    "$root/installer.out" "variant fallback diagnostic"
 }
 
 run_uninstaller() {
@@ -502,6 +682,47 @@ case_runtime_postboot_order_and_fail_open() (
   assert_no_file "$QSR_TOGGLE_ROOT/bar-off" "failed start stock restore"
 )
 
+case_runtime_postboot_uses_controller_selection() (
+  local root="$WORK/postboot-controller"
+  mkdir -p "$root/home/.config/quickshell/bin"
+  : > "$root/home/controller.log"
+  cat > "$root/home/.config/quickshell/bin/qs-barctl" <<'SCRIPT'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "$HOME/controller.log"
+case "${1:-}" in
+  status)
+    if [[ -f $HOME/controller.active ]]; then
+      printf 'v2\n'
+      exit 0
+    fi
+    printf 'stopped\n'
+    exit 3
+    ;;
+  start)
+    : > "$HOME/controller.active"
+    ;;
+  *) exit 2 ;;
+esac
+SCRIPT
+  chmod 0755 "$root/home/.config/quickshell/bin/qs-barctl"
+
+  export HOME="$root/home"
+  export QSR_BARCTL="$root/home/.config/quickshell/bin/qs-barctl"
+  export QSR_READY_ROUNDS=2
+  export QSR_POLL_INTERVAL=0.01
+  export QSR_RUNTIME_LIB_ONLY=1
+  # shellcheck source=/dev/null
+  source "$HOOK"
+  qsr_start_selected_bar
+  qsr_wait_for_selected_bar
+  qsr_start_selected_bar
+
+  assert_contains 'start' "$root/home/controller.log" "post-boot did not ask the controller to start the saved variant"
+  assert_eq 1 "$(grep -Fc start "$root/home/controller.log")" "healthy controller state was started twice"
+  assert_contains 'status' "$root/home/controller.log" "post-boot did not verify controller readiness"
+)
+
 case_registry_live_health_and_stop() (
   local root="$WORK/registry"
   local config="$root/home/.config/quickshell/bar/shell.qml"
@@ -653,6 +874,51 @@ case_uninstall_legacy_and_generic() {
   assert_contains "setsid waybar" "$generic/actions.log" "generic Waybar restore"
 }
 
+case_uninstall_removes_lifecycle_controller() {
+  local root="$WORK/uninstall-controller"
+  make_fake_tools "$root"
+  mkdir -p "$root/home/.config/quickshell/bar" \
+    "$root/home/.config/quickshell/bin" \
+    "$root/state/quickshell-rise" "$root/toggles" "$root/run"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  : > "$root/home/.config/quickshell/bar/shell.qml"
+  : > "$root/home/.config/quickshell/bin/qs-barctl"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-version"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-variant"
+  : > "$root/state/quickshell-rise/switch.lock"
+  : > "$root/actions.log"
+
+  run_uninstaller "$root" >/dev/null
+
+  assert_no_file "$root/home/.config/quickshell/bin/qs-barctl" "uninstall lifecycle controller"
+  assert_no_file "$root/state/quickshell-rise/active-version" "uninstall active version state"
+  assert_no_file "$root/state/quickshell-rise/active-variant" "uninstall active variant state"
+  assert_no_file "$root/state/quickshell-rise/switch.lock" "uninstall switch lock"
+  [[ ! -d $root/state/quickshell-rise ]] || fail "uninstall left lifecycle state directory"
+}
+
+case_uninstall_keeps_ownership_but_removes_lifecycle_state() {
+  local root="$WORK/uninstall-marker-without-toggle"
+  make_fake_tools "$root"
+  rm -f "$root/bin/omarchy-toggle-bar"
+  mkdir -p "$root/home/.config/quickshell/bar" "$root/state/quickshell-rise" \
+    "$root/toggles" "$root/run"
+  : > "$root/home/.config/quickshell/bar/.qsrise"
+  : > "$root/home/.config/quickshell/bar/shell.qml"
+  : > "$root/state/quickshell-rise/owns-omarchy-bar-off"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-version"
+  printf 'v2\n' > "$root/state/quickshell-rise/active-variant"
+  : > "$root/state/quickshell-rise/switch.lock"
+  : > "$root/actions.log"
+
+  run_uninstaller "$root" >/dev/null
+
+  assert_file "$root/state/quickshell-rise/owns-omarchy-bar-off" "unavailable-toggle ownership marker"
+  assert_no_file "$root/state/quickshell-rise/active-version" "marker case legacy variant state"
+  assert_no_file "$root/state/quickshell-rise/active-variant" "marker case active variant state"
+  assert_no_file "$root/state/quickshell-rise/switch.lock" "marker case switch lock"
+}
+
 case_uninstall_registry_failure_aborts() {
   local root="$WORK/uninstall-registry-fail" config path_id
   make_fake_tools "$root"
@@ -687,8 +953,11 @@ case_static_contracts() {
   assert_contains "qsr_hide_stock_bar_owned" "$INSTALLER" "installer ownership hide"
   assert_contains "pkill -x waybar" "$INSTALLER" "legacy/generic Waybar overlap guard"
   assert_contains "if [[ \"\$quattro_mode\" != true ]]" "$INSTALLER" "Waybar Quattro exclusion"
-  assert_before "qsr_wait_for_bar" "pkill -x waybar" "$INSTALLER" "health before Waybar stop"
-  assert_before "qsr_wait_for_bar" "qsr_hide_stock_bar_owned" "$INSTALLER" "health before Quattro hide"
+  assert_contains "\"\$installer_barctl\" start-wait" "$INSTALLER" "installer lifecycle readiness"
+  assert_contains "\"\$installer_barctl\" status" "$INSTALLER" "installer exact variant status"
+  assert_not_contains "if ! qsr_start_bar || ! qsr_wait_for_bar" "$INSTALLER" "legacy installer readiness"
+  assert_before "if ! verify_selected_variant" "pkill -x waybar" "$INSTALLER" "health before Waybar stop"
+  assert_before "if ! verify_selected_variant" "qsr_hide_stock_bar_owned" "$INSTALLER" "health before Quattro hide"
   assert_before "if ! qsr_release_owned_stock_bar" "if ! qsr_stop_bar_instances" "$UNINSTALLER" "show before stop"
   assert_contains "left it stopped because the Omarchy stock bar is active" "$UNINSTALLER" "backup double-bar guard"
   assert_contains "Other Hyprland systems" "$README" "non-Omarchy compatibility docs"
@@ -709,11 +978,14 @@ case_static_contracts() {
 case_installer_interactive_prompt_matrix
 case_runtime_toggle_ownership
 case_runtime_postboot_order_and_fail_open
+case_runtime_postboot_uses_controller_selection
 case_registry_live_health_and_stop
 case_uninstall_owned_backup_provider
 case_uninstall_foreign_hidden_state
 case_uninstall_toggle_failure_aborts
 case_uninstall_legacy_and_generic
+case_uninstall_removes_lifecycle_controller
+case_uninstall_keeps_ownership_but_removes_lifecycle_state
 case_uninstall_registry_failure_aborts
 case_static_contracts
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # QS-Shell update check (writes a state file the bar watches; no apply here).
 #
-# Topology of THIS setup: the live bar dir is a *copy* of versions/<V>/ from the
-# deploy clone at ~/.local/share/quickshell-dots by default (override with
-# QS_SHELL_REPO). We never run git in the live dir — we compare the deploy
-# repo's tracking branch against origin, scoped to the installed version.
+# Topology: the live bar dir is a copy of the integrated versions/V1 generation
+# from the deploy clone at ~/.local/share/quickshell-dots by default (override
+# with QS_SHELL_REPO). It contains both UI variants. We never run git in the live
+# dir; the marker remains V1 because that is the one atomic payload path.
 #
 # State contract: ~/.cache/qs-shell/update-available.json ALWAYS exists.
 #   "up to date" = {"schemaVersion": 5, "behind": 0}.
@@ -56,7 +56,7 @@ is_commit_hash() {
   [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
 }
 
-# Installed version (.qsrise marker; this install predates it → fall back to V1).
+# Installed payload (.qsrise marker; legacy installs without it fall back to V1).
 ver="V1"
 [ -f "$DEST/.qsrise" ] && ver="$(tr -d '[:space:]' < "$DEST/.qsrise")"
 [ -n "$ver" ] || ver="V1"
@@ -90,7 +90,7 @@ is_commit_hash "$target_commit" || exit 0
 git merge-base --is-ancestor "$base_commit" "$target_commit" 2>/dev/null || exit 0
 
 # Commits the upstream is ahead by that change the deployable payload: THIS
-# version's directory, the companion pieces the post-update hook ships
+# integrated payload directory, the companion pieces the post-update hook ships
 # (helper scripts / systemd units), the Omarchy theme hook coupled to the picker
 # cache contract, or the optional post-boot hook. Docs-only commits stay
 # badge-free.

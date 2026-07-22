@@ -1,5 +1,6 @@
 
-# V2 is WIP — published only when ready
+# Legacy standalone V2 development tree. The shipped V2 bundle lives inside
+# versions/V1/variants/V2 so both variants deploy as one atomic payload.
 /versions/V2/
 
 # Local qs-proj / qsrise active-version marker

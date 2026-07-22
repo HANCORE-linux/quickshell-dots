@@ -25,11 +25,15 @@
 
 ## Install / Remove
 
-Install and start the bar for the current session:
+Install and start the bar for the current session with V1 initially active:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh | bash -s V1
 ```
+
+Use `V2` instead to start with the V2 interface. Both UI variants are installed
+as one shell and can be switched later without launching a second Quickshell
+process.
 
 Install and keep the bar after reboot:
 
@@ -53,31 +57,28 @@ session and leaves the persistent stock-bar state unchanged (normally visible).
 
 ### Manual Start / Restart
 
-After installation, the bar lives at `~/.config/quickshell/bar` and can be run as the named Quickshell config `bar`.
+After installation, the integrated bar lives at `~/.config/quickshell/bar`.
+Use its controller for lifecycle operations so duplicate bars are normalized and
+unrelated Quickshell applications remain untouched.
 
 Start it manually:
 
 ```bash
-qs -n -d -c bar
-```
-
-Terminal-safe background start if you want to close the launching terminal immediately:
-
-```bash
-qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
-```
-
-If your interactive shell still keeps it in the job table, run:
-
-```bash
-disown
+$HOME/.config/quickshell/bin/qs-barctl start-wait
 ```
 
 Stop or restart it:
 
 ```bash
-qs kill -c bar
-qs -n -d -c bar
+$HOME/.config/quickshell/bin/qs-barctl stop-wait
+$HOME/.config/quickshell/bin/qs-barctl start-wait
+```
+
+Switch the UI inside the same process:
+
+```bash
+$HOME/.config/quickshell/bin/qs-barctl switch-wait v1
+$HOME/.config/quickshell/bin/qs-barctl switch-wait v2
 ```
 
 Read the named config's current log:
@@ -123,7 +124,7 @@ qs -p ~/Projects/Quickshell-Dots/versions/V1/shell.qml
 | Control center | quick toggles, power, Bar Functions fly-out |
 | Bar style | border, shadow, frost, pill radius, top/bottom position |
 | Split groups | positional pill splits + Stream, Surge, Bolt, Bolt 2 gap animations |
-| Keybind IPC | `qs -c bar ipc call picker theme\|wallpaper\|screenshots\|videos` |
+| Keybind IPC | `qs-barctl ipc picker theme\|wallpaper\|screenshots\|videos` |
 | Per-widget panels | click widget to open its popup |
 
 </details>
@@ -302,13 +303,18 @@ Package updates run through the ArchUpdater panel. It checks packages against th
 <details>
 <summary>Project layout</summary>
 
-Each folder under `versions/` is a complete, self-contained bar.
+`versions/V1` is one deployable shell generation. The common bootstrap owns
+lifecycle, state and IPC; V1 and V2 retain isolated roots so they can evolve
+independently while sharing one process and one exclusive zone.
 
 ```text
 versions/V1/
-├── shell.qml        # entry point
-├── BarSlot.qml      # slot-based bar
-├── Theme.qml        # colors, state, flags
+├── shell.qml        # stable shared entry point
+├── VariantRoot.qml  # isolated V1 root
+├── core/            # VariantHost, StateService, IPC router
+├── variants/V2/     # complete isolated V2 bundle
+├── BarSlot.qml      # V1 slot-based bar
+├── Theme.qml        # V1 colors, state, flags
 ├── Palette.js       # reads Omarchy colors.toml
 ├── IconMap.js       # icon name to codepoint
 ├── assets/          # bundled logo assets

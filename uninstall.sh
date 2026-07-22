@@ -278,11 +278,15 @@ fi
 
 # 1c. remove the shell self-updater, if installed (idempotent).
 qsbindir="$HOME/.config/quickshell/bin"
-if compgen -G "$unitdir/qs-shell-update-check.*" >/dev/null 2>&1 || [[ -e "$qsbindir/qs-shell-check-update.sh" ]]; then
+if compgen -G "$unitdir/qs-shell-update-check.*" >/dev/null 2>&1 \
+   || [[ -e "$qsbindir/qs-shell-check-update.sh" || -e "$qsbindir/qs-barctl" ]]; then
   systemctl --user disable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
   systemctl --user stop qs-shell-update-check.service >/dev/null 2>&1 || true
   rm -f "$unitdir"/qs-shell-update-check.service "$unitdir"/qs-shell-update-check.timer
-  rm -f "$qsbindir"/qs-shell-check-update.sh "$qsbindir"/qs-shell-apply-update.sh
+  rm -f "$qsbindir"/qs-shell-check-update.sh \
+        "$qsbindir"/qs-shell-apply-update.sh \
+        "$qsbindir"/qs-barctl \
+        "$bindir"/qs-proj
   rm -rf "$HOME/.cache/qs-shell" "$HOME/.local/share/quickshell-dots" \
          "${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -351,7 +355,8 @@ fi
 # 4b. remove saved bar settings (widget toggles, splits, slot order)
 if compgen -G "$HOME/.cache/quickshell_*" >/dev/null 2>&1; then
   rm -f "$HOME/.cache/quickshell_widgets" "$HOME/.cache/quickshell_splits" \
-        "$HOME/.cache/quickshell_barorder" "$HOME/.cache/quickshell_barsplits"
+        "$HOME/.cache/quickshell_barorder" "$HOME/.cache/quickshell_barsplits" \
+        "$HOME/.cache/quickshell_widgets_v2" "$HOME/.cache/quickshell_barorder_v2"
   info "Removed saved bar settings (widget toggles, splits, slot order)"
 fi
 
@@ -387,6 +392,11 @@ else
   warn "No previous bar provider was found; configure one with your desktop session"
 fi
 
+# Variant selection and transaction locks are lifecycle state, not ownership
+# evidence. Remove them even when the ownership marker must survive so a later
+# reinstall can still restore the stock provider safely.
+rm -f "$QSR_STATE_ROOT/active-variant" "$QSR_STATE_ROOT/active-version" \
+      "$QSR_STATE_ROOT/switch.lock"
 if qsr_owns_stock_bar_hide; then
   warn "Kept the Rise ownership marker because the Quattro toggle is unavailable; a later reinstall can restore it."
 else

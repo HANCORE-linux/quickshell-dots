@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # QS-Shell apply update.
 #
-# Topology: the live bar dir is a *copy* of versions/<V>/ from the deploy clone
-# at ~/.local/share/quickshell-dots by default (override with QS_SHELL_REPO).
-# Updating = read the checked state, verify the immutable target commit, deploy
-# exactly that commit's version payload, restart the bar.
+# Topology: the live bar dir is a copy of the integrated versions/V1 payload from
+# the deploy clone at ~/.local/share/quickshell-dots by default (override with
+# QS_SHELL_REPO). That one payload contains the common bootstrap and both isolated
+# UI variants. Updating = verify one immutable target generation, deploy it and
+# restart the same host; active-variant remains external persistent state.
 #
 # MUST be launched outside the bar's service/cgroup, because this script stops
 # and restarts the bar. `setsid` is not enough for systemd-managed launches.
@@ -30,6 +31,7 @@ PROGRESS_TOTAL_STEPS=5
 PROGRESS_STALE_SECONDS=600
 HOOK_PATH="hooks/50-quickshell-bar.sh"
 POST_BOOT_HOOK_PATH="contrib/post-boot.d/quickshell-rise"
+BARCTL="${QS_BARCTL:-$HOME/.config/quickshell/bin/qs-barctl}"
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
 # or wiped by hygiene tools, and the backup is the rollback's last-resort restore.
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell/backups"
@@ -47,6 +49,8 @@ progress_screen="${QS_SHELL_PROGRESS_SCREEN:-}"
 progress_panel_open=true
 progress_last_trace_key=""
 launched_bar_unit=""
+bar_lifecycle_mode="legacy"
+bar_started_via_controller=0
 
 systemd_env_args() {
   local -n _args_ref="$1"
@@ -68,7 +72,7 @@ systemd_env_args() {
   done
 }
 
-start_bar_instance() {
+start_bar_instance_direct() {
   local unit args=()
   unit="qsrise-bar-$(random_run_id)"
 
@@ -87,10 +91,67 @@ start_bar_instance() {
   setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
 }
 
+start_bar_instance() {
+  if [ "$bar_lifecycle_mode" = "controller-active" ]; then
+    bar_started_via_controller=1
+    "$BARCTL" start-wait >/dev/null 2>&1 9>&- || return 1
+    return 0
+  fi
+  start_bar_instance_direct
+}
+
 stop_launched_bar_unit() {
+  if [ "$bar_started_via_controller" -eq 1 ]; then
+    stop_bar_instances || true
+    bar_started_via_controller=0
+    return 0
+  fi
   [ -n "${launched_bar_unit:-}" ] || return 0
   command -v systemctl >/dev/null 2>&1 || return 0
   systemctl --user stop "$launched_bar_unit" >/dev/null 2>&1 || true
+}
+
+detect_bar_lifecycle_mode() {
+  local status="" rc=0
+
+  if [ -n "${QS_SHELL_NO_RESTART:-}" ]; then
+    bar_lifecycle_mode="disabled"
+    return 0
+  fi
+  if [ ! -x "$BARCTL" ]; then
+    bar_lifecycle_mode="legacy"
+    return 0
+  fi
+
+  status="$("$BARCTL" status 2>/dev/null)" || rc=$?
+  case "$rc:$status" in
+    0:v1|0:v2)
+      bar_lifecycle_mode="controller-active"
+      ;;
+    3:stopped)
+      bar_lifecycle_mode="controller-stopped"
+      ;;
+    *)
+      fail "Bar lifecycle is '$status'; refusing to update during an ambiguous controller state."
+      ;;
+  esac
+}
+
+should_restart_bar() {
+  [ "$bar_lifecycle_mode" = "legacy" ] || \
+    [ "$bar_lifecycle_mode" = "controller-active" ]
+}
+
+restart_previous_bar() {
+  start_bar_instance && return 0
+  if [ "$bar_lifecycle_mode" = "controller-active" ]; then
+    # The companion rollback may have restored a pre-controller helper. A
+    # direct integrated-host launch is the last-resort rollback path only.
+    bar_started_via_controller=0
+    start_bar_instance_direct
+    return
+  fi
+  return 1
 }
 
 epoch_now() {
@@ -443,6 +504,11 @@ stop_legacy_bars() {
 stop_bar_instances() {
   local rc=0
 
+  if [ "$bar_lifecycle_mode" = "controller-active" ]; then
+    "$BARCTL" stop-wait >/dev/null 2>&1 9>&- || return 1
+    return 0
+  fi
+
   stop_registered_bars 60 5 || true
   stop_legacy_bars || rc=1
   # One final registry pass catches a crash-relaunch that appeared while the
@@ -738,6 +804,81 @@ QML
   fail "Staged shell Quickshell smoke failed."
 }
 
+smoke_integrated_variants() {
+  local root="$1" smoke wrapper out err qs_bin smoke_timeout smoke_platform
+
+  [ -f "$root/VariantRoot.qml" ] || fail "Integrated payload is missing the V1 VariantRoot."
+  [ -f "$root/variants/V2/VariantRoot.qml" ] || fail "Integrated payload is missing the V2 VariantRoot."
+  qs_bin="${QS_SHELL_QUICKSHELL_BIN:-}"
+  if [ -z "$qs_bin" ]; then
+    qs_bin="$(command -v quickshell 2>/dev/null || command -v qs 2>/dev/null || true)"
+  fi
+  [ -n "$qs_bin" ] || fail "quickshell is required for integrated variant smoke."
+
+  smoke="$(mktemp -d -p "$STATE_DIR" variant-smoke.XXXXXX)" || \
+    fail "Could not create integrated variant smoke directory."
+  wrapper="$root/.qs-variant-smoke.qml"
+  cat > "$wrapper" <<'QML'
+import QtQuick
+
+QtObject {
+  id: root
+  property var v1Component: null
+  property var v2Component: null
+  property bool finished: false
+
+  function finish(ok, errorText) {
+    if (finished)
+      return
+    finished = true
+    if (ok)
+      console.log("QS_SHELL_SMOKE_OK")
+    else
+      console.error("QS_SHELL_SMOKE_FAIL " + errorText)
+    Qt.callLater(Qt.quit)
+  }
+
+  function evaluateStatus() {
+    if (v1Component === null || v2Component === null)
+      return
+    if (v1Component.status === Component.Error) {
+      finish(false, "V1: " + v1Component.errorString())
+      return
+    }
+    if (v2Component.status === Component.Error) {
+      finish(false, "V2: " + v2Component.errorString())
+      return
+    }
+    if (v1Component.status === Component.Ready
+        && v2Component.status === Component.Ready)
+      finish(true, "")
+  }
+
+  Component.onCompleted: {
+    v1Component = Qt.createComponent(Qt.resolvedUrl("VariantRoot.qml"))
+    v2Component = Qt.createComponent(Qt.resolvedUrl("variants/V2/VariantRoot.qml"))
+    if (v1Component.status === Component.Loading)
+      v1Component.statusChanged.connect(function() { root.evaluateStatus() })
+    if (v2Component.status === Component.Loading)
+      v2Component.statusChanged.connect(function() { root.evaluateStatus() })
+    evaluateStatus()
+  }
+}
+QML
+  out="$smoke/out"
+  err="$smoke/err"
+  smoke_timeout="${QS_SHELL_SMOKE_TIMEOUT:-3}"
+  smoke_platform="${QS_SHELL_SMOKE_PLATFORM:-}"
+  if run_quickshell_smoke "$qs_bin" "$wrapper" "$smoke_timeout" "$smoke_platform" "$out" "$err"; then
+    rm -f "$wrapper"
+    rm -rf "$smoke"
+    return 0
+  fi
+  rm -f "$wrapper"
+  rm -rf "$smoke"
+  fail "Integrated V1/V2 variant smoke failed."
+}
+
 ver="V1"
 [ -f "$DEST/.qsrise" ] && ver="$(tr -d '[:space:]' < "$DEST/.qsrise")"
 [ -n "$ver" ] || ver="V1"
@@ -841,6 +982,11 @@ fi
 [ "$actual_post_boot_hook_blob" = "$state_post_boot_hook_blob" ] || \
   fail "Stored target does not match the checked post-boot hook blob."
 
+# Decide from the controller's live instance view whether the one integrated
+# shell owns the session. Its persisted VariantHost state preserves V1 or V2
+# across the stop/swap/restart transaction.
+detect_bar_lifecycle_mode
+
 # Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
 # loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
 # is mid-run, and provenance has already been validated.
@@ -881,6 +1027,7 @@ printf '%s\n' "$state_target" > "$stage/.qsrise-commit"
 printf '%s\n' "$state_payload_tree" > "$stage/.qsrise-payload-tree"
 write_progress "running" "testing" 3 ""
 smoke_stage "$stage"
+smoke_integrated_variants "$stage"
 
 companion_paths=()
 for p in scripts systemd; do
@@ -911,7 +1058,7 @@ write_progress "running" "installing" 4 ""
 # fixed sleep). Prefer Quickshell's registered config path over command-line
 # matching: after IPC/crash recovery, the same bar can show up as
 # `/usr/bin/quickshell`, not `qs -c bar`.
-if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
+if should_restart_bar; then
   stop_bar_instances || fail "Could not stop the old bar instance safely."
 fi
 
@@ -942,8 +1089,8 @@ rollback() {
   fi
   rm -rf "$old" 2>/dev/null || true
   progress_fail "$msg"
-  if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-    start_bar_instance || true
+  if should_restart_bar; then
+    restart_previous_bar || true
   fi
   note -u critical "Shell update failed" "$msg"
 }
@@ -980,7 +1127,7 @@ write_progress "running" "restarting" 5 ""
 #    systemd-run is preferred so
 #    a systemd-managed apply can exit without killing the new bar. 9>&- prevents
 #    the relaunched bar from inheriting the flock fd and blocking future updates.
-if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
+if should_restart_bar; then
   start_bar_instance || post_swap_fail
 fi
 

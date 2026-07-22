@@ -1,0 +1,498 @@
+#!/usr/bin/env bash
+# Quickshell Rise lifecycle controller for one integrated V1/V2 shell.
+#
+# Public commands:
+#   qs-barctl start
+#   qs-barctl start-wait
+#   qs-barctl stop
+#   qs-barctl stop-wait
+#   qs-barctl switch v1|v2
+#   qs-barctl switch-wait v1|v2
+#   qs-barctl status
+#   qs-barctl ipc <target> <function> [arguments ...]
+#
+# Mutating commands re-enter this script in a transient user unit. The bar has
+# its own unit; variants switch inside that one process through the stable IPC
+# router. Persistent variant state is owned by VariantHost and is written only
+# after the selected VariantRoot has remained ready.
+set -euo pipefail
+
+QSR_STATE_ROOT="${QSR_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/quickshell-rise}"
+QSR_SWITCH_LOCK="${QSR_SWITCH_LOCK:-$QSR_STATE_ROOT/switch.lock}"
+QSR_CONFIG="${QSR_CONFIG:-$HOME/.config/quickshell/bar/shell.qml}"
+QSR_READY_ROUNDS="${QSR_READY_ROUNDS:-100}"
+QSR_STOP_ROUNDS="${QSR_STOP_ROUNDS:-60}"
+QSR_STABLE_ROUNDS="${QSR_STABLE_ROUNDS:-4}"
+QSR_POLL_INTERVAL="${QSR_POLL_INTERVAL:-0.1}"
+QSR_COMMAND_TIMEOUT="${QSR_COMMAND_TIMEOUT:-4}"
+QSR_RUNTIME_ROOT="${QSR_RUNTIME_ROOT:-${XDG_RUNTIME_DIR:-/run/user/$UID}/quickshell}"
+QSR_PROC_ROOT="${QSR_PROC_ROOT:-/proc}"
+QSR_QS_BIN="${QSR_QS_BIN:-qs}"
+QSR_SYSTEMD_RUN_BIN="${QSR_SYSTEMD_RUN_BIN:-systemd-run}"
+QSR_SYSTEMCTL_BIN="${QSR_SYSTEMCTL_BIN:-systemctl}"
+QSR_UNIT_PREFIX="${QSR_UNIT_PREFIX:-qsrise}"
+QSR_WORKER_MODE="${QSR_WORKER_MODE:-0}"
+
+qsr_log() {
+  printf 'qs-barctl: %s\n' "$*" >&2
+}
+
+qsr_fail() {
+  qsr_log "$*"
+  return 1
+}
+
+qsr_variant_valid() {
+  [[ ${1:-} == v1 || ${1:-} == v2 ]]
+}
+
+qsr_variant_label() {
+  case "${1:-}" in
+    v1) printf 'V1\n' ;;
+    v2) printf 'V2\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+qsr_validate_config_path() {
+  [[ $QSR_CONFIG == /* ]] \
+    || qsr_fail "config path must be absolute: $QSR_CONFIG" || return 1
+  [[ $QSR_CONFIG != *$'\n'* && $QSR_CONFIG != *$'\t'* ]] \
+    || qsr_fail "config path cannot contain tabs or newlines" || return 1
+}
+
+qsr_display_match() {
+  if [[ -n ${QSR_DISPLAY_MATCH:-} ]]; then
+    printf '%s\n' "$QSR_DISPLAY_MATCH"
+  elif [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+    printf 'wayland/%s\n' "$WAYLAND_DISPLAY"
+  elif [[ -n ${DISPLAY:-} ]]; then
+    printf 'x11/%s\n' "$DISPLAY"
+  fi
+}
+
+# Emit untrusted registry rows as:
+# instance-id<TAB>pid<TAB>exact-config-path<TAB>display-connection
+qsr_registry_rows() {
+  timeout "$QSR_COMMAND_TIMEOUT" "$QSR_QS_BIN" list --all 2>/dev/null | awk '
+    function emit() {
+      if (id != "" && pid != "" && path != "")
+        print id "\t" pid "\t" path "\t" display
+    }
+    $1 == "Instance" {
+      emit()
+      id = $2
+      sub(/:$/, "", id)
+      pid = path = display = ""
+      next
+    }
+    $1 == "Process" && $2 == "ID:" { pid = $3; next }
+    $1 == "Config" && $2 == "path:" {
+      path = $0
+      sub(/^[[:space:]]*Config path:[[:space:]]*/, "", path)
+      gsub(/^"|"$/, "", path)
+      next
+    }
+    $1 == "Display" && $2 == "connection:" {
+      display = $0
+      sub(/^[[:space:]]*Display connection:[[:space:]]*/, "", display)
+      next
+    }
+    END { emit() }
+  '
+}
+
+qsr_instance_process_live() {
+  local id="$1" pid="$2" instance_dir linked_instance process_exe candidate candidate_exe
+  local -A expected_exes=()
+
+  [[ ${QSR_SKIP_INSTANCE_VALIDATION:-0} != 1 ]] || return 0
+  [[ $pid =~ ^[0-9]+$ && -d $QSR_PROC_ROOT/$pid ]] || return 1
+  instance_dir="$(readlink -f "$QSR_RUNTIME_ROOT/by-id/$id" 2>/dev/null)" || return 1
+  [[ $instance_dir == "$QSR_RUNTIME_ROOT/by-id/$id" ]] || return 1
+  linked_instance="$(readlink -f "$QSR_RUNTIME_ROOT/by-pid/$pid" 2>/dev/null)" || return 1
+  [[ $linked_instance == "$instance_dir" ]] || return 1
+  process_exe="$(readlink -f "$QSR_PROC_ROOT/$pid/exe" 2>/dev/null)" || return 1
+
+  for candidate in "$QSR_QS_BIN" quickshell; do
+    candidate_exe="$(command -v "$candidate" 2>/dev/null)" || continue
+    candidate_exe="$(readlink -f "$candidate_exe" 2>/dev/null)" || continue
+    expected_exes["$candidate_exe"]=1
+  done
+  [[ -n ${expected_exes[$process_exe]+x} ]]
+}
+
+qsr_instances() {
+  local rows id pid config display
+  rows="$(qsr_registry_rows)" || return 1
+  while IFS=$'\t' read -r id pid config display; do
+    [[ -n $id ]] || continue
+    qsr_instance_process_live "$id" "$pid" || continue
+    printf '%s\t%s\t%s\t%s\n' "$id" "$pid" "$config" "$display"
+  done <<< "$rows"
+}
+
+qsr_bar_rows() {
+  local display rows
+  display="$(qsr_display_match)"
+  rows="$(qsr_instances)" || return 1
+  awk -F '\t' -v config="$QSR_CONFIG" -v display="$display" '
+    $3 == config && (display == "" || $4 == display) { print }
+  ' <<< "$rows"
+}
+
+qsr_bar_ids() {
+  qsr_bar_rows | awk -F '\t' 'NF >= 3 { print $1 }'
+}
+
+qsr_bar_count() {
+  local rows count=0 row
+  rows="$(qsr_bar_rows)" || return 1
+  while IFS= read -r row; do
+    [[ -n $row ]] && ((count += 1))
+  done <<< "$rows"
+  printf '%s\n' "$count"
+}
+
+qsr_instance_row() {
+  local wanted="$1" rows
+  rows="$(qsr_instances)" || return 1
+  awk -F '\t' -v wanted="$wanted" '$1 == wanted { print; exit }' <<< "$rows"
+}
+
+qsr_ipc_value() {
+  local id="$1" target="$2" function="$3"
+  shift 3
+  timeout "$QSR_COMMAND_TIMEOUT" "$QSR_QS_BIN" ipc -i "$id" call \
+    "$target" "$function" "$@" 2>/dev/null
+}
+
+qsr_instance_variant() {
+  local reported
+  reported="$(qsr_ipc_value "$1" lifecycle version)" || return 1
+  case "$reported" in
+    V1) printf 'v1\n' ;;
+    V2) printf 'v2\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+qsr_instance_ready() {
+  local id="$1" expected="${2:-}" row reported ready
+  row="$(qsr_instance_row "$id")" || return 1
+  [[ -n $row && $(cut -f3 <<< "$row") == "$QSR_CONFIG" ]] || return 1
+
+  reported="$(qsr_instance_variant "$id")" || return 1
+  [[ -z $expected || $reported == "$expected" ]] || return 1
+  ready="$(qsr_ipc_value "$id" lifecycle ready)" || return 1
+  [[ $ready == true ]]
+}
+
+qsr_random_id() {
+  local id=""
+  id="$(od -An -N12 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')" || true
+  if [[ -n $id ]]; then printf '%s\n' "$id"; else printf '%s-%s\n' "$(date +%s)" "$$"; fi
+}
+
+qsr_systemd_env_args() {
+  local -n args_ref="$1"
+  local name value
+  for name in \
+      HOME PATH DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_STATE_HOME \
+      XDG_SESSION_ID XDG_SESSION_TYPE XDG_CURRENT_DESKTOP \
+      QT_QPA_PLATFORM QT_QUICK_CONTROLS_STYLE HYPRLAND_INSTANCE_SIGNATURE \
+      OMARCHY_PATH QSR_STATE_ROOT QSR_SWITCH_LOCK QSR_CONFIG \
+      QSR_READY_ROUNDS QSR_STOP_ROUNDS QSR_STABLE_ROUNDS QSR_POLL_INTERVAL \
+      QSR_COMMAND_TIMEOUT QSR_RUNTIME_ROOT QSR_PROC_ROOT \
+      QSR_SKIP_INSTANCE_VALIDATION QSR_QS_BIN QSR_SYSTEMD_RUN_BIN \
+      QSR_SYSTEMCTL_BIN QSR_UNIT_PREFIX QSR_DISPLAY_MATCH; do
+    value="${!name-}"
+    [[ -n $value ]] && args_ref+=("--setenv=$name=$value")
+  done
+  return 0
+}
+
+qsr_self_path() {
+  if [[ $0 == /* ]]; then printf '%s\n' "$0"; else printf '%s/%s\n' "$PWD" "$0"; fi
+}
+
+qsr_dispatch_worker() {
+  local wait_mode="$1" self unit args=()
+  shift
+  self="$(qsr_self_path)"
+  unit="$QSR_UNIT_PREFIX-worker-$(qsr_random_id)"
+
+  command -v "$QSR_SYSTEMD_RUN_BIN" >/dev/null 2>&1 \
+    || qsr_fail "systemd-run is required for lifecycle changes" || return 1
+  args=(--user --collect --quiet "--unit=$unit" "--slice=app-graphical.slice"
+        "--property=Type=exec" "--setenv=QSR_WORKER_MODE=1")
+  # `--wait` alone reports only the transient job result on some systemd
+  # versions. `--pipe` keeps the worker attached, preserves its real exit
+  # status and makes rollback/time-out diagnostics visible to the caller.
+  [[ $wait_mode == 1 ]] && args+=(--wait --pipe)
+  qsr_systemd_env_args args
+  "$QSR_SYSTEMD_RUN_BIN" "${args[@]}" -- "$self" "$@"
+}
+
+QSR_STARTED_UNIT=""
+qsr_start_bar_unit() {
+  local unit args=()
+  [[ -f $QSR_CONFIG ]] || qsr_fail "missing integrated config: $QSR_CONFIG" || return 1
+  command -v "$QSR_SYSTEMD_RUN_BIN" >/dev/null 2>&1 \
+    || qsr_fail "systemd-run is required to launch the bar" || return 1
+
+  unit="$QSR_UNIT_PREFIX-bar-$(qsr_random_id)"
+  args=(--user --collect --quiet "--unit=$unit" "--slice=app-graphical.slice"
+        "--property=Type=exec")
+  qsr_systemd_env_args args
+  "$QSR_SYSTEMD_RUN_BIN" "${args[@]}" -- "$QSR_QS_BIN" -n -p "$QSR_CONFIG" \
+    || qsr_fail "could not submit integrated bar unit" || return 1
+  QSR_STARTED_UNIT="$unit"
+}
+
+qsr_stop_unit() {
+  local unit="${1:-}"
+  [[ -n $unit ]] || return 0
+  command -v "$QSR_SYSTEMCTL_BIN" >/dev/null 2>&1 || return 1
+  "$QSR_SYSTEMCTL_BIN" --user stop "$unit" >/dev/null 2>&1 || true
+}
+
+qsr_stop_instance_id() {
+  timeout "$QSR_COMMAND_TIMEOUT" "$QSR_QS_BIN" kill -i "$1" >/dev/null 2>&1 || true
+}
+
+qsr_stop_all_bars() {
+  local rows id attempt quiet=0
+  for ((attempt = 0; attempt < QSR_STOP_ROUNDS; attempt++)); do
+    rows="$(qsr_bar_rows)" || return 1
+    if [[ -z $rows ]]; then
+      ((quiet += 1))
+      ((quiet >= QSR_STABLE_ROUNDS)) && return 0
+    else
+      quiet=0
+      while IFS=$'\t' read -r id _; do
+        [[ -n $id ]] && qsr_stop_instance_id "$id"
+      done <<< "$rows"
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+  [[ $(qsr_bar_count) == 0 ]]
+}
+
+qsr_wait_new_ready_instance() {
+  local before_ids="$1" rows id candidate="" attempt count
+  local -A before=()
+  while IFS= read -r id; do [[ -n $id ]] && before["$id"]=1; done <<< "$before_ids"
+
+  for ((attempt = 0; attempt < QSR_READY_ROUNDS; attempt++)); do
+    rows="$(qsr_bar_rows)" || return 1
+    count=0
+    id=""
+    while IFS=$'\t' read -r row_id _; do
+      [[ -n $row_id && -z ${before[$row_id]+x} ]] || continue
+      id="$row_id"
+      ((count += 1))
+    done <<< "$rows"
+    ((count <= 1)) || return 2
+    if ((count == 1)); then
+      [[ -z $candidate || $candidate == "$id" ]] || return 3
+      candidate="$id"
+      if qsr_instance_ready "$candidate"; then
+        QSR_READY_INSTANCE="$candidate"
+        return 0
+      fi
+    elif [[ -n $candidate ]]; then
+      return 3
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+  return 1
+}
+
+qsr_verify_stable_instance() {
+  local id="$1" expected="${2:-}" round
+  for ((round = 0; round < QSR_STABLE_ROUNDS; round++)); do
+    qsr_instance_ready "$id" "$expected" || return 1
+    [[ $(qsr_bar_count) == 1 ]] || return 1
+    sleep "$QSR_POLL_INTERVAL"
+  done
+}
+
+qsr_launch_bar() {
+  local before_ids rc=0
+  before_ids="$(qsr_bar_ids)" || return 1
+  QSR_STARTED_UNIT=""
+  QSR_READY_INSTANCE=""
+  qsr_start_bar_unit || return 1
+  qsr_wait_new_ready_instance "$before_ids" || rc=$?
+  if ((rc != 0)); then
+    qsr_log "integrated bar failed readiness validation (code $rc)"
+    qsr_stop_unit "$QSR_STARTED_UNIT" || true
+    qsr_stop_all_bars || true
+    return 1
+  fi
+}
+
+qsr_normalize_bar() {
+  local rows id keep=""
+  rows="$(qsr_bar_rows)" || return 1
+  while IFS=$'\t' read -r id _; do
+    [[ -n $id ]] || continue
+    if qsr_instance_ready "$id"; then keep="$id"; break; fi
+  done <<< "$rows"
+
+  if [[ -z $keep ]]; then
+    [[ -z $rows ]] || qsr_stop_all_bars || return 1
+    qsr_launch_bar || return 1
+    keep="$QSR_READY_INSTANCE"
+  fi
+
+  rows="$(qsr_bar_rows)" || return 1
+  while IFS=$'\t' read -r id _; do
+    [[ -n $id && $id != "$keep" ]] && qsr_stop_instance_id "$id"
+  done <<< "$rows"
+
+  qsr_verify_stable_instance "$keep" || return 1
+  QSR_READY_INSTANCE="$keep"
+}
+
+qsr_with_lock() {
+  mkdir -p "$QSR_STATE_ROOT" || return 1
+  chmod 700 "$QSR_STATE_ROOT" 2>/dev/null || true
+  exec 9>"$QSR_SWITCH_LOCK"
+  flock -n 9 || qsr_fail "another lifecycle transaction is already running" || return 75
+}
+
+qsr_start_worker() {
+  qsr_validate_config_path || return 1
+  [[ -f $QSR_CONFIG ]] || qsr_fail "integrated config is missing: $QSR_CONFIG" || return 1
+  qsr_with_lock || return
+  qsr_normalize_bar || qsr_fail "could not establish one ready bar" || return 1
+  qsr_log "$(qsr_instance_variant "$QSR_READY_INSTANCE") is active"
+}
+
+qsr_stop_worker() {
+  qsr_validate_config_path || return 1
+  qsr_with_lock || return
+  qsr_stop_all_bars || qsr_fail "could not stop the integrated bar cleanly" || return 1
+  [[ $(qsr_bar_count) == 0 ]] || qsr_fail "integrated bar remained registered after stop" || return 1
+  qsr_log "integrated bar is stopped"
+}
+
+qsr_switch_worker() {
+  local target="$1" id current state error attempt stable=0 saw_switching=0
+  qsr_variant_valid "$target" || qsr_fail "usage: qs-barctl switch v1|v2" || return 1
+  qsr_validate_config_path || return 1
+  qsr_with_lock || return
+  qsr_normalize_bar || qsr_fail "could not establish one ready bar" || return 1
+  id="$QSR_READY_INSTANCE"
+  current="$(qsr_instance_variant "$id")" || return 1
+  if [[ $current == "$target" ]]; then
+    qsr_log "$target is active"
+    return 0
+  fi
+
+  qsr_ipc_value "$id" variant activate "$target" >/dev/null \
+    || qsr_fail "could not request internal switch to $target" || return 1
+
+  for ((attempt = 0; attempt < QSR_READY_ROUNDS; attempt++)); do
+    [[ $(qsr_bar_count) == 1 && -n $(qsr_instance_row "$id") ]] \
+      || qsr_fail "bar process identity changed during internal switch" || return 1
+    state="$(qsr_ipc_value "$id" variant state 2>/dev/null || true)"
+    current="$(qsr_instance_variant "$id" 2>/dev/null || true)"
+    [[ -z $state || $state == active ]] || saw_switching=1
+
+    if [[ $current == "$target" && $state == active ]] && qsr_instance_ready "$id" "$target"; then
+      ((stable += 1))
+      if ((stable >= QSR_STABLE_ROUNDS)); then
+        qsr_log "switched internally to $target"
+        return 0
+      fi
+    else
+      stable=0
+    fi
+
+    if ((saw_switching == 1)) \
+        && [[ $state == active && -n $current && $current != "$target" ]]; then
+      error="$(qsr_ipc_value "$id" variant error 2>/dev/null || true)"
+      [[ -n $error ]] || error="variant host returned to $current"
+      qsr_fail "switch to $target rolled back: $error"
+      return 1
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+
+  qsr_fail "switch to $target timed out"
+}
+
+qsr_status() {
+  local count id ready version state
+  qsr_validate_config_path || return 1
+  count="$(qsr_bar_count)" || return 1
+  if ((count == 0)); then printf 'stopped\n'; return 3; fi
+  if ((count > 1)); then printf 'duplicate:%s\n' "$count"; return 2; fi
+
+  id="$(qsr_bar_ids)"
+  version="$(qsr_instance_variant "$id" 2>/dev/null || true)"
+  ready="$(qsr_ipc_value "$id" lifecycle ready 2>/dev/null || true)"
+  state="$(qsr_ipc_value "$id" variant state 2>/dev/null || true)"
+  if [[ $ready == true && $state == active && -n $version ]]; then
+    printf '%s\n' "$version"
+    return 0
+  fi
+  if [[ -n $state && $state != active ]]; then
+    printf 'switching:%s\n' "$state"
+    return 4
+  fi
+  printf 'degraded:%s\n' "${version:-unknown}"
+  return 4
+}
+
+qsr_ipc() {
+  local count id
+  (($# >= 2)) || qsr_fail "usage: qs-barctl ipc <target> <function> [arguments ...]" || return 1
+  count="$(qsr_bar_count)" || return 1
+  ((count == 1)) || qsr_fail "IPC requires exactly one integrated bar instance" || return 1
+  id="$(qsr_bar_ids)"
+  exec "$QSR_QS_BIN" ipc -i "$id" call "$@"
+}
+
+command="${1:-}"
+case "$command" in
+  switch)
+    (($# == 2)) || { qsr_fail "usage: qs-barctl switch v1|v2"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_switch_worker "$2"; else qsr_dispatch_worker 0 switch "$2"; fi
+    ;;
+  switch-wait)
+    (($# == 2)) || { qsr_fail "usage: qs-barctl switch-wait v1|v2"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_switch_worker "$2"; else qsr_dispatch_worker 1 switch "$2"; fi
+    ;;
+  start)
+    (($# == 1)) || { qsr_fail "usage: qs-barctl start"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_start_worker; else qsr_dispatch_worker 0 start; fi
+    ;;
+  start-wait)
+    (($# == 1)) || { qsr_fail "usage: qs-barctl start-wait"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_start_worker; else qsr_dispatch_worker 1 start; fi
+    ;;
+  stop)
+    (($# == 1)) || { qsr_fail "usage: qs-barctl stop"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_stop_worker; else qsr_dispatch_worker 0 stop; fi
+    ;;
+  stop-wait)
+    (($# == 1)) || { qsr_fail "usage: qs-barctl stop-wait"; exit 2; }
+    if [[ $QSR_WORKER_MODE == 1 ]]; then qsr_stop_worker; else qsr_dispatch_worker 1 stop; fi
+    ;;
+  status)
+    (($# == 1)) || { qsr_fail "usage: qs-barctl status"; exit 2; }
+    qsr_status
+    ;;
+  ipc)
+    shift
+    qsr_ipc "$@"
+    ;;
+  *)
+    qsr_fail "usage: qs-barctl {start|start-wait|stop|stop-wait|switch v1|switch v2|status|ipc TARGET FUNCTION [ARGS...]}"
+    exit 2
+    ;;
+esac

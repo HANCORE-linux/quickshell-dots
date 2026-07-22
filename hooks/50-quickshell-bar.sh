@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 1) live-reload the bar's theme colors
-qs -c bar ipc call theme reload >/dev/null 2>&1 || true
+# 1) live-reload the active bar's theme colors
+barctl="$HOME/.config/quickshell/bin/qs-barctl"
+if [ -x "$barctl" ]; then
+  "$barctl" ipc theme reload >/dev/null 2>&1 || true
+else
+  qs -c bar ipc call theme reload >/dev/null 2>&1 || true
+fi
 
 resolve_current_root() {
   local state="$HOME/.local/state/omarchy/current"
