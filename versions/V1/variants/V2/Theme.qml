@@ -1900,6 +1900,7 @@ Item {
     // ── workspace display mode ──
     property string workspaceMode: "10"   // "10", "5", "active"
     // ── workspace display style (orthogonal to mode; persisted) ──
+    // "rings" is the stable cache token for the user-facing Frame style.
     property string workspaceStyle: "default"   // default, numbers, magic, kanji, rings, aurora
 
     // ── bar screen position (persisted) ──

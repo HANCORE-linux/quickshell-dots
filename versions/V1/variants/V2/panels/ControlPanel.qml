@@ -779,7 +779,7 @@ PanelWindow {
                         { label: "Numbers", mode: "numbers" },
                         { label: "Magic",   mode: "magic"   },
                         { label: "Kanji",   mode: "kanji"   },
-                        { label: "Rings",   mode: "rings"   },
+                        { label: "Frame",   mode: "rings"   },
                         { label: "Aurora",  mode: "aurora"  }
                     ]
                     Repeater {

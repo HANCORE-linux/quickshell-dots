@@ -1,5 +1,6 @@
 import Quickshell.Hyprland
 import QtQuick
+import QtQuick.Shapes
 
 Item {
     id: wsWidget
@@ -52,6 +53,7 @@ Item {
     Row {
         id: wsRow
         anchors.centerIn: parent
+        z: 1
         spacing: root.workspaceStyle === "rings" ? 3
                : root.workspaceStyle === "aurora" ? 4
                : 5
@@ -83,7 +85,7 @@ Item {
                 implicitWidth: root.workspaceStyle === "numbers" ? 22
                              : root.workspaceStyle === "kanji"   ? 22
                              : root.workspaceStyle === "magic"   ? (isFocused ? 20 : 18)
-                             : root.workspaceStyle === "rings"   ? (isFocused ? 18 : 12)
+                             : root.workspaceStyle === "rings"   ? 20
                              : root.workspaceStyle === "aurora"  ? (isFocused ? 34 : 12)
                              : (isFocused ? 32 : 16)
                 implicitHeight: 28
@@ -191,30 +193,27 @@ Item {
                     Behavior on color { ColorAnimation { duration: 200 } }
                 }
 
-                // ── RINGS style: the original V1.3 Nerd Font language. Native
-                //    hinted glyphs stay cleaner at bar scale than QML ellipse
-                //    borders and give focused, occupied and empty distinct forms. ──
+                // ── FRAME style: stable numeral cells with one shared moving
+                //    outline behind the focused workspace. The persisted token
+                //    stays "rings" so existing V2 caches migrate without a reset. ──
                 Text {
-                    id: ringsMark
+                    id: frameLabel
                     visible: root.workspaceStyle === "rings"
                     anchors.centerIn: parent
-                    text: isFocused  ? String.fromCodePoint(0xF192)  //  circle-dot
-                        : isOccupied ? String.fromCodePoint(0xF111)  //  filled circle
-                                     : String.fromCodePoint(0xF1DB)  //  hollow circle
+                    text: String(wsId)
                     color: wsWidget.contentColor
                     opacity: wsMa.containsMouse ? 1.0
                         : isFocused ? 1.0
-                        : isOccupied ? 0.58
-                        : 0.16
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: isFocused ? 15 : (isOccupied ? 8 : 9)
-                    renderType: Text.NativeRendering
+                        : isOccupied ? 0.64
+                        : 0.24
+                    font.family: root.mono
+                    font.pixelSize: 12
+                    font.weight: Font.Normal
+                    font.hintingPreference: Font.PreferNoHinting
+                    renderType: Text.QtRendering
 
                     Behavior on opacity {
                         NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                    }
-                    Behavior on font.pixelSize {
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
                 }
 
@@ -263,9 +262,82 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
                     onClicked: root.gotoWorkspace(wsId)
-                    onEntered: wsCell.scale = root.workspaceStyle === "rings" ? 1.06
+                    onEntered: wsCell.scale = root.workspaceStyle === "rings" ? 1.0
                         : root.workspaceStyle === "aurora" ? 1.04 : 1.15
                     onExited:  wsCell.scale = 1.0
+                }
+            }
+        }
+    }
+
+    // A single constant-size frame travels between fixed cells. Keeping its
+    // geometry unchanged avoids texture resampling and numeral overlap while
+    // preserving a smooth transition without rebuilding the delegates.
+    Item {
+        id: frameMotion
+        anchors.fill: parent
+        z: 0
+        visible: root.workspaceStyle === "rings" && targetIndex >= 0
+
+        readonly property int targetIndex: {
+            var focused = Hyprland.focusedWorkspace
+            if (!focused || focused.id <= 0) return -1
+            return wsWidget.workspaceList.indexOf(focused.id)
+        }
+        readonly property real targetLeft: targetIndex >= 0
+            ? wsRow.x + targetIndex * (20 + wsRow.spacing) + 1 : 0
+        property real animatedX: targetLeft
+
+        Behavior on animatedX {
+            NumberAnimation {
+                duration: 190
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        Shape {
+            id: frameShape
+            x: frameMotion.animatedX
+            y: 5
+            width: 18
+            height: 18
+            antialiasing: true
+            preferredRendererType: Shape.CurveRenderer
+            layer.enabled: true
+            layer.samples: 8
+            layer.smooth: true
+            layer.mipmap: true
+            layer.textureSize: Qt.size(Math.ceil(width * 4), height * 4)
+
+            readonly property real r: 5
+
+            ShapePath {
+                strokeColor: wsWidget.contentColor
+                strokeWidth: 1
+                fillColor: "transparent"
+                capStyle: ShapePath.FlatCap
+                joinStyle: ShapePath.RoundJoin
+                startX: frameShape.r
+                startY: 0.5
+                PathLine { x: frameShape.width - frameShape.r; y: 0.5 }
+                PathQuad {
+                    x: frameShape.width - 0.5; y: frameShape.r
+                    controlX: frameShape.width - 0.5; controlY: 0.5
+                }
+                PathLine { x: frameShape.width - 0.5; y: frameShape.height - frameShape.r }
+                PathQuad {
+                    x: frameShape.width - frameShape.r; y: frameShape.height - 0.5
+                    controlX: frameShape.width - 0.5; controlY: frameShape.height - 0.5
+                }
+                PathLine { x: frameShape.r; y: frameShape.height - 0.5 }
+                PathQuad {
+                    x: 0.5; y: frameShape.height - frameShape.r
+                    controlX: 0.5; controlY: frameShape.height - 0.5
+                }
+                PathLine { x: 0.5; y: frameShape.r }
+                PathQuad {
+                    x: frameShape.r; y: 0.5
+                    controlX: 0.5; controlY: 0.5
                 }
             }
         }
