@@ -6,12 +6,14 @@
 const WANTED = [
     { target: "paper",      keys: ["background", "bg"] },
     { target: "ink",        keys: ["foreground", "fg"] },
-    { target: "inkDeep",    keys: ["color7", "bright_fg", "light_fg"] },
-    { target: "sumi",       keys: ["color8", "muted", "dark_fg"] },
-    { target: "sealRaw",    keys: ["color1", "red"] },
+    { target: "color01",    keys: ["color1", "red"] },
     { target: "color02",    keys: ["color2", "green"] },
     { target: "color03",    keys: ["color3", "yellow"] },
-    { target: "indigo",     keys: ["color4", "blue"] },
+    { target: "color04",    keys: ["color4", "blue"] },
+    { target: "color05",    keys: ["color5", "magenta"] },
+    { target: "color06",    keys: ["color6", "cyan"] },
+    { target: "color07",    keys: ["color7", "bright_fg", "light_fg"] },
+    { target: "sumi",       keys: ["color8", "muted", "dark_fg"] },
     { target: "accentHint", keys: ["accent"] },
 ];
 
@@ -64,11 +66,13 @@ function apply(theme, palette) {
     if (!palette) return;
     setColor(theme, "paper",      palette.paper);
     setColor(theme, "ink",        palette.ink);
-    setColor(theme, "inkDeep",    palette.inkDeep);
     setColor(theme, "sumi",       palette.sumi);
-    setColor(theme, "indigo",     palette.indigo);
-    setColor(theme, "sealRaw",    palette.sealRaw);
+    setColor(theme, "color01",    palette.color01);
     setColor(theme, "color02",    palette.color02);
     setColor(theme, "color03",    palette.color03);
+    setColor(theme, "color04",    palette.color04);
+    setColor(theme, "color05",    palette.color05);
+    setColor(theme, "color06",    palette.color06);
+    setColor(theme, "color07",    palette.color07);
     setColor(theme, "accentHint", palette.accentHint);
 }

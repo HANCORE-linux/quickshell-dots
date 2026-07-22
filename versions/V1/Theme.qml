@@ -39,35 +39,86 @@ Item {
 
     property color paper:   "#181616"
     property color ink:     "#c5c9c5"
-    property color inkDeep: "#c8c093"
     property color sumi:    "#a6a69c"
+    property color color01: "#c4746e"
+    property color color02: "#8a9a73"
+    property color color03: "#c8b36a"
+    property color color04: "#658594"
+    property color color05: "#957fb8"
+    property color color06: "#7aa89f"
+    property color color07: "#c8c093"
+    readonly property color inkDeep: color07
+    readonly property color indigo:  color04
+    readonly property color sealRaw: color01
     readonly property color sumiHi:  Qt.rgba(sumi.r*0.45 + ink.r*0.55, sumi.g*0.45 + ink.g*0.55, sumi.b*0.45 + ink.b*0.55, 1.0)  // lifted section-header text
-    property color indigo:  "#658594"
     property color green:   "#8a9a73"   // gate "OK" verdict
-    property color color02: "#8a9a73"   // colors.toml color2
-    property color color03: "#c8b36a"   // colors.toml color3
-    property color sealRaw:    "#c4746e"
     property color accentHint: sealRaw    // filled by palette; default = same as red
-    property string barColor: "red"        // "red", "accent", "color02", "color03"
+    readonly property color foregroundSoft: Qt.rgba(
+        ink.r * 0.88 + paper.r * 0.12,
+        ink.g * 0.88 + paper.g * 0.12,
+        ink.b * 0.88 + paper.b * 0.12,
+        1.0)
+    property string barColor: "color01"
     readonly property bool barColorIsAccent: barColor === "accent"
     // Compatibility alias for older local code/reviews that still use the
     // previous boolean name.
     readonly property bool useThemeAccent: barColorIsAccent
 
-    readonly property color seal: barColorIsAccent ? accentHint
-                                : barColor === "color02" ? color02
-                                : barColor === "color03" ? color03
-                                : sealRaw
-    readonly property var barColorOptions: ["red", "accent", "color02", "color03"]
+    function paletteColor(id) {
+        if (id === "color02") return color02
+        if (id === "color03") return color03
+        if (id === "color04") return color04
+        if (id === "color05") return color05
+        if (id === "color06") return color06
+        if (id === "color07") return color07
+        if (id === "foreground") return foregroundSoft
+        if (id === "accent") return accentHint
+        return color01
+    }
+    function normalizedPaletteId(id) {
+        if (id === "red" || id === "accent") return "color01"
+        return paletteColorValid(id) ? id : "color01"
+    }
+    readonly property color seal: paletteColor(barColor)
+    readonly property var barColorOptions: [
+        "color01", "color02", "color03", "color04",
+        "color05", "color06", "color07", "foreground"
+    ]
+    function paletteColorValid(id) {
+        return id === "color01" || id === "color02" || id === "color03"
+            || id === "color04" || id === "color05" || id === "color06"
+            || id === "color07" || id === "foreground"
+    }
     function barColorValid(id) {
-        return id === "red" || id === "accent" || id === "color02" || id === "color03"
+        return paletteColorValid(id) || id === "red" || id === "accent"
     }
     function barColorLabel(id) {
-        if (id === "red") return "Red"
-        if (id === "accent") return "Accent"
+        if (id === "color01" || id === "red" || id === "accent") return "Color 01"
         if (id === "color02") return "Color 02"
         if (id === "color03") return "Color 03"
-        return "Red"
+        if (id === "color04") return "Color 04"
+        if (id === "color05") return "Color 05"
+        if (id === "color06") return "Color 06"
+        if (id === "color07") return "Color 07"
+        if (id === "foreground") return "Foreground"
+        return "Color 01"
+    }
+    function _linearColorChannel(v) {
+        return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+    }
+    function _relativeLuminance(c) {
+        return 0.2126 * _linearColorChannel(c.r)
+             + 0.7152 * _linearColorChannel(c.g)
+             + 0.0722 * _linearColorChannel(c.b)
+    }
+    function _contrastRatio(a, b) {
+        var la = _relativeLuminance(a)
+        var lb = _relativeLuminance(b)
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+    }
+    function paletteContrastColor(id) {
+        var fill = paletteColor(id)
+        return _contrastRatio(fill, paper) >= _contrastRatio(fill, ink) ? paper : ink
     }
 
     readonly property string mono:  "JetBrainsMono Nerd Font"
@@ -223,6 +274,7 @@ Item {
     function resetCompactDisplayModes() {
         var changed = compactNetwork || compactBattery || compactBrightness || compactCpu
                    || compactMemory || compactVolume || compactBluetooth || compactPower
+                   || compactMpris
         _compactResetting = true
         compactNetwork = false
         compactBattery = false
@@ -232,6 +284,7 @@ Item {
         compactVolume = false
         compactBluetooth = false
         compactPower = false
+        compactMpris = false
         _compactResetting = false
         if (changed && _widgetsLoaded) saveWidgets()
     }
@@ -1083,11 +1136,10 @@ Item {
                     var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 8) ? ba : 0
                     if (parts.length >= 6) {
                         var bc = parts[5]
-                        if (bc === "1") theme.barColor = "accent"
-                        else if (bc === "0") theme.barColor = "red"
+                        if (bc === "1" || bc === "0") theme.barColor = "color01"
                         else if (bc === "green" || bc === "color2") theme.barColor = "color02"
                         else if (bc === "yellow" || bc === "color3") theme.barColor = "color03"
-                        else if (theme.barColorValid(bc)) theme.barColor = bc
+                        else if (theme.barColorValid(bc)) theme.barColor = theme.normalizedPaletteId(bc)
                     }
                 }
                 theme._splitsLoaded = true
@@ -1412,6 +1464,7 @@ Item {
     property bool compactVolume:     false
     property bool compactBluetooth:  false
     property bool compactPower:      false
+    property bool compactMpris:      false
 
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
     // ControlPanel uses this to hide the Brightness toggle on desktops without one.
@@ -1468,6 +1521,7 @@ Item {
     onCompactVolumeChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactBluetoothChanged:  if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onCompactPowerChanged:      if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactMprisChanged:      if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleShadowChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleFrostChanged:       if (_widgetsLoaded) saveWidgets()
@@ -1512,7 +1566,8 @@ Item {
                  + (compactVolume     ? "1" : "0") + " "  // +28
                  + (compactBluetooth  ? "1" : "0") + " "  // +29
                  + (compactPower      ? "1" : "0") + " "  // +30
-                 + (archBadgeShell    ? "1" : "0")        // +31 updater shell badge
+                 + (archBadgeShell    ? "1" : "0") + " "  // +31 updater shell badge
+                 + (compactMpris      ? "1" : "0")        // +32 V2 FULL / muse presentation
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1719,6 +1774,7 @@ Item {
                     if (parts.length > wsField + 29) theme.compactBluetooth  = parts[wsField + 29] === "1"
                     if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
                     if (parts.length > wsField + 31) theme.archBadgeShell    = parts[wsField + 31] !== "0"
+                    if (parts.length > wsField + 32) theme.compactMpris      = parts[wsField + 32] === "1"
                 }
                 theme._widgetsLoaded = true
             }

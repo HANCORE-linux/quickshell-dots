@@ -98,13 +98,11 @@ PanelWindow {
             "command -v cava >/dev/null 2>&1 || exit 0; " +
             "sink=$(pactl get-default-sink 2>/dev/null); " +
             "src=auto; [ -n \"$sink\" ] && src=\"${sink}.monitor\"; " +
-            "cfg=$(mktemp); " +
-            "printf '%s\\n' " +
+            "exec cava -p <(printf '%s\\n' " +
             "'[general]' 'bars = 12' 'framerate = 60' " +
             "'[input]' 'method = pulse' \"source = $src\" " +
             "'[output]' 'method = raw' 'raw_target = /dev/stdout' " +
-            "'data_format = ascii' 'ascii_max_range = 100' > \"$cfg\"; " +
-            "trap 'rm -f \"$cfg\"' EXIT; exec cava -p \"$cfg\""
+            "'data_format = ascii' 'ascii_max_range = 100')"
         ]
         stdout: SplitParser {
             splitMarker: "\n"

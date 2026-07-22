@@ -145,13 +145,14 @@ sudo pacman -S quickshell git jq curl coreutils util-linux procps-ng ttf-jetbrai
 Optional packages enable specific widgets:
 
 ```bash
-sudo pacman -S wireplumber libpulse pamixer brightnessctl upower power-profiles-daemon bluez-utils iwd impala hypridle gpu-screen-recorder
+sudo pacman -S wireplumber libpulse pamixer brightnessctl upower power-profiles-daemon bluez-utils iwd impala hypridle gpu-screen-recorder cava
 ```
 
 Notes:
 
 - `bluez-utils` provides `bluetoothctl`, which the Bluetooth widget currently uses.
 - `wireplumber` provides `wpctl`; `libpulse` provides `pactl` for the audio panel.
+- `cava` provides the real-time waveform used by the MPRIS FULL bar style and media panel.
 - `voxtype` is optional for the Voxtype widget.
 - The install script checks required tools and warns about missing optional tools.
 

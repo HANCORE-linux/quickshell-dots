@@ -47,7 +47,9 @@ Item {
     Row {
         id: wsRow
         anchors.centerIn: parent
-        spacing: root.workspaceStyle === "rings" || root.workspaceStyle === "aurora" ? 3 : 5
+        spacing: root.workspaceStyle === "rings" ? 3
+               : root.workspaceStyle === "aurora" ? 4
+               : 5
 
         Repeater {
             model: wsWidget.workspaceList
@@ -76,8 +78,8 @@ Item {
                 implicitWidth: root.workspaceStyle === "numbers" ? 22
                              : root.workspaceStyle === "kanji"   ? 22
                              : root.workspaceStyle === "magic"   ? (isFocused ? 20 : 18)
-                             : root.workspaceStyle === "rings"   ? 19
-                             : root.workspaceStyle === "aurora"  ? (isFocused ? 38 : 20)
+                             : root.workspaceStyle === "rings"   ? (isFocused ? 18 : 12)
+                             : root.workspaceStyle === "aurora"  ? (isFocused ? 34 : 12)
                              : (isFocused ? 32 : 16)
                 implicitHeight: 28
 
@@ -184,52 +186,70 @@ Item {
                     Behavior on color { ColorAnimation { duration: 200 } }
                 }
 
-                // ── RINGS style: Waybar V1.3's active filled circle and dimmed
-                //    hollow inactive circles. CSS opacity is preserved per state. ──
-                Rectangle {
+                // ── RINGS style: the original V1.3 Nerd Font language. Native
+                //    hinted glyphs stay cleaner at bar scale than QML ellipse
+                //    borders and give focused, occupied and empty distinct forms. ──
+                Text {
                     id: ringsMark
                     visible: root.workspaceStyle === "rings"
                     anchors.centerIn: parent
-                    width: isFocused ? 13 : 12
-                    height: width
-                    radius: width / 2
-                    color: isFocused ? wsWidget.contentColor : "transparent"
-                    border.width: isFocused ? 0 : 1
-                    border.color: wsWidget.contentColor
-                    opacity: wsMa.containsMouse ? 0.4
+                    text: isFocused  ? String.fromCodePoint(0xF192)  //  circle-dot
+                        : isOccupied ? String.fromCodePoint(0xF111)  //  filled circle
+                                     : String.fromCodePoint(0xF1DB)  //  hollow circle
+                    color: wsWidget.contentColor
+                    opacity: wsMa.containsMouse ? 1.0
                         : isFocused ? 1.0
-                        : isOccupied ? 0.45
-                        : 0.10
-                    antialiasing: true
+                        : isOccupied ? 0.58
+                        : 0.16
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: isFocused ? 15 : (isOccupied ? 8 : 9)
+                    renderType: Text.NativeRendering
 
-                    Behavior on width {
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
                     Behavior on opacity {
-                        NumberAnimation { duration: 300; easing.type: Easing.InOutCubic }
+                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on font.pixelSize {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
                 }
 
-                // ── AURORA style: V3.1c's full-height round buttons and strongly
-                //    expanded active workspace, intentionally rendered in one
-                //    theme-aware color instead of the source gradient. ──
-                Rectangle {
+                // ── AURORA style: one flat light streak, not Default's thick
+                //    pill-with-halo motif and not the source gradient. Inactive
+                //    markers are strict squares before radius is applied, so every
+                //    occupied/empty state renders as a true circle. ──
+                Item {
                     id: auroraMark
                     visible: root.workspaceStyle === "aurora"
                     anchors.centerIn: parent
-                    width: isFocused ? 36 : 18
+                    width: isFocused ? 32 : 10
                     height: 16
-                    radius: 8
-                    antialiasing: true
-                    color: Qt.rgba(wsWidget.contentColor.r, wsWidget.contentColor.g,
-                        wsWidget.contentColor.b,
-                        isEmpty ? (wsMa.containsMouse ? 0.25 : 0.10)
-                                : (wsMa.containsMouse ? 0.55 : 1.0))
 
                     Behavior on width {
                         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
                     }
-                    Behavior on color { ColorAnimation { duration: 250 } }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: isFocused ? 28 : (isOccupied ? 6 : 4)
+                        height: isFocused ? 3 : (isOccupied ? 6 : 4)
+                        radius: height / 2
+                        color: wsWidget.contentColor
+                        opacity: wsMa.containsMouse ? 1.0
+                            : isFocused ? 0.92
+                            : isOccupied ? 0.62
+                            : 0.18
+                        antialiasing: true
+
+                        Behavior on width {
+                            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                        }
+                        Behavior on height {
+                            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                        }
+                        Behavior on opacity {
+                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                        }
+                    }
                 }
 
                 MouseArea {
@@ -239,7 +259,7 @@ Item {
                     hoverEnabled: true
                     onClicked: root.gotoWorkspace(wsId)
                     onEntered: wsCell.scale = root.workspaceStyle === "rings" ? 1.06
-                        : root.workspaceStyle === "aurora" ? 1.03 : 1.15
+                        : root.workspaceStyle === "aurora" ? 1.04 : 1.15
                     onExited:  wsCell.scale = 1.0
                 }
             }

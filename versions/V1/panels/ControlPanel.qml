@@ -239,30 +239,51 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            // ── BAR-COLOR: seal color source ──
+            // ── BAR COLOR: compact colors.toml palette ──
             UiText {
-                text: "BAR-COLOR"
+                text: "BAR COLOR"
                 color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Grid {
-                width: parent.width; columns: 2; columnSpacing: 8; rowSpacing: 8
+                width: parent.width
+                columns: 4
+                columnSpacing: 6
+                rowSpacing: 6
                 Repeater {
                     model: root.barColorOptions
                     delegate: Rectangle {
                         required property string modelData
-                        readonly property bool on:      root.barColor === modelData
+                        readonly property bool on: root.barColor === modelData
                         readonly property bool hovered: _cma.containsMouse
-                        width: root.evenW((col.width - 8) / 2); height: 25; radius: root.tileRadius
-                        color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
-                        border.color: (on || hovered) ? root.seal : root.sep
+                        width: root.evenW((col.width - 18) / 4)
+                        height: 24
+                        radius: root.tileRadius
+                        color: root.paletteColor(modelData)
+                        border.color: root.sep
                         border.width: 1
+                        scale: hovered ? 1.04 : 1.0
+                        z: hovered ? 1 : 0
                         Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on scale {
+                            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                        }
                         UiText {
                             anchors.centerIn: parent
-                            text: root.barColorLabel(modelData)
-                            color: (parent.on || parent.hovered) ? root.seal : root.ink
-                            font.family: root.mono; font.pixelSize: 11
-                            font.weight: parent.on ? Font.Medium : Font.Normal
+                            text: modelData === "foreground" ? "FG" : modelData.slice(-2)
+                            color: root.paletteContrastColor(modelData)
+                            font.family: root.mono
+                            font.pixelSize: 9
+                            font.weight: Font.Medium
+                        }
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 3
+                            width: 18
+                            height: 2
+                            radius: 1
+                            visible: parent.on
+                            color: root.paletteContrastColor(modelData)
                         }
                         MouseArea {
                             id: _cma
@@ -540,6 +561,7 @@ PanelWindow {
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "CPU";        active: root.compactCpu;        onToggled: root.compactCpu = !root.compactCpu }
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Memory";     active: root.compactMemory;     onToggled: root.compactMemory = !root.compactMemory }
                 CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Volume";     active: root.compactVolume;     onToggled: root.compactVolume = !root.compactVolume }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Now playing"; active: root.compactMpris;      onToggled: root.compactMpris = !root.compactMpris }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }

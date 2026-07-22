@@ -7,6 +7,13 @@ HOOK="$REPO_ROOT/contrib/post-boot.d/quickshell-rise"
 INSTALLER="$REPO_ROOT/install.sh"
 UNINSTALLER="$REPO_ROOT/uninstall.sh"
 README="$REPO_ROOT/README.md"
+V1_THEME="$REPO_ROOT/versions/V1/Theme.qml"
+V1_PALETTE="$REPO_ROOT/versions/V1/Palette.js"
+V1_CONTROL_PANEL="$REPO_ROOT/versions/V1/panels/ControlPanel.qml"
+V1_MPRIS_WIDGET="$REPO_ROOT/versions/V1/modules/MprisWidget.qml"
+V1_MPRIS_PANEL="$REPO_ROOT/versions/V1/panels/MprisPanel.qml"
+V2_MPRIS_WIDGET="$REPO_ROOT/versions/V1/variants/V2/modules/MprisWidget.qml"
+V2_MPRIS_PANEL="$REPO_ROOT/versions/V1/variants/V2/panels/MprisPanel.qml"
 WORK="$(mktemp -d /tmp/qs-quattro-runtime-test.XXXXXX)"
 
 cleanup() {
@@ -962,6 +969,32 @@ case_static_contracts() {
   assert_contains "left it stopped because the Omarchy stock bar is active" "$UNINSTALLER" "backup double-bar guard"
   assert_contains "Other Hyprland systems" "$README" "non-Omarchy compatibility docs"
   assert_contains "For scripted" "$README" "non-interactive prompt docs"
+  assert_contains "hypridle cava)" "$INSTALLER" "CAVA optional dependency check"
+  assert_contains "\`cava\` provides the real-time waveform" "$README" "CAVA optional dependency docs"
+
+  # V1's palette and MPRIS presentation are persisted extensions of the legacy
+  # cache schema. Guard both ends so a UI-only refactor cannot silently leave a
+  # control that neither saves nor restores its state.
+  assert_contains '{ target: "color07"' "$V1_PALETTE" "V1 color07 palette parsing"
+  assert_contains '"color05", "color06", "color07", "foreground"' "$V1_THEME" "V1 full bar palette"
+  assert_contains 'if (id === "red" || id === "accent") return "color01"' "$V1_THEME" "V1 legacy palette normalization"
+  assert_contains 'property bool compactMpris:' "$V1_THEME" "V1 MPRIS presentation state"
+  assert_contains '(compactMpris      ? "1" : "0")' "$V1_THEME" "V1 MPRIS presentation save"
+  assert_contains 'parts.length > wsField + 32' "$V1_THEME" "V1 MPRIS presentation restore"
+  assert_contains 'compactMpris = false' "$V1_THEME" "V1 MPRIS default-layout reset"
+  assert_contains 'model: root.barColorOptions' "$V1_CONTROL_PANEL" "V1 bar palette control"
+  assert_contains 'label: "Now playing"' "$V1_CONTROL_PANEL" "V1 MPRIS presentation control"
+  assert_contains 'readonly property bool fullMode: root.compactMpris' "$V1_MPRIS_WIDGET" "V1 FULL presentation binding"
+
+  # The analyzer config is supplied over an inherited file descriptor. Keeping
+  # exec preserves Quickshell's direct process lifecycle while avoiding the old
+  # mktemp + unreachable EXIT-trap leak.
+  for mpris_file in \
+    "$V1_MPRIS_WIDGET" "$V1_MPRIS_PANEL" \
+    "$V2_MPRIS_WIDGET" "$V2_MPRIS_PANEL"; do
+    assert_contains "exec cava -p <(printf" "$mpris_file" "CAVA fd-backed config"
+    assert_not_contains "cfg=\$(mktemp)" "$mpris_file" "CAVA tempfile leak"
+  done
 
   # uninstall.sh intentionally stays standalone. Keep the shared lifecycle
   # functions byte-identical so future fixes cannot silently land in one copy.

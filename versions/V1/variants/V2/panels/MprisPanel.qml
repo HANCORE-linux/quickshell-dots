@@ -129,14 +129,12 @@ PanelWindow {
         running: mprisPanel.visible && mprisPanel.playing
         command: ["bash", "-c",
             "command -v cava >/dev/null 2>&1 || exit 0; " +
-            "cfg=$(mktemp); " +
-            "printf '%s\\n' " +
+            "exec cava -p <(printf '%s\\n' " +
             "'[general]' 'bars = 12' 'framerate = 30' 'autosens = 1' 'sleep_timer = 0' " +
             "'[input]' 'method = pipewire' 'source = auto' " +
             "'[output]' 'method = raw' 'raw_target = /dev/stdout' " +
             "'data_format = ascii' 'ascii_max_range = 100' " +
-            "'[smoothing]' 'monstercat = 0' 'waves = 0' 'noise_reduction = 20' > \"$cfg\"; " +
-            "trap 'rm -f \"$cfg\"' EXIT; exec cava -p \"$cfg\""
+            "'[smoothing]' 'monstercat = 0' 'waves = 0' 'noise_reduction = 20')"
         ]
         stdout: SplitParser {
             splitMarker: "\n"

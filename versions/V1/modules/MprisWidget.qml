@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Mpris
 
 Item {
@@ -12,12 +13,52 @@ Item {
     readonly property var  player:  sel.player
     readonly property bool active:  sel.active
     readonly property bool playing: sel.playing
+    readonly property bool fullMode: root.compactMpris
 
     readonly property string trackLabel: {
         if (!player) return ""
         var t = player.trackTitle  || ""
         var a = player.trackArtist || ""
         return a ? t + "  ·  " + a : t
+    }
+
+    // ── FULL / muse: compact real-audio waveform ───────────────────
+    readonly property int museBands: 24
+    property var museLevels: []
+
+    function resetMuseLevels() {
+        var rest = []
+        for (var i = 0; i < museBands; i++) rest.push(0.04)
+        museLevels = rest
+    }
+
+    Component.onCompleted: resetMuseLevels()
+
+    Process {
+        id: museCava
+        running: rootMod.visible && rootMod.active && rootMod.fullMode && rootMod.playing
+        command: ["bash", "-c",
+            "command -v cava >/dev/null 2>&1 || exit 0; " +
+            "exec cava -p <(printf '%s\\n' " +
+            "'[general]' 'bars = 24' 'framerate = 60' 'autosens = 1' 'sleep_timer = 0' " +
+            "'[input]' 'method = pipewire' 'source = auto' " +
+            "'[output]' 'method = raw' 'raw_target = /dev/stdout' " +
+            "'data_format = ascii' 'ascii_max_range = 100' " +
+            "'[smoothing]' 'monstercat = 0' 'waves = 0' 'noise_reduction = 20')"
+        ]
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function(line) {
+                if (!rootMod.playing || !rootMod.fullMode) return
+                var parts = line.split(";")
+                var out = []
+                for (var i = 0; i < rootMod.museBands; i++) {
+                    var value = parseInt(parts[i])
+                    out.push(isNaN(value) ? 0 : Math.min(1, value / 100))
+                }
+                rootMod.museLevels = out
+            }
+        }
     }
 
     // ── equalizer bar heights (0.0 – 1.0) ──
@@ -28,7 +69,7 @@ Item {
     // bounce sequences — regular animations with explicit target, no PVS conflict
     SequentialAnimation {
         id: anim1
-        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite   // don't animate the EQ while the widget is hidden (toggle off)
+        running: rootMod.visible && rootMod.playing && !rootMod.fullMode; loops: Animation.Infinite   // don't animate the EQ while the widget is hidden (toggle off)
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.85; duration: 220; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.18; duration: 300; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.70; duration: 260; easing.type: Easing.InOutSine }
@@ -36,7 +77,7 @@ Item {
     }
     SequentialAnimation {
         id: anim2
-        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite
+        running: rootMod.visible && rootMod.playing && !rootMod.fullMode; loops: Animation.Infinite
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.45; duration: 310; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.92; duration: 280; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.28; duration: 340; easing.type: Easing.InOutSine }
@@ -44,7 +85,7 @@ Item {
     }
     SequentialAnimation {
         id: anim3
-        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite
+        running: rootMod.visible && rootMod.playing && !rootMod.fullMode; loops: Animation.Infinite
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.60; duration: 380; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.12; duration: 320; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.95; duration: 350; easing.type: Easing.InOutSine }
@@ -58,10 +99,23 @@ Item {
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.08; duration: 430; easing.type: Easing.OutCubic }
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.08; duration: 480; easing.type: Easing.OutCubic }
     }
-    onPlayingChanged: { if (!playing) dropAnim.restart() }
+    onPlayingChanged: {
+        if (!playing) {
+            dropAnim.restart()
+            resetMuseLevels()
+        }
+    }
+    onFullModeChanged: {
+        resetMuseLevels()
+        if (!fullMode) marqueeClip.resetMarquee()
+    }
 
     visible: implicitWidth > 0.5
-    implicitWidth: root.modMpris ? (active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)) : 0
+    implicitWidth: root.modMpris
+        ? (active
+            ? ((fullMode ? fullRow.implicitWidth : defaultRow.implicitWidth) + 18)
+            : (idleNote.implicitWidth + 16))
+        : 0
     implicitHeight: 28
     opacity: root.modMpris ? 1 : 0
 
@@ -73,7 +127,9 @@ Item {
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter
-        width: rootMod.active ? (Math.round(row.implicitWidth) + 18) : (Math.round(idleNote.implicitWidth) + 16)
+        width: rootMod.active
+            ? (Math.round(rootMod.fullMode ? fullRow.implicitWidth : defaultRow.implicitWidth) + 18)
+            : (Math.round(idleNote.implicitWidth) + 16)
         height: root.pillH
         radius: root.pillRadius
         color: root.pill
@@ -99,8 +155,8 @@ Item {
     }
 
     Row {
-        id: row
-        visible: rootMod.active
+        id: defaultRow
+        visible: rootMod.active && !rootMod.fullMode
         anchors.centerIn: parent
         spacing: 4
 
@@ -276,6 +332,190 @@ Item {
                 function onBarH3Changed() { eqCanvas.requestPaint() }
             }
             Component.onCompleted: requestPaint()
+        }
+    }
+
+    // ── FULL: muse-style vinyl · centered waveform · transport state ──
+    Item {
+        id: fullRow
+        visible: rootMod.active && rootMod.fullMode
+        anchors.centerIn: parent
+        implicitWidth: fullMuseCore.width
+        implicitHeight: 28
+
+        Item {
+            id: fullMuseCore
+            anchors.centerIn: parent
+            width: 144
+            height: 28
+
+            Row {
+                id: museRow
+                anchors.centerIn: parent
+                spacing: 7
+
+                Item {
+                    id: vinylMark
+                    width: 18
+                    height: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    transformOrigin: Item.Center
+
+                    Canvas {
+                        id: vinylCanvas
+                        anchors.fill: parent
+                        antialiasing: true
+                        property color tint: root.seal
+                        onTintChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            ctx.strokeStyle = tint
+                            ctx.fillStyle = tint
+                            ctx.lineWidth = 1.4
+
+                            ctx.beginPath()
+                            ctx.arc(width / 2, height / 2, 7.2, 0, Math.PI * 2)
+                            ctx.stroke()
+                            ctx.globalAlpha = 0.55
+                            ctx.beginPath()
+                            ctx.arc(width / 2, height / 2, 4.6, -0.35, 2.35)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.arc(width / 2, height / 2, 4.6, 2.8, 5.5)
+                            ctx.stroke()
+                            ctx.globalAlpha = 1
+                            ctx.beginPath()
+                            ctx.arc(width / 2, height / 2, 1.45, 0, Math.PI * 2)
+                            ctx.fill()
+                        }
+                        Component.onCompleted: requestPaint()
+                    }
+
+                    NumberAnimation on rotation {
+                        from: 0
+                        to: 360
+                        duration: 3200
+                        loops: Animation.Infinite
+                        running: rootMod.visible && rootMod.fullMode && rootMod.playing
+                    }
+                }
+
+                Item {
+                    id: museWaveform
+                    width: 96
+                    height: 22
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Canvas {
+                        id: museCanvas
+                        anchors.fill: parent
+                        antialiasing: true
+                        property color tint: root.seal
+                        onTintChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            var levels = rootMod.museLevels
+                            var count = rootMod.museBands
+                            var barWidth = 2
+                            var gap = (width - count * barWidth) / (count - 1)
+                            var centerY = height / 2
+                            var maxHalf = centerY - 1
+                            ctx.fillStyle = tint
+
+                            for (var i = 0; i < count; i++) {
+                                var level = levels && levels[i] !== undefined ? levels[i] : 0.04
+                                var half = 1 + level * (maxHalf - 1)
+                                var x = i * (barWidth + gap)
+                                var y = centerY - half
+                                var barHeight = half * 2
+                                var radius = barWidth / 2
+
+                                ctx.beginPath()
+                                ctx.moveTo(x + radius, y)
+                                ctx.arcTo(x + barWidth, y, x + barWidth, y + radius, radius)
+                                ctx.lineTo(x + barWidth, y + barHeight - radius)
+                                ctx.arcTo(x + barWidth, y + barHeight, x + radius, y + barHeight, radius)
+                                ctx.arcTo(x, y + barHeight, x, y + barHeight - radius, radius)
+                                ctx.lineTo(x, y + radius)
+                                ctx.arcTo(x, y, x + radius, y, radius)
+                                ctx.closePath()
+                                ctx.fill()
+                            }
+                        }
+
+                        Connections {
+                            target: rootMod
+                            function onMuseLevelsChanged() { museCanvas.requestPaint() }
+                        }
+                        Component.onCompleted: requestPaint()
+                    }
+                }
+
+                Item {
+                    id: transportMark
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 18
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 3
+                        visible: rootMod.playing
+                        Repeater {
+                            model: 2
+                            Rectangle {
+                                width: 3
+                                height: 10
+                                radius: 1
+                                color: root.seal
+                            }
+                        }
+                    }
+
+                    Canvas {
+                        id: playCanvas
+                        anchors.centerIn: parent
+                        width: 11
+                        height: 12
+                        visible: !rootMod.playing
+                        antialiasing: true
+                        property color tint: root.seal
+                        onTintChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            ctx.fillStyle = tint
+                            ctx.beginPath()
+                            ctx.moveTo(2, 1)
+                            ctx.lineTo(width - 1, height / 2)
+                            ctx.lineTo(2, height - 1)
+                            ctx.closePath()
+                            ctx.fill()
+                        }
+                        Component.onCompleted: requestPaint()
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                z: 2
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (rootMod.player) rootMod.player.togglePlaying()
+                onWheel: function(wheel) {
+                    if (!rootMod.player || wheel.angleDelta.y === 0) return
+                    if (wheel.angleDelta.y > 0) {
+                        if (rootMod.player.canGoNext) rootMod.player.next()
+                    } else if (rootMod.player.canGoPrevious) {
+                        rootMod.player.previous()
+                    }
+                    wheel.accepted = true
+                }
+            }
         }
     }
 
