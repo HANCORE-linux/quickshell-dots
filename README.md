@@ -65,7 +65,11 @@ Both interfaces include theme integration, pickers, updates, notifications, AI u
 
 ### V2 preview
 
-[![V2 preview showing bar controls, panels, styling, and media visualization](docs/media/v2-preview.webp)](docs/media/v2-preview.mp4)
+
+https://github.com/user-attachments/assets/0e43f091-95d0-4a37-8b65-77a65fd17b74
+
+
+
 
 Click the preview to play the V2 demo.
 
