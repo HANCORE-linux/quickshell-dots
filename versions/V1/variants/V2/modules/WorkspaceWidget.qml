@@ -5,7 +5,12 @@ Item {
     id: wsWidget
     required property var root
 
-    implicitWidth: wsRow.implicitWidth
+    // Workspace cells intentionally stay dense without a local surface. A widget
+    // border needs its own breathing room, though: make that padding part of the
+    // real implicit width so the border, drag geometry and split points all use
+    // the same measurement instead of reconstructing an approximate visual edge.
+    readonly property int borderHorizontalPadding: root.widgetHasBorder("G2") ? 6 : 0
+    implicitWidth: wsRow.implicitWidth + 2 * borderHorizontalPadding
     implicitHeight: 28
     readonly property color contentColor: root.widgetContentColor("G2", root.seal)
 
