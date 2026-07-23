@@ -20,10 +20,22 @@ BarWidget {
   readonly property var aur: securityStatus.aur_malware || ({})
   readonly property var bb: securityStatus.bumblebee || ({})
   readonly property bool everScanned: !!securityStatus.checked
-  readonly property bool hasNotice: everScanned && (
-    aur.status === "warn" || aur.status === "fail"
-    || bb.status === "findings" || aur.status === "error" || bb.status === "error"
-  )
+
+  // worse of the two scanners: fail/error > warn/findings > clean
+  readonly property string overallStatus: {
+    var severity = { fail: 2, error: 2, warn: 1, findings: 1 }
+    var worst = Math.max(severity[aur.status] || 0, severity[bb.status] || 0)
+    return worst === 2 ? "fail" : (worst === 1 ? "warn" : "clean")
+  }
+
+  // Badge color: primary/accent while clean, amber on warnings, urgent
+  // (theme red) once something's actually flagged as compromised.
+  function badgeColor() {
+    if (!root.everScanned) return Color.accent
+    if (root.overallStatus === "fail") return Color.urgent
+    if (root.overallStatus === "warn") return "#e8a33d"
+    return Color.accent
+  }
 
   visible: true
   implicitWidth: button.implicitWidth
@@ -103,8 +115,8 @@ BarWidget {
     slotSize: Style.bar.statusSlot
     fontSize: Style.bar.iconFont
     tooltipText: root.tooltipText
-    activeColor: Color.urgent
-    active: root.hasNotice
+    activeColor: root.badgeColor()
+    active: true
     onPressed: detail.open = !detail.open
   }
 
