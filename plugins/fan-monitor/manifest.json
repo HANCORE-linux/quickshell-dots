@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "local.fan-monitor",
+  "name": "Fan Monitor",
+  "version": "1.0.0",
+  "author": "HANCORE-linux (fork: elynch303)",
+  "description": "Fan-speed and temperature badge (lm_sensors), installable on any Omarchy bar",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "FanMonitorWidget.qml" }
+}
