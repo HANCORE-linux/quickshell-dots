@@ -75,8 +75,9 @@ BarWidget {
   }
 
   function statusColor(s) {
-    if (s === "fail" || s === "findings" || s === "error" || s === "warn") return Color.urgent
-    return Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.55)
+    if (s === "fail" || s === "error") return Color.urgent
+    if (s === "warn" || s === "findings") return "#e8a33d"
+    return Color.accent
   }
   function statusLabel(s) {
     if (s === "clean") return "CLEAN"
@@ -170,11 +171,20 @@ BarWidget {
       Column {
         width: parent.width
         spacing: Style.spacing.xs
-        Row {
+        Item {
           width: parent.width
-          PanelSectionHeader { foreground: Color.popups.text; text: "AUR-MALWARE" }
-          Item { width: parent.width - 160; height: 1 }
+          height: Math.max(aurHeader.implicitHeight, aurStatus.implicitHeight)
+          PanelSectionHeader {
+            id: aurHeader
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            foreground: Color.popups.text
+            text: "AUR-MALWARE"
+          }
           Text {
+            id: aurStatus
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             text: root.everScanned ? root.statusLabel(root.aur.status) : "—"
             color: root.statusColor(root.aur.status)
             font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
@@ -194,11 +204,20 @@ BarWidget {
       Column {
         width: parent.width
         spacing: Style.spacing.xs
-        Row {
+        Item {
           width: parent.width
-          PanelSectionHeader { foreground: Color.popups.text; text: "BUMBLEBEE" }
-          Item { width: parent.width - 160; height: 1 }
+          height: Math.max(bbHeader.implicitHeight, bbStatus.implicitHeight)
+          PanelSectionHeader {
+            id: bbHeader
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            foreground: Color.popups.text
+            text: "BUMBLEBEE"
+          }
           Text {
+            id: bbStatus
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             text: root.everScanned ? root.statusLabel(root.bb.status) : "—"
             color: root.statusColor(root.bb.status)
             font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
