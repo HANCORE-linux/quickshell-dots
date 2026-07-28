@@ -2487,7 +2487,7 @@ Item {
     }
 
     function ipcOpenPicker(mode) {
-        if (mode === "theme" || mode === "wallpaper") openImagePicker(mode)
+        if (mode === "theme" || mode === "wallpaper" || mode === "animated") openImagePicker(mode)
         else if (mode === "screenshots" || mode === "videos") openMediaBrowser(mode)
     }
 
@@ -2510,6 +2510,7 @@ Item {
             target: "picker"
             function theme(): void { ipcOpenPicker("theme") }
             function wallpaper(): void { ipcOpenPicker("wallpaper") }
+            function animated(): void { ipcOpenPicker("animated") }
             function screenshots(): void { ipcOpenPicker("screenshots") }
             function videos(): void { ipcOpenPicker("videos") }
         }

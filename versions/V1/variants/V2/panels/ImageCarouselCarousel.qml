@@ -25,6 +25,8 @@ PanelWindow {
 
     readonly property bool active: root.pickerStyle === "carousel"
     readonly property bool isThemeMode: root.imagePickerMode === "theme"
+    // Live Wallpaper Engine wallpapers, sourced from `omarchy-we` (external CLI).
+    readonly property bool isAnimatedMode: root.imagePickerMode === "animated"
     readonly property bool ready: root.imagePickerVisible && active && imagesLoaded && layoutSettled
 
     property bool imagesLoaded:  false
@@ -55,9 +57,9 @@ PanelWindow {
     visible: root.imagePickerVisible && active
 
     // ── open / style gating ──
-    function modeKey() { return root.imagePickerMode === "theme" ? "theme" : "wallpaper" }
+    function modeKey() { return root.imagePickerMode === "theme" ? "theme" : root.imagePickerMode === "animated" ? "animated" : "wallpaper" }
     function scanCachePathFor(mode) {
-        return Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (mode === "theme" ? "theme" : "wallpaper")
+        return Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (mode === "theme" ? "theme" : mode === "animated" ? "animated" : "wallpaper")
     }
     function saveModeState() {
         if (panel.loadedMode === "theme") {
@@ -84,6 +86,15 @@ PanelWindow {
             panel._lastScan = panel.themeLastScan
             panel.imagesLoaded = panel.themeImagesLoaded && panel.imageArray.length > 0
             panel.scanDone = panel.themeScanDone
+        } else if (mode === "animated") {
+            // Animated (Wallpaper Engine) state is not cached per-mode; always
+            // start empty and let the live omarchy-we scan populate it.
+            panel.imageArray = []
+            panel.selectedIndex = 0
+            panel.currentImage = ""
+            panel._lastScan = ""
+            panel.imagesLoaded = false
+            panel.scanDone = false
         } else {
             panel.imageArray = panel.wallpaperImageArray || []
             panel.selectedIndex = Math.max(0, Math.min(panel.wallpaperSelectedIndex, Math.max(0, panel.imageArray.length - 1)))
@@ -138,7 +149,9 @@ PanelWindow {
     Process {
         id: currentProc
         property string requestMode: "wallpaper"
-        command: requestMode === "theme"
+        command: requestMode === "animated"
+            ? ["bash", "-c", "omarchy-we ipc current 2>/dev/null | sed -n 's/.*\"id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p'"]
+            : requestMode === "theme"
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
                "name=$(cat " + panel.shq(root.themeNamePath) + " 2>/dev/null || true); " +
@@ -176,6 +189,10 @@ PanelWindow {
     }
 
     function buildScanCmd(mode) {
+        if (mode === "animated") {
+            // Rows are "id \t preview \t (dir empty) \t label" from omarchy-we.
+            return ["bash", "-c", "omarchy-we ipc entries 2>/dev/null | python3 -c \"import json,sys; arr=json.load(sys.stdin); [print('%s\\t%s\\t\\t%s' % (e.get('id',''), e.get('preview',''), (e.get('title') or e.get('id') or '') + ((' ('+e['type']+')') if e.get('type') else ''))) for e in arr if e.get('preview')]\" 2>/dev/null"]
+        }
         if (mode === "theme") {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
@@ -216,7 +233,10 @@ PanelWindow {
     function applySelected() {
         if (!imagesLoaded || imageArray.length === 0) return
         var path = imageArray[selectedIndex].filePath; if (!path) return
-        if (isThemeMode) {
+        if (isAnimatedMode) {
+            applyBgProc.command = ["omarchy-we", "ipc", "set", path]
+            applyBgProc.running = false; applyBgProc.running = true
+        } else if (isThemeMode) {
             var name = Model.nameForPath(path)
             applyThemeProc.command = ["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]
             applyThemeProc.running = false; applyThemeProc.running = true
@@ -238,7 +258,7 @@ PanelWindow {
 
     function currentLabel() {
         if (imageArray.length === 0 || !Model.itemMatches(imageArray, selectedIndex, filterText)) return filterText ? "No matches" : ""
-        return Model.labelForPath(imageArray[selectedIndex].filePath)
+        return imageArray[selectedIndex].label || Model.labelForPath(imageArray[selectedIndex].filePath)
     }
 
     function filteredPos(idx)  { return Model.filteredPosition(imageArray, idx, filterText) }
@@ -517,7 +537,7 @@ PanelWindow {
         anchors.centerIn: parent
         horizontalAlignment: Text.AlignHCenter
         text: panel.scanDone
-              ? (panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
+              ? (panel.isAnimatedMode ? "No live wallpapers found" : panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
               : "Loading…"
         color: root.ink
         style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.6)

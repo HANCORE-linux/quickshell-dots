@@ -17,7 +17,10 @@ function loadRows(rows) {
       thumbnailPath: columns[1] || path,
       // optional 3rd column (theme scan only): the theme directory, used to
       // lazily fetch author/palette for the focused theme without slowing the scan
-      dir: columns[2] || ""
+      dir: columns[2] || "",
+      // optional 4th column (animated / Wallpaper Engine scan only): display
+      // label shown instead of the file-name-derived label
+      label: columns[3] || ""
     })
   }
   return images
@@ -26,8 +29,10 @@ function itemMatches(images, index, filterText) {
   if (!Array.isArray(images) || index < 0 || index >= images.length) return false
   var needle = String(filterText || "").toLowerCase(); if (!needle) return true
   var path = String(images[index].filePath || "")
+  var extra = String(images[index].label || "")
   return nameForPath(path).toLowerCase().indexOf(needle) !== -1
       || labelForPath(path).toLowerCase().indexOf(needle) !== -1
+      || (extra !== "" && extra.toLowerCase().indexOf(needle) !== -1)
 }
 function matchCount(images, filterText) {
   if (!Array.isArray(images)) return 0

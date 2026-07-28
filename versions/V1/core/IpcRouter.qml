@@ -120,6 +120,7 @@ Item {
         target: "picker"
         function theme(): void { router.openPicker("theme") }
         function wallpaper(): void { router.openPicker("wallpaper") }
+        function animated(): void { router.openPicker("animated") }
         function screenshots(): void { router.openPicker("screenshots") }
         function videos(): void { router.openPicker("videos") }
     }

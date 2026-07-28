@@ -24,6 +24,8 @@ PanelWindow {
 
     readonly property bool active: root.pickerStyle === "hearthstone"
     readonly property bool isThemeMode: root.imagePickerMode === "theme"
+    // Live Wallpaper Engine wallpapers, sourced from `omarchy-we` (external CLI).
+    readonly property bool isAnimatedMode: root.imagePickerMode === "animated"
     readonly property bool ready: root.imagePickerVisible && active && imagesLoaded && layoutSettled
 
     property bool imagesLoaded:  false
@@ -57,7 +59,7 @@ PanelWindow {
                 idx:      i,
                 filePath: imageArray[i].filePath,
                 thumb:    panel.thumbUrlFor(imageArray[i]),
-                label:    Model.labelForPath(imageArray[i].filePath),
+                label:    imageArray[i].label || Model.labelForPath(imageArray[i].filePath),
                 dir:      imageArray[i].dir || "",
                 current:  imageArray[i].filePath === panel.currentImage
             })
@@ -104,7 +106,9 @@ PanelWindow {
     // step 1: current image
     Process {
         id: currentProc
-        command: panel.isThemeMode
+        command: panel.isAnimatedMode
+            ? ["bash", "-c", "omarchy-we ipc current 2>/dev/null | sed -n 's/.*\"id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p'"]
+            : panel.isThemeMode
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
                "name=$(cat " + panel.shq(root.themeNamePath) + " 2>/dev/null || true); " +
@@ -134,7 +138,7 @@ PanelWindow {
     }
 
     // scan-result cache → instant (re)open (shared cache file with the other theme styles)
-    readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isThemeMode ? "theme" : "wallpaper")
+    readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isAnimatedMode ? "animated" : isThemeMode ? "theme" : "wallpaper")
     property string _lastScan: ""
     function scanHasOriginalThumbs(text) {
         var rows = String(text || "").split("\n")
@@ -173,6 +177,10 @@ PanelWindow {
     }
 
     function buildScanCmd() {
+        if (isAnimatedMode) {
+            // Rows are "id \t preview \t (dir empty) \t label" from omarchy-we.
+            return ["bash", "-c", "omarchy-we ipc entries 2>/dev/null | python3 -c \"import json,sys; arr=json.load(sys.stdin); [print('%s\\t%s\\t\\t%s' % (e.get('id',''), e.get('preview',''), (e.get('title') or e.get('id') or '') + ((' ('+e['type']+')') if e.get('type') else ''))) for e in arr if e.get('preview')]\" 2>/dev/null"]
+        }
         if (isThemeMode) {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
@@ -214,7 +222,10 @@ PanelWindow {
         if (!imagesLoaded || filtered.length === 0) return
         if (selFilt < 0 || selFilt >= filtered.length) return
         var path = filtered[selFilt].filePath; if (!path) return
-        if (isThemeMode) {
+        if (isAnimatedMode) {
+            applyBgProc.command = ["omarchy-we", "ipc", "set", path]
+            applyBgProc.running = false; applyBgProc.running = true
+        } else if (isThemeMode) {
             var name = Model.nameForPath(path)
             applyThemeProc.command = ["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]
             applyThemeProc.running = false; applyThemeProc.running = true
@@ -449,7 +460,7 @@ PanelWindow {
         anchors.centerIn: parent
         horizontalAlignment: Text.AlignHCenter
         text: panel.scanDone
-              ? (panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
+              ? (panel.isAnimatedMode ? "No live wallpapers found" : panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
               : "Loading…"
         color: panel.textLight
         font.family: root.mono; font.pixelSize: 16; font.letterSpacing: 1
@@ -461,7 +472,7 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top; anchors.topMargin: 40
         opacity: panel.reveal
-        text: (panel.isThemeMode ? "THEME" : "WALLPAPER") + "      " + (panel.selFilt + 1) + " / " + panel.filtered.length
+        text: (panel.isAnimatedMode ? "LIVE WALLPAPER" : panel.isThemeMode ? "THEME" : "WALLPAPER") + "      " + (panel.selFilt + 1) + " / " + panel.filtered.length
         color: panel.textDim
         font.family: root.mono; font.pixelSize: 12; font.letterSpacing: 2
     }
