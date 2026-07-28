@@ -7,6 +7,8 @@ APPLY="${APPLY:-$REPO_ROOT/scripts/qs-shell-apply-update.sh}"
 PUBLISHED_MIGRATION_COMMIT="4dbf830548e28c43494b89abfcf8ba00f06c74d7"
 PUBLISHED_CHECK_BLOB="6d1a2903c84f129fab630f128c42100ad50fbab1"
 PUBLISHED_APPLY_BLOB="812a5aaa10f0e825d0643a20a7ef88420ee0d4f1"
+PUBLISHED_VARIANT_SMOKE_COMMIT="6aab664649a9710680603b0300c7bc8a74cf25b3"
+PUBLISHED_VARIANT_SMOKE_APPLY_BLOB="bfaf70c40757b8bc694744ba7f145ff87babbbbb"
 WORK="$(mktemp -d /tmp/qs-shell-update-test.XXXXXX)"
 
 cleanup() {
@@ -235,6 +237,22 @@ materialize_published_migration_updater() {
   git -C "$REPO_ROOT" show \
     "$PUBLISHED_MIGRATION_COMMIT:scripts/qs-shell-apply-update.sh" > "$root/published-apply"
   chmod 755 "$root/published-check" "$root/published-apply"
+}
+
+materialize_published_variant_smoke_updater() {
+  local root="$1" actual_apply
+
+  git -C "$REPO_ROOT" cat-file -e "$PUBLISHED_VARIANT_SMOKE_COMMIT^{commit}" 2>/dev/null || \
+    fail "published variant-smoke commit is unavailable; fetch full repository history"
+  actual_apply="$(git -C "$REPO_ROOT" rev-parse \
+    "$PUBLISHED_VARIANT_SMOKE_COMMIT:scripts/qs-shell-apply-update.sh")"
+  assert_eq "$PUBLISHED_VARIANT_SMOKE_APPLY_BLOB" "$actual_apply" \
+    "published variant-smoke apply provenance"
+
+  git -C "$REPO_ROOT" show \
+    "$PUBLISHED_VARIANT_SMOKE_COMMIT:scripts/qs-shell-apply-update.sh" \
+    > "$root/published-variant-smoke-apply"
+  chmod 755 "$root/published-variant-smoke-apply"
 }
 
 commit_integrated_migration_target() {
@@ -945,6 +963,79 @@ test_published_updater_migrates_legacy_v1_to_integrated_generation() {
     "published updater cleared the completed migration"
 }
 
+test_variant_smoke_vfs_import_contract() {
+  assert_contains 'import "variants/V2" as V2Bundle' \
+    "$REPO_ROOT/versions/V1/VariantRoot.qml" \
+    "current payload cannot bootstrap an already-installed variant-smoke updater"
+  assert_contains 'import "variants/V2" as V2Bundle' "$APPLY" \
+    "current variant-smoke wrapper does not register the lazy V2 type graph"
+}
+
+test_published_variant_smoke_updater_accepts_current_payload() {
+  local root="$WORK/published-variant-smoke-updater" target
+  [ "${QS_SHELL_RUN_REAL_VARIANT_SMOKE:-0}" = "1" ] || return 0
+  init_fixture "$root"
+  materialize_published_variant_smoke_updater "$root"
+  commit_integrated_migration_target "$root/repo"
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+  target="$(git -C "$root/repo" rev-parse HEAD)"
+
+  HOME="$root/home" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+    "$CHECK"
+
+  assert_process_tools_isolated "$root"
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+  QS_SHELL_NO_RESTART=1 \
+  QS_SHELL_SMOKE_PLATFORM="${QS_SHELL_REAL_VARIANT_SMOKE_PLATFORM:-wayland}" \
+  QS_SHELL_SMOKE_TIMEOUT=4 \
+    "$root/published-variant-smoke-apply"
+
+  assert_eq "$target" "$(tr -d '[:space:]' < "$root/dest/.qsrise-commit")" \
+    "published variant-smoke updater deployed the current integrated target"
+  [ ! -e "$root/dest/.qs-variant-smoke.qml" ] || \
+    fail "published variant-smoke updater leaked its wrapper"
+}
+
+test_current_variant_smoke_updater_accepts_payload_without_bridge() {
+  local root="$WORK/current-variant-smoke-updater" target
+  [ "${QS_SHELL_RUN_REAL_VARIANT_SMOKE:-0}" = "1" ] || return 0
+  init_fixture "$root"
+  commit_integrated_migration_target "$root/repo"
+  sed -i '\|^import "variants/V2" as V2Bundle$|d' \
+    "$root/repo/versions/V1/VariantRoot.qml"
+  git -C "$root/repo" add versions/V1/VariantRoot.qml >/dev/null
+  git -C "$root/repo" commit -m "payload-without-bootstrap-bridge" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+  target="$(git -C "$root/repo" rev-parse HEAD)"
+
+  HOME="$root/home" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+    "$CHECK"
+
+  assert_process_tools_isolated "$root"
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+  QS_SHELL_NO_RESTART=1 \
+  QS_SHELL_SMOKE_PLATFORM="${QS_SHELL_REAL_VARIANT_SMOKE_PLATFORM:-wayland}" \
+  QS_SHELL_SMOKE_TIMEOUT=4 \
+    "$APPLY"
+
+  assert_eq "$target" "$(tr -d '[:space:]' < "$root/dest/.qsrise-commit")" \
+    "current variant-smoke updater deployed a payload without the bootstrap bridge"
+  [ ! -e "$root/dest/.qs-variant-smoke.qml" ] || \
+    fail "current variant-smoke updater leaked its wrapper"
+}
+
 test_integrated_v1_update_restarts_through_controller() {
   local root="$WORK/controller-active-v1"
   init_fixture "$root"
@@ -1282,6 +1373,10 @@ test_invalid_inactive_v2_fails_smoke_and_keeps_old_deploy() {
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
   assert_progress_state "$root" failed testing 3 "invalid V2 did not fail in testing phase"
+  assert_contains "Integrated V1/V2 variant smoke failed:" "$(progress_file "$root")" \
+    "invalid V2 failure omitted its QML diagnostic"
+  assert_contains "VariantRoot.qml" "$(progress_file "$root")" \
+    "invalid V2 failure did not identify the broken QML file"
 }
 
 test_qs_module_import_passes_smoke() {
@@ -1587,6 +1682,9 @@ test_shell_apply_launcher_uses_systemd_unit
 test_shell_apply_ui_requires_checked_target_and_dismisses_failure
 test_apply_restarts_bar_in_own_systemd_unit
 test_published_updater_migrates_legacy_v1_to_integrated_generation
+test_variant_smoke_vfs_import_contract
+test_published_variant_smoke_updater_accepts_current_payload
+test_current_variant_smoke_updater_accepts_payload_without_bridge
 test_integrated_v1_update_restarts_through_controller
 test_integrated_v2_update_restarts_without_switching_variant
 test_legacy_controller_without_safe_stop_aborts_before_swap

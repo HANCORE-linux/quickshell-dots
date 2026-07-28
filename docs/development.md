@@ -41,6 +41,14 @@ Run them from the repository root:
 ./tests/qs-theme-update-regression.sh
 ```
 
+The updater suite keeps its ordinary QML checks headless. To additionally prove
+that the published integrated updater can accept the current real V1/V2 payload,
+run its opt-in smoke from an active Wayland session:
+
+```bash
+QS_SHELL_RUN_REAL_VARIANT_SMOKE=1 ./tests/qs-shell-update-regression.sh
+```
+
 Stop after the first failure and preserve its output. A later passing suite does not invalidate an earlier lifecycle or rollback failure.
 
 ## Check shell scripts

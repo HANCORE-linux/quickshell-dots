@@ -805,7 +805,7 @@ QML
 }
 
 smoke_integrated_variants() {
-  local root="$1" smoke wrapper out err qs_bin smoke_timeout smoke_platform
+  local root="$1" smoke wrapper out err qs_bin smoke_timeout smoke_platform detail
 
   [ -f "$root/VariantRoot.qml" ] || fail "Integrated payload is missing the V1 VariantRoot."
   [ -f "$root/variants/V2/VariantRoot.qml" ] || fail "Integrated payload is missing the V2 VariantRoot."
@@ -820,6 +820,8 @@ smoke_integrated_variants() {
   wrapper="$root/.qs-variant-smoke.qml"
   cat > "$wrapper" <<'QML'
 import QtQuick
+// Register the complete lazy V2 type graph with Quickshell's VFS scanner.
+import "variants/V2" as V2Bundle
 
 QtObject {
   id: root
@@ -874,8 +876,19 @@ QML
     rm -rf "$smoke"
     return 0
   fi
+  detail="$(grep -h -F -m1 "QS_SHELL_SMOKE_FAIL " "$out" 2>/dev/null || true)"
+  if [ -z "$detail" ]; then
+    detail="$(grep -h -F -m1 "QS_SHELL_SMOKE_FAIL " "$err" 2>/dev/null || true)"
+  fi
+  detail="${detail#*QS_SHELL_SMOKE_FAIL }"
+  if [ "${#detail}" -gt 600 ]; then
+    detail="${detail:0:597}..."
+  fi
   rm -f "$wrapper"
   rm -rf "$smoke"
+  if [ -n "$detail" ]; then
+    fail "Integrated V1/V2 variant smoke failed: $detail"
+  fi
   fail "Integrated V1/V2 variant smoke failed."
 }
 

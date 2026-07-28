@@ -9,6 +9,10 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "panels"
+// Compatibility bridge for already-installed integrated updaters whose smoke
+// wrapper loads this adapter directly. Register the lazy V2 bundle here as well
+// so Quickshell's virtual filesystem scanner can resolve its complete type graph.
+import "variants/V2" as V2Bundle
 
 Item {
     id: root
