@@ -7,6 +7,9 @@ HOOK="$REPO_ROOT/contrib/post-boot.d/quickshell-rise"
 INSTALLER="$REPO_ROOT/install.sh"
 UNINSTALLER="$REPO_ROOT/uninstall.sh"
 README="$REPO_ROOT/README.md"
+GETTING_STARTED="$REPO_ROOT/docs/getting-started.md"
+MAINTENANCE="$REPO_ROOT/docs/maintenance-and-recovery.md"
+USAGE="$REPO_ROOT/docs/usage.md"
 V1_THEME="$REPO_ROOT/versions/V1/Theme.qml"
 V1_PALETTE="$REPO_ROOT/versions/V1/Palette.js"
 V1_CONTROL_PANEL="$REPO_ROOT/versions/V1/panels/ControlPanel.qml"
@@ -967,10 +970,11 @@ case_static_contracts() {
   assert_before "if ! verify_selected_variant" "qsr_hide_stock_bar_owned" "$INSTALLER" "health before Quattro hide"
   assert_before "if ! qsr_release_owned_stock_bar" "if ! qsr_stop_bar_instances" "$UNINSTALLER" "show before stop"
   assert_contains "left it stopped because the Omarchy stock bar is active" "$UNINSTALLER" "backup double-bar guard"
-  assert_contains "Other Hyprland systems" "$README" "non-Omarchy compatibility docs"
-  assert_contains "For scripted" "$README" "non-interactive prompt docs"
+  assert_contains "Other Hyprland systems" "$MAINTENANCE" "non-Omarchy compatibility docs"
+  assert_contains "Flags let non-interactive installs choose autostart" \
+    "$GETTING_STARTED" "non-interactive prompt docs"
   assert_contains "hypridle cava)" "$INSTALLER" "CAVA optional dependency check"
-  assert_contains "\`cava\` provides the real-time waveform" "$README" "CAVA optional dependency docs"
+  assert_contains "real-time CAVA waveform" "$USAGE" "CAVA optional dependency docs"
 
   # V1's palette and MPRIS presentation are persisted extensions of the legacy
   # cache schema. Guard both ends so a UI-only refactor cannot silently leave a
