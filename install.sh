@@ -305,7 +305,8 @@ fi
 
 payload="$tmp/repo/versions/V1"
 [[ -f "$payload/shell.qml" && -f "$payload/VariantRoot.qml" \
-   && -f "$payload/variants/V2/VariantRoot.qml" ]] || {
+   && -f "$payload/variants/V2/VariantRoot.qml" \
+   && -x "$payload/core/qs-system-update.sh" ]] || {
   err "Integrated V1/V2 payload is incomplete"
   exit 1
 }

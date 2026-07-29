@@ -33,6 +33,10 @@ assert_file() {
   [[ -f $1 ]] || fail "$2: missing $1"
 }
 
+assert_executable() {
+  [[ -x $1 ]] || fail "$2: missing executable $1"
+}
+
 assert_no_file() {
   [[ ! -e $1 ]] || fail "$2: unexpected $1"
 }
@@ -135,11 +139,14 @@ SCRIPT
 build_installer_fixture() {
   local repo="$WORK/installer-source"
 
-  mkdir -p "$repo/contrib/post-boot.d" "$repo/versions/V1/variants/V2" \
+  mkdir -p "$repo/contrib/post-boot.d" "$repo/versions/V1/core" \
+    "$repo/versions/V1/variants/V2" \
     "$repo/scripts" "$repo/systemd"
   printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/shell.qml"
   printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/VariantRoot.qml"
   printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/variants/V2/VariantRoot.qml"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/versions/V1/core/qs-system-update.sh"
+  chmod 0755 "$repo/versions/V1/core/qs-system-update.sh"
 
   # Stock-bar ownership remains isolated from the host. Installer readiness is
   # intentionally not stubbed here: the fixture ships the real qs-barctl below
@@ -212,6 +219,13 @@ SCRIPT
   git -C "$repo" config user.email test@example.invalid
   git -C "$repo" config user.name Test
   git -C "$repo" add -A
+  git -C "$repo" update-index --chmod=+x \
+    contrib/post-boot.d/quickshell-rise \
+    scripts/qs-barctl \
+    scripts/qs-proj \
+    scripts/qs-shell-check-update.sh \
+    scripts/qs-shell-apply-update.sh \
+    versions/V1/core/qs-system-update.sh
   git -C "$repo" commit -m fixture >/dev/null
 
   sed "s|^REPO_URL=.*|REPO_URL=\"$repo\"|" "$INSTALLER" > "$WORK/install-under-test.sh"
@@ -397,7 +411,7 @@ assert_installer_manual_mode() {
 
 case_installer_interactive_prompt_matrix() {
   local prompt="Omarchy Quattro detected. Hide the stock bar and start Rise automatically at login? [Y/n]"
-  local root
+  local root source="$WORK/installer-source"
 
   command -v script >/dev/null 2>&1 || fail "script is required for installer PTY regressions"
   build_installer_fixture
@@ -538,6 +552,44 @@ SCRIPT
     "variant fallback restored previous active variant"
   assert_contains "Requested 'v2', but the integrated host became ready as 'v1'" \
     "$root/installer.out" "variant fallback diagnostic"
+
+  git -C "$source" rm versions/V1/core/qs-system-update.sh >/dev/null
+  git -C "$source" commit -m missing-system-update-adapter >/dev/null
+  root="$WORK/installer-missing-system-update-adapter"
+  make_installer_case "$root"
+  if run_installer_without_tty "$root" --no-autostart; then
+    fail "installer accepted a payload missing the system-update adapter"
+  fi
+  assert_contains "Integrated V1/V2 payload is incomplete" "$root/installer.out" \
+    "missing system-update adapter diagnostic"
+  assert_no_file "$root/home/.config/quickshell/bar/shell.qml" \
+    "missing system-update adapter install mutation"
+
+  mkdir -p "$source/versions/V1/core"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$source/versions/V1/core/qs-system-update.sh"
+  chmod 0644 "$source/versions/V1/core/qs-system-update.sh"
+  git -C "$source" add versions/V1/core/qs-system-update.sh
+  git -C "$source" update-index --chmod=-x versions/V1/core/qs-system-update.sh
+  git -C "$source" commit -m nonexecutable-system-update-adapter >/dev/null
+  root="$WORK/installer-nonexecutable-system-update-adapter"
+  make_installer_case "$root"
+  if run_installer_without_tty "$root" --no-autostart; then
+    fail "installer accepted a non-executable system-update adapter"
+  fi
+  assert_contains "Integrated V1/V2 payload is incomplete" "$root/installer.out" \
+    "non-executable system-update adapter diagnostic"
+  assert_no_file "$root/home/.config/quickshell/bar/shell.qml" \
+    "non-executable system-update adapter install mutation"
+
+  chmod 0755 "$source/versions/V1/core/qs-system-update.sh"
+  git -C "$source" add versions/V1/core/qs-system-update.sh
+  git -C "$source" update-index --chmod=+x versions/V1/core/qs-system-update.sh
+  git -C "$source" commit -m restore-system-update-adapter >/dev/null
+  root="$WORK/installer-system-update-adapter"
+  make_installer_case "$root"
+  run_installer_without_tty "$root" --no-autostart
+  assert_executable "$root/home/.config/quickshell/bar/core/qs-system-update.sh" \
+    "installed system-update adapter"
 }
 
 run_uninstaller() {

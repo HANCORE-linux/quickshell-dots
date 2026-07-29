@@ -61,7 +61,10 @@ The updater swaps the installed generation on the same filesystem and restarts t
 
 Existing V1-only installations can migrate through the published updater. When no previous variant state exists, the integrated generation starts with V1.
 
-Package updates run through the ArchUpdater panel. Its security gate checks packages against the known-infected Arch User Repository (AUR) list and blocks known-bad packages from the generated update command.
+Package updates run through the ArchUpdater panel, with two explicit execution models:
+
+- On plain Arch, the security gate checks every displayed repository package against the known-infected Arch User Repository (AUR) list. The apply helper then re-scans and re-runs the gate after authentication before it can execute the complete `pacman -Syu` transaction.
+- On Omarchy, the package results are advisory. The update button opens Omarchy's official updater, which owns its broader system, migration, AUR, and tooling transaction. The Quickshell gate neither filters nor claims to authorize that upstream transaction.
 
 ## Read Quickshell logs
 

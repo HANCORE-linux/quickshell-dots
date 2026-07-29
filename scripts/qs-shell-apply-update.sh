@@ -809,6 +809,8 @@ smoke_integrated_variants() {
 
   [ -f "$root/VariantRoot.qml" ] || fail "Integrated payload is missing the V1 VariantRoot."
   [ -f "$root/variants/V2/VariantRoot.qml" ] || fail "Integrated payload is missing the V2 VariantRoot."
+  [ -x "$root/core/qs-system-update.sh" ] || \
+    fail "Integrated payload is missing the executable system-update adapter."
   qs_bin="${QS_SHELL_QUICKSHELL_BIN:-}"
   if [ -z "$qs_bin" ]; then
     qs_bin="$(command -v quickshell 2>/dev/null || command -v qs 2>/dev/null || true)"

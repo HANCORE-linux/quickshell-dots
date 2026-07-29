@@ -40,6 +40,11 @@ assert_not_contains() {
   [ ! -f "$file" ] || ! grep -Fq -- "$needle" "$file" || fail "$msg: unexpected '$needle'"
 }
 
+assert_executable() {
+  local file="$1" msg="$2"
+  [ -x "$file" ] || fail "$msg: missing executable $file"
+}
+
 state_file() {
   printf '%s/.cache/qs-shell/update-available.json\n' "$1/home"
 }
@@ -59,7 +64,8 @@ notify_log() {
 write_payload() {
   local repo="$1" label="$2" mode="${3:-ok}"
   rm -rf "$repo/versions" "$repo/scripts" "$repo/systemd" "$repo/hooks"
-  mkdir -p "$repo/versions/V1/variants/V2" "$repo/scripts" "$repo/systemd" "$repo/hooks"
+  mkdir -p "$repo/versions/V1/core" "$repo/versions/V1/variants/V2" \
+    "$repo/scripts" "$repo/systemd" "$repo/hooks"
   case "$mode" in
     missing-shell) ;;
     invalid-shell) printf 'import QtQuick\nItem {\n' > "$repo/versions/V1/shell.qml" ;;
@@ -116,6 +122,16 @@ QML
     printf 'import QtQuick\nItem { required property var variantHost }\n' > "$repo/versions/V1/variants/V2/VariantRoot.qml"
   fi
   printf '%s\n' "$label" > "$repo/versions/V1/payload.txt"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/versions/V1/core/qs-system-update.sh"
+  chmod 755 "$repo/versions/V1/core/qs-system-update.sh"
+  case "$mode" in
+    missing-system-update-adapter)
+      rm -f "$repo/versions/V1/core/qs-system-update.sh"
+      ;;
+    nonexecutable-system-update-adapter)
+      chmod 644 "$repo/versions/V1/core/qs-system-update.sh"
+      ;;
+  esac
   printf '%s\n' "$label" > "$repo/scripts/companion.txt"
   mkdir -p "$repo/contrib/post-boot.d"
   printf 'post-boot-%s\n' "$label" > "$repo/contrib/post-boot.d/quickshell-rise"
@@ -217,6 +233,15 @@ commit_payload() {
   local repo="$1" label="$2" mode="${3:-ok}"
   write_payload "$repo" "$label" "$mode"
   git -C "$repo" add -A >/dev/null
+  case "$mode" in
+    missing-system-update-adapter) ;;
+    nonexecutable-system-update-adapter)
+      git -C "$repo" update-index --chmod=-x versions/V1/core/qs-system-update.sh
+      ;;
+    *)
+      git -C "$repo" update-index --chmod=+x versions/V1/core/qs-system-update.sh
+      ;;
+  esac
   git -C "$repo" commit -m "payload-$label" >/dev/null
 }
 
@@ -605,6 +630,8 @@ test_remote_moves_but_apply_installs_checked_target() {
   run_apply "$root" >/dev/null
 
   assert_dest_label "$root" A
+  assert_executable "$root/dest/core/qs-system-update.sh" \
+    "installed system-update adapter"
   assert_eq "$target_a" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "deploy stayed pinned to checked target"
   assert_eq "$(target_payload_hash "$root" "$target_a")" "$(installed_payload_hash "$root/dest")" "installed payload byte hash"
   assert_eq "$(git -C "$root/repo" rev-parse "$target_a:versions/V1")" \
@@ -1302,6 +1329,40 @@ test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
   assert_progress_state "$root" failed testing 3 "staging smoke failure did not fail in testing phase"
 }
 
+test_missing_system_update_adapter_keeps_old_deploy_and_pending_state() {
+  local root="$WORK/missing-system-update-adapter"
+  init_fixture "$root"
+  make_update_and_check "$root" missing-adapter missing-system-update-adapter
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with a staged payload missing the system-update adapter"
+  fi
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "missing adapter did not fail in testing phase"
+  assert_contains "missing the executable system-update adapter" "$(progress_file "$root")" \
+    "missing adapter failure did not identify the incomplete payload"
+}
+
+test_nonexecutable_system_update_adapter_keeps_old_deploy_and_pending_state() {
+  local root="$WORK/nonexecutable-system-update-adapter"
+  init_fixture "$root"
+  make_update_and_check "$root" nonexec-adapter nonexecutable-system-update-adapter
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with a non-executable staged system-update adapter"
+  fi
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "non-executable adapter did not fail in testing phase"
+  assert_contains "missing the executable system-update adapter" "$(progress_file "$root")" \
+    "non-executable adapter failure did not identify the incomplete payload"
+}
+
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy() {
   local root="$WORK/invalid-qml"
   init_fixture "$root"
@@ -1697,6 +1758,8 @@ test_recent_running_progress_blocks_second_apply
 test_stale_running_progress_can_be_replaced
 test_progress_failure_in_checking_phase
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state
+test_missing_system_update_adapter_keeps_old_deploy_and_pending_state
+test_nonexecutable_system_update_adapter_keeps_old_deploy_and_pending_state
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy
 test_invalid_import_fails_smoke_and_keeps_old_deploy
 test_bad_local_import_fails_smoke_and_keeps_old_deploy

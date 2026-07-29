@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# QS_ARCH_APPLY_PROTOCOL=2
 # Privileged apply gate for the Quickshell Arch updater.
 #
-# Refuses to run pacman unless the displayed scan, persisted gate verdict and a
-# fresh post-auth checkupdates scan all describe the same official repo package
-# set. No package names are passed to pacman; the only success path is the full
-# repository transaction: sudo pacman -Syu.
+# Omarchy owns its complete update transaction, so every detected Omarchy
+# installation is delegated to its public updater. On plain Arch, refuse to run
+# pacman unless the displayed scan, persisted gate verdict and a fresh post-auth
+# checkupdates scan all describe the same official repo package set.
 set -euo pipefail
 
 STATE="${QS_ARCH_UPDATE_STATE:-$HOME/.cache/qs-arch-updates.json}"
@@ -35,6 +36,112 @@ fail() {
   exit 1
 }
 
+confirm_arch_update() {
+  local prompt="$1" answer
+  if command -v gum >/dev/null 2>&1; then
+    gum confirm "$prompt"
+    return
+  fi
+  if ! printf '%s [y/N] ' "$prompt" >/dev/tty 2>/dev/null \
+      || ! IFS= read -r answer </dev/tty; then
+    return 1
+  fi
+  case "${answer,,}" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+OMARCHY_SYSTEM_ROOT="${QS_ARCH_OMARCHY_SYSTEM_ROOT:-/usr/share/omarchy}"
+OMARCHY_USER_ROOT="${QS_ARCH_OMARCHY_USER_ROOT:-$HOME/.local/share/omarchy}"
+
+resolve_command() {
+  local override_name="$1" command_name="$2"
+  shift 2
+  local candidate
+
+  if [[ -v $override_name ]]; then
+    candidate="${!override_name}"
+    [ -x "$candidate" ] && readlink -f "$candidate"
+    return 0
+  fi
+
+  candidate="$(type -P "$command_name" 2>/dev/null || true)"
+  for candidate in "$candidate" "$@"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      readlink -f "$candidate"
+      return 0
+    fi
+  done
+  return 0
+}
+
+resolve_pacman() {
+  local candidate
+  if [[ -v QS_ARCH_PACMAN_PROBE_COMMAND ]]; then
+    candidate="$QS_ARCH_PACMAN_PROBE_COMMAND"
+    if [[ "$candidate" == */* ]]; then
+      [ -x "$candidate" ] && readlink -f "$candidate"
+    else
+      type -P "$candidate" 2>/dev/null || true
+    fi
+  else
+    type -P pacman 2>/dev/null || true
+  fi
+  return 0
+}
+
+OMARCHY_UPDATE_COMMAND="$(resolve_command QS_ARCH_OMARCHY_UPDATE_COMMAND omarchy-update \
+  "$OMARCHY_USER_ROOT/bin/omarchy-update" \
+  "$OMARCHY_SYSTEM_ROOT/bin/omarchy-update")"
+OMARCHY_CLI_COMMAND="$(resolve_command QS_ARCH_OMARCHY_CLI_COMMAND omarchy \
+  "$OMARCHY_USER_ROOT/bin/omarchy" \
+  "$OMARCHY_SYSTEM_ROOT/bin/omarchy")"
+PACMAN_COMMAND="$(resolve_pacman)"
+
+if [ -n "$OMARCHY_UPDATE_COMMAND" ]; then
+  UPDATE_BACKEND="omarchy-update"
+elif [ -n "$OMARCHY_CLI_COMMAND" ]; then
+  UPDATE_BACKEND="omarchy-cli"
+elif [ -d "$OMARCHY_SYSTEM_ROOT" ] || [ -d "$OMARCHY_USER_ROOT" ]; then
+  UPDATE_BACKEND="omarchy-broken"
+elif [ -n "$PACMAN_COMMAND" ]; then
+  UPDATE_BACKEND="arch"
+else
+  UPDATE_BACKEND="unsupported"
+fi
+
+if [ "${1:-}" = "--backend" ]; then
+  case "$UPDATE_BACKEND" in
+    omarchy-update|omarchy-cli) printf 'omarchy\n' ;;
+    *) printf '%s\n' "$UPDATE_BACKEND" ;;
+  esac
+  exit 0
+fi
+
+CONFIRM_ARCH_UPDATE=0
+case "${1:-}" in
+  --run)
+    shift
+    CONFIRM_ARCH_UPDATE=1
+    ;;
+esac
+
+case "$UPDATE_BACKEND" in
+  omarchy-update)
+    exec "$OMARCHY_UPDATE_COMMAND"
+    ;;
+  omarchy-cli)
+    exec "$OMARCHY_CLI_COMMAND" update
+    ;;
+  omarchy-broken)
+    fail "Omarchy is installed but its update command is unavailable"
+    ;;
+  unsupported)
+    fail "no supported system update backend was found"
+    ;;
+esac
+
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 command -v sudo >/dev/null 2>&1 || fail "sudo is required"
 [ -x "$CHECK_HELPER" ] || fail "arch update check helper is missing"
@@ -46,6 +153,7 @@ expected_scan_id="${1:-}"
 expected_system_hash="${2:-}"
 expected_system_count="${3:-}"
 expected_checked_epoch="${4:-}"
+expected_aur_count="${5:-0}"
 [ -n "$expected_scan_id" ] || fail "expected scan id is missing"
 case "$expected_system_hash" in
   [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
@@ -53,6 +161,7 @@ case "$expected_system_hash" in
 esac
 case "$expected_system_count" in ''|*[!0-9]*) fail "expected package count is malformed" ;; esac
 case "$expected_checked_epoch" in ''|*[!0-9]*) fail "expected scan timestamp is malformed" ;; esac
+case "$expected_aur_count" in ''|*[!0-9]*) fail "expected AUR package count is malformed" ;; esac
 
 state_tsv="$(jq -er '
   select(.schemaVersion == 1)
@@ -119,6 +228,14 @@ check_age "$checked_epoch" "checked package scan"
 
 validate_initial_gate "$scan_id" "$system_hash" "$system_count" "$GATE_STATE" \
   || fail "package gate verdict does not match the checked scan"
+
+if (( CONFIRM_ARCH_UPDATE )); then
+  prompt="Run full repository upgrade for $expected_system_count pacman packages?"
+  if (( expected_aur_count > 0 )); then
+    prompt+=" $expected_aur_count AUR review packages will be skipped."
+  fi
+  confirm_arch_update "$prompt" || exit 0
+fi
 
 sudo -v || fail "sudo authentication failed"
 check_age "$checked_epoch" "checked package scan"

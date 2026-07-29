@@ -27,6 +27,92 @@ PanelWindow {
     readonly property int themeRightBlockWidth: themeActionsWidth
         + themeBehindWidth + themeStateWidth + themeGridGap * 2
 
+    readonly property url packageFrontendUrl: Qt.resolvedUrl("../core/qs-system-update.sh")
+    readonly property string packageFrontendScript: decodeURIComponent(
+        String(packageFrontendUrl).replace(/^file:\/\//, ""))
+    readonly property string packageApplyScript: Quickshell.env("HOME") + "/.local/bin/qs-arch-apply-update.sh"
+    property string packageUpdateBackend: "detecting"
+    property string packageUpdateMode: ""
+    property string packageUpdateCommand: ""
+    property string packageApplyProtocol: ""
+    property bool packageBackendProbeResolved: false
+    readonly property bool usesOmarchyUpdater: packageUpdateBackend === "omarchy"
+    readonly property bool packageUpdateBackendAvailable: usesOmarchyUpdater
+        ? packageUpdateCommand !== ""
+        : packageUpdateBackend === "arch"
+            && packageUpdateCommand !== ""
+            && packageApplyProtocol === "2"
+
+    function failPackageBackendProbe() {
+        if (packageUpdateBackend !== "detecting") return
+        packageUpdateBackend = "probe-failed"
+        packageUpdateMode = ""
+        packageUpdateCommand = ""
+        packageApplyProtocol = ""
+        packageBackendProbeResolved = false
+    }
+
+    function retryPackageBackendProbe() {
+        // `running` stays true while SIGTERM is still being reaped. Waiting for
+        // it to become false prevents an old onExited from landing in a new run.
+        if (packageBackendProbe.running
+                || packageUpdateBackend === "detecting"
+                || packageUpdateBackendAvailable) return
+        packageUpdateMode = ""
+        packageUpdateCommand = ""
+        packageApplyProtocol = ""
+        packageBackendProbeResolved = false
+        packageUpdateBackend = "detecting"
+        packageBackendProbe.running = true
+    }
+
+    Process {
+        id: packageBackendProbe
+        // This side-effect-free adapter ships in the same atomic QML generation.
+        // Never probe an older privileged apply helper with an unknown argument.
+        command: [archPanel.packageFrontendScript, "--probe", archPanel.packageApplyScript]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var line = String(this.text || "").split("\n")[0].replace(/\r$/, "")
+                var parts = line.split("\t")
+                if (parts.length !== 4) return
+                var backend = parts[0]
+                var mode = parts[1]
+                var commandPath = parts[2]
+                var protocol = parts[3]
+                var relationOk = (backend === "omarchy" && (mode === "update" || mode === "cli")
+                        && commandPath.indexOf("/") === 0)
+                    || (backend === "arch" && mode === "apply" && commandPath.indexOf("/") === 0)
+                    || ((backend === "omarchy-broken" || backend === "unsupported")
+                        && mode === "none" && commandPath === "")
+                if (!relationOk || (protocol !== "2" && protocol !== "legacy" && protocol !== "missing"))
+                    return
+                archPanel.packageUpdateBackend = backend
+                archPanel.packageUpdateMode = mode
+                archPanel.packageUpdateCommand = commandPath
+                archPanel.packageApplyProtocol = protocol
+                archPanel.packageBackendProbeResolved = true
+                packageBackendProbeTimeout.stop()
+            }
+        }
+        onExited: (exitCode) => {
+            if (exitCode !== 0 && !archPanel.packageBackendProbeResolved)
+                archPanel.failPackageBackendProbe()
+        }
+    }
+
+    Timer {
+        id: packageBackendProbeTimeout
+        interval: 2000
+        running: archPanel.packageUpdateBackend === "detecting"
+        repeat: false
+        onTriggered: {
+            archPanel.failPackageBackendProbe()
+            packageBackendProbe.running = false
+        }
+    }
+
     Process {
         id: panelUpdateRunner
         // No default command: package updates and theme-terminal launches build
@@ -141,6 +227,7 @@ PanelWindow {
 
     function refreshPackagesTabState() {
         archPanel.nowEpoch = Math.floor(Date.now() / 1000)
+        archPanel.retryPackageBackendProbe()
         root.archGateRescan()
         if (root.archUpdates.length === 0) root.archRefreshTick++
     }
@@ -219,7 +306,10 @@ PanelWindow {
         && repoOkPackages === repoUpdatePackages
         && (root.archGateState === "clean" || root.archGateState === "warn")
         && !root.archGateDegraded
-    readonly property bool canUpdate: repoGateAllowsFullUpgrade
+    // Omarchy owns a broader transaction (system, migrations, AUR, tooling).
+    // Its launcher is intentionally independent from this advisory package gate.
+    readonly property bool canUpdate: packageUpdateBackendAvailable
+        && (usesOmarchyUpdater || repoGateAllowsFullUpgrade)
     readonly property string repoBlockReason: {
         if (repoUpdatePackages === 0) return "No pacman updates"
         if (!repoScanFresh) return "Repo upgrade blocked: refresh scan"
@@ -232,6 +322,12 @@ PanelWindow {
         return ""
     }
     readonly property string repoBlockButtonText: {
+        if (packageUpdateBackend === "detecting") return "Detecting updater"
+        if (packageUpdateBackend === "probe-failed") return "Updater detection failed"
+        if (packageUpdateBackend === "omarchy-broken") return "Omarchy updater missing"
+        if (packageUpdateBackend === "unsupported") return "Updater unavailable"
+        if (packageUpdateBackend === "arch" && packageApplyProtocol !== "2")
+            return "Update shell helper"
         if (repoUpdatePackages === 0) return "No updates"
         if (!repoScanFresh) return "Refresh required"
         if (!repoScanMatchesUpdates) return "Scan drift"
@@ -242,6 +338,9 @@ PanelWindow {
         if (repoOkPackages !== repoUpdatePackages) return "Unverified package"
         return archPanel.repoBlockReason
     }
+    readonly property string packageUpdateButtonText: usesOmarchyUpdater
+        ? "Open Omarchy update"
+        : "Full repo upgrade (" + repoUpdatePackages + ")"
     function shellQuote(value) {
         return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
     }
@@ -260,6 +359,25 @@ PanelWindow {
             + " GUM_CONFIRM_SELECTED_BACKGROUND=" + shellQuote(hexColor(root.seal))
             + " GUM_CONFIRM_UNSELECTED_FOREGROUND=" + shellQuote(hexColor(root.ink))
             + " GUM_CONFIRM_UNSELECTED_BACKGROUND=" + shellQuote(hexColor(root.bg))
+    }
+    function themedGumEnvironment() {
+        return [
+            "GUM_CONFIRM_PROMPT_FOREGROUND=" + hexColor(root.ink),
+            "GUM_CONFIRM_PROMPT_BACKGROUND=" + hexColor(root.bg),
+            "GUM_CONFIRM_SELECTED_FOREGROUND=" + hexColor(root.paper),
+            "GUM_CONFIRM_SELECTED_BACKGROUND=" + hexColor(root.seal),
+            "GUM_CONFIRM_UNSELECTED_FOREGROUND=" + hexColor(root.ink),
+            "GUM_CONFIRM_UNSELECTED_BACKGROUND=" + hexColor(root.bg)
+        ]
+    }
+    function launchPackageUpdate(command) {
+        panelUpdateRunner.command = ["env", "-u", "NO_COLOR"]
+            .concat(themedGumEnvironment())
+            .concat([packageFrontendScript, "--launch"])
+            .concat(command)
+        root.archVisible = false
+        panelUpdateRunner.running = false
+        panelUpdateRunner.running = true
     }
 
     // ── theme update = visible terminal, pinned to the checked commit ──
@@ -956,8 +1074,8 @@ PanelWindow {
                     }
                 }
 
-                // Update — full repo/system transaction via the checked apply helper;
-                // AUR is never installed here.
+                // Update — Omarchy owns its full pipeline when present; plain Arch
+                // keeps the checked all-or-nothing repository transaction.
                 Rectangle {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
@@ -968,7 +1086,7 @@ PanelWindow {
                     UiText {
                         anchors.centerIn: parent
                         text: archPanel.canUpdate
-                            ? "Full repo upgrade (" + archPanel.repoUpdatePackages + ")"
+                            ? archPanel.packageUpdateButtonText
                             : archPanel.repoBlockButtonText
                         width: parent.width - 16
                         horizontalAlignment: Text.AlignHCenter
@@ -983,26 +1101,20 @@ PanelWindow {
                         enabled: archPanel.canUpdate
                         cursorShape: archPanel.canUpdate ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
-                            // Full repository upgrade only. The helper revalidates the
-                            // checked scan, gate verdict and a fresh checkupdates scan
-                            // before it can launch sudo pacman -Syu.
-                            var prompt = "Run full repository upgrade for " + archPanel.repoUpdatePackages + " pacman packages?";
-                            if (archPanel.aurReviewPackages > 0)
-                                prompt += " " + archPanel.aurReviewPackages + " AUR review packages will be skipped.";
-                            var applyScript = Quickshell.env("HOME") + "/.local/bin/qs-arch-apply-update.sh";
-                            var updateCommand = archPanel.themedGumConfirmEnv()
-                                + " gum confirm " + archPanel.shellQuote(prompt)
-                                + " && " + archPanel.shellQuote(applyScript)
-                                + " " + archPanel.shellQuote(root.archScanId)
-                                + " " + archPanel.shellQuote(root.archScanHash)
-                                + " " + archPanel.shellQuote(root.archScanSystemCount)
-                                + " " + archPanel.shellQuote(root.archScanCheckedEpoch);
-                            panelUpdateRunner.command = ["bash", "-c",
-                                "omarchy-launch-floating-terminal-with-presentation "
-                                    + archPanel.shellQuote(updateCommand)];
-                            root.archVisible = false;
-                            panelUpdateRunner.running = false;
-                            panelUpdateRunner.running = true;
+                            var command = [archPanel.packageUpdateCommand]
+                            if (archPanel.usesOmarchyUpdater) {
+                                if (archPanel.packageUpdateMode === "cli") command.push("update")
+                            } else {
+                                command.push(
+                                    "--run",
+                                    root.archScanId,
+                                    root.archScanHash,
+                                    String(root.archScanSystemCount),
+                                    String(root.archScanCheckedEpoch),
+                                    String(archPanel.aurReviewPackages)
+                                )
+                            }
+                            archPanel.launchPackageUpdate(command)
                         }
                     }
                 }
