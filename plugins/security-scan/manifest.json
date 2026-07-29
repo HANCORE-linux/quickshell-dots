@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "local.security-scan",
+  "name": "Security Scan",
+  "version": "1.0.0",
+  "author": "HANCORE-linux (fork: elynch303)",
+  "description": "AUR-malware and bumblebee package security scan badge, installable on any Omarchy bar",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "SecurityWidget.qml" }
+}
