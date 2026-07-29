@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "local.rise",
+  "name": "Rise",
+  "version": "2.0.0",
+  "author": "HANCORE-linux (fork: elynch303)",
+  "description": "Rise V2 - a full custom Quickshell bar with theme picker, widget drag/drop, and popup panels",
+  "kinds": ["bar"],
+  "entryPoints": { "bar": "shell.qml" }
+}
