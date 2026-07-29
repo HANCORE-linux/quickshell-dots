@@ -70,6 +70,30 @@ assert_before() {
     fail "$message: '$first_pattern' ($first_line) must precede '$second_pattern' ($second_line)"
 }
 
+qml_process_command() {
+  local file="$1" process_id="$2"
+
+  awk -v wanted="$process_id" '
+    $0 ~ "id: " wanted "$" { found = 1; next }
+    found && $0 ~ /command: \["bash", "-c", "/ {
+      line = $0
+      sub(/^.*command: \["bash", "-c", "/, "", line)
+      sub(/"\][[:space:]]*$/, "", line)
+      print line
+      exit
+    }
+  ' "$file"
+}
+
+probe_rc() {
+  local command="$1"
+  shift
+  local rc=0
+
+  "$@" /usr/bin/bash -c "$command" || rc=$?
+  printf '%s\n' "$rc"
+}
+
 assert_shared_function_same() {
   local function_name="$1"
 
@@ -1009,6 +1033,77 @@ SCRIPT
   assert_file "$root/home/.config/quickshell/bar/.qsrise" "registry failure config preservation"
 }
 
+case_omarchy_service_backend_probe_matrix() {
+  local root="$WORK/omarchy-service-probes"
+  local idle_probe notif_probe
+  mkdir -p "$root/bin" \
+    "$root/omarchy/shell/plugins/services/idle" \
+    "$root/omarchy/shell/plugins/notifications"
+  : > "$root/omarchy/shell/plugins/services/idle/manifest.json"
+  : > "$root/omarchy/shell/plugins/notifications/manifest.json"
+
+  cat > "$root/bin/omarchy-shell" <<'SCRIPT'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "idle status")
+    exit "${QSR_TEST_IDLE_RC:-0}"
+    ;;
+  "notifications ping")
+    [[ ${QSR_TEST_NOTIF_RC:-0} == 0 ]] || exit "${QSR_TEST_NOTIF_RC}"
+    printf '%s\n' "${QSR_TEST_NOTIF_REPLY:-ok}"
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+SCRIPT
+  chmod 0755 "$root/bin/omarchy-shell"
+
+  idle_probe="$(qml_process_command "$V1_THEME" idleBackendProc)"
+  notif_probe="$(qml_process_command "$V1_THEME" notifBackendProc)"
+  [[ -n $idle_probe && -n $notif_probe ]] \
+    || fail "Omarchy service backend probes are missing"
+  assert_eq "$idle_probe" "$(qml_process_command "$V2_THEME" idleBackendProc)" \
+    "V1/V2 idle backend probe"
+  assert_eq "$notif_probe" "$(qml_process_command "$V2_THEME" notifBackendProc)" \
+    "V1/V2 notification backend probe"
+
+  assert_eq 0 "$(probe_rc "$idle_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "enabled Omarchy idle service"
+  assert_eq 0 "$(probe_rc "$notif_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "enabled Omarchy notification service"
+
+  assert_eq 1 "$(probe_rc "$idle_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy" QSR_TEST_IDLE_RC=1)" \
+    "disabled Omarchy idle service"
+  assert_eq 1 "$(probe_rc "$notif_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy" QSR_TEST_NOTIF_RC=1)" \
+    "disabled Omarchy notification service"
+  assert_eq 1 "$(probe_rc "$notif_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy" QSR_TEST_NOTIF_REPLY=stale)" \
+    "invalid Omarchy notification probe response"
+
+  rm "$root/bin/omarchy-shell"
+  assert_eq 1 "$(probe_rc "$idle_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "unreachable Quattro idle service"
+  assert_eq 1 "$(probe_rc "$notif_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "unreachable Quattro notification service"
+
+  rm "$root/omarchy/shell/plugins/services/idle/manifest.json" \
+    "$root/omarchy/shell/plugins/notifications/manifest.json"
+  assert_eq 2 "$(probe_rc "$idle_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "legacy idle backend classification"
+  assert_eq 2 "$(probe_rc "$notif_probe" env \
+    PATH="$root/bin:/usr/bin:/bin" OMARCHY_PATH="$root/omarchy")" \
+    "legacy notification backend classification"
+}
+
 case_bluetooth_settings_launcher_matrix() {
   local root="$WORK/bluetooth-settings-launcher" launch_command
   mkdir -p "$root/bin"
@@ -1098,6 +1193,52 @@ case_static_contracts() {
     "$GETTING_STARTED" "non-interactive prompt docs"
   assert_contains "hypridle cava)" "$INSTALLER" "CAVA optional dependency check"
   assert_contains "real-time CAVA waveform" "$USAGE" "CAVA optional dependency docs"
+  for theme_file in "$V1_THEME" "$V2_THEME"; do
+    assert_contains 'omarchy-shell idle status' "$theme_file" "live Omarchy idle service probe"
+    assert_contains 'omarchy-shell notifications ping' "$theme_file" "live Omarchy notification service probe"
+    assert_not_contains '/usr/share/omarchy/shell/plugins/services/idle/manifest.json' \
+      "$theme_file" "stale Omarchy idle manifest probe"
+    assert_not_contains '/usr/share/omarchy/shell/plugins/notifications/manifest.json' \
+      "$theme_file" "stale Omarchy notification manifest probe"
+    assert_contains 'readonly property string omarchyShellConfigPath:' \
+      "$theme_file" "Omarchy shell config watcher path"
+    assert_contains 'root=${OMARCHY_PATH:-/usr/share/omarchy}' \
+      "$theme_file" "environment-independent Omarchy root"
+    assert_contains 'OMARCHY_PATH=$root omarchy-shell idle status' \
+      "$theme_file" "resolved Omarchy root for idle IPC"
+    assert_contains 'OMARCHY_PATH=$root omarchy-shell notifications ping' \
+      "$theme_file" "resolved Omarchy root for notification IPC"
+    assert_contains 'theme._idleOmarchyShellSystem = exitCode !== 2' \
+      "$theme_file" "three-state idle backend classification"
+    assert_contains 'theme._notifOmarchyShellSystem = exitCode !== 2' \
+      "$theme_file" "three-state notification backend classification"
+    assert_contains 'watchChanges: theme._idleOmarchyShellSystem' \
+      "$theme_file" "Quattro idle state-file fallback"
+    assert_contains 'watchChanges: theme._notifOmarchyShellSystem' \
+      "$theme_file" "Quattro notification state-file fallback"
+    assert_contains 'if (!theme._idleOmarchyShellSystem) theme.stayAwake = exitCode !== 0' \
+      "$theme_file" "Quattro idle fallback isolation"
+    assert_contains 'if (!theme._notifOmarchyShellSystem) theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0' \
+      "$theme_file" "Quattro notification fallback isolation"
+    assert_contains 'readonly property var _omarchyBackendRetryDelays: [2000, 5000, 15000]' \
+      "$theme_file" "bounded Omarchy backend retry schedule"
+    assert_contains 'return (_idleOmarchyShellSystem && !_idleOmarchyShellBackend)' \
+      "$theme_file" "Quattro-only backend retries"
+    assert_contains 'id: omarchyBackendProbeDebounce' \
+      "$theme_file" "Omarchy backend re-probe debounce"
+    assert_contains 'id: omarchyBackendConfirmTimer' \
+      "$theme_file" "Omarchy backend confirmation probe"
+    assert_contains 'if (idleBackendProc.running || notifBackendProc.running)' \
+      "$theme_file" "Omarchy backend in-flight guard"
+    assert_not_contains 'atomicWrites: true' \
+      "$theme_file" "write mode on read-only Omarchy config watcher"
+    assert_not_contains 'Qt.callLater(function() { theme.finishOmarchyBackendReprobe() })' \
+      "$theme_file" "deferred Omarchy backend completion"
+    assert_not_contains 'idleBackendProc.running = false' \
+      "$theme_file" "idle backend probe cancellation"
+    assert_not_contains 'notifBackendProc.running = false' \
+      "$theme_file" "notification backend probe cancellation"
+  done
   assert_before "// Check themes" "// Update clean" "$V1_ARCH_UPDATER" \
     "V1 theme check before apply action"
   assert_before "// Check themes" "// Update clean" "$V2_ARCH_UPDATER" \
@@ -1173,6 +1314,7 @@ case_uninstall_legacy_and_generic
 case_uninstall_removes_lifecycle_controller
 case_uninstall_keeps_ownership_but_removes_lifecycle_state
 case_uninstall_registry_failure_aborts
+case_omarchy_service_backend_probe_matrix
 case_bluetooth_settings_launcher_matrix
 case_static_contracts
 

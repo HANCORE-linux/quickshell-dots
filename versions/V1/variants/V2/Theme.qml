@@ -1602,10 +1602,16 @@ Item {
     readonly property bool hypridleAwake: stayAwake // compatibility alias for older modules
     property bool _idleBackendChecked: false
     property bool _idleOmarchyShellBackend: false
+    property bool _idleOmarchyShellSystem: false
+    property bool _omarchyBackendReprobePending: false
+    property int _omarchyBackendRetryIndex: 0
+    readonly property var _omarchyBackendRetryDelays: [2000, 5000, 15000]
+    readonly property string omarchyShellConfigPath: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
     readonly property string idleStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/indicators/stay-awake"
     property bool notifSilenced: false        // notification do-not-disturb mode
     property bool _notifBackendChecked: false
     property bool _notifOmarchyShellBackend: false
+    property bool _notifOmarchyShellSystem: false
     readonly property string notificationsStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/notifications.json"
     property bool screenRecording: false
     property int screenRecordingElapsed: 0
@@ -1623,7 +1629,7 @@ Item {
 
     function refreshIdleStatus() {
         if (!_idleBackendChecked) return
-        if (_idleOmarchyShellBackend) {
+        if (_idleOmarchyShellSystem) {
             idleStateFile.reload()
             return
         }
@@ -1632,6 +1638,45 @@ Item {
     function refreshStatusIndicators() {
         refreshIdleStatus()
         refreshNotificationStatus()
+    }
+    function reprobeOmarchyShellBackends() {
+        if (idleBackendProc.running || notifBackendProc.running) {
+            _omarchyBackendReprobePending = true
+            return
+        }
+        _omarchyBackendReprobePending = false
+        idleBackendProc.running = true
+        notifBackendProc.running = true
+    }
+    function finishOmarchyBackendReprobe() {
+        if (idleBackendProc.running || notifBackendProc.running) return
+        if (_omarchyBackendReprobePending) {
+            omarchyBackendProbeDebounce.restart()
+            return
+        }
+        scheduleOmarchyBackendRetry()
+    }
+    function omarchyBackendRetryNeeded() {
+        return (_idleOmarchyShellSystem && !_idleOmarchyShellBackend)
+            || (_notifOmarchyShellSystem && !_notifOmarchyShellBackend)
+    }
+    function scheduleOmarchyBackendRetry() {
+        if (!omarchyBackendRetryNeeded()) {
+            omarchyBackendRetryTimer.stop()
+            _omarchyBackendRetryIndex = 0
+            return
+        }
+        if (omarchyBackendConfirmTimer.running || omarchyBackendRetryTimer.running
+                || _omarchyBackendRetryIndex >= _omarchyBackendRetryDelays.length) return
+        omarchyBackendRetryTimer.interval = _omarchyBackendRetryDelays[_omarchyBackendRetryIndex]
+        _omarchyBackendRetryIndex++
+        omarchyBackendRetryTimer.restart()
+    }
+    function resetOmarchyBackendProbes() {
+        omarchyBackendRetryTimer.stop()
+        _omarchyBackendRetryIndex = 0
+        omarchyBackendProbeDebounce.restart()
+        omarchyBackendConfirmTimer.restart()
     }
     function parseNotificationsState(text) {
         try {
@@ -1643,7 +1688,7 @@ Item {
     }
     function refreshNotificationStatus() {
         if (!_notifBackendChecked) return
-        if (_notifOmarchyShellBackend) {
+        if (_notifOmarchyShellSystem) {
             notificationsStateFile.reload()
             return
         }
@@ -1694,51 +1739,89 @@ Item {
 
     Process {
         id: idleBackendProc
-        command: ["bash", "-c", "command -v omarchy-shell >/dev/null 2>&1 && test -f /usr/share/omarchy/shell/plugins/services/idle/manifest.json"]
+        command: ["bash", "-c", "root=${OMARCHY_PATH:-/usr/share/omarchy}; [[ -f $root/shell/plugins/services/idle/manifest.json ]] || exit 2; command -v omarchy-shell >/dev/null 2>&1 && OMARCHY_PATH=$root omarchy-shell idle status >/dev/null 2>&1"]
         running: true
         onExited: (exitCode) => {
+            theme._idleOmarchyShellSystem = exitCode !== 2
             theme._idleOmarchyShellBackend = exitCode === 0
             theme._idleBackendChecked = true
             theme.refreshIdleStatus()
+            theme.finishOmarchyBackendReprobe()
         }
     }
 
     FileView {
         id: idleStateFile
         path: theme.idleStatePath
-        watchChanges: theme._idleOmarchyShellBackend
+        watchChanges: theme._idleOmarchyShellSystem
         printErrors: false
         onFileChanged: idleStateFile.reload()
         onLoaded: {
-            if (theme._idleOmarchyShellBackend) theme.stayAwake = true
+            if (theme._idleOmarchyShellSystem) theme.stayAwake = true
         }
         onLoadFailed: {
-            if (theme._idleOmarchyShellBackend) theme.stayAwake = false
+            if (theme._idleOmarchyShellSystem) theme.stayAwake = false
         }
     }
 
     Process {
         id: notifBackendProc
-        command: ["bash", "-c", "command -v omarchy-shell >/dev/null 2>&1 && test -f /usr/share/omarchy/shell/plugins/notifications/manifest.json"]
+        command: ["bash", "-c", "root=${OMARCHY_PATH:-/usr/share/omarchy}; [[ -f $root/shell/plugins/notifications/manifest.json ]] || exit 2; command -v omarchy-shell >/dev/null 2>&1 && OMARCHY_PATH=$root omarchy-shell notifications ping 2>/dev/null | grep -Fxq ok"]
         running: true
         onExited: (exitCode) => {
+            theme._notifOmarchyShellSystem = exitCode !== 2
             theme._notifOmarchyShellBackend = exitCode === 0
             theme._notifBackendChecked = true
             theme.refreshNotificationStatus()
+            theme.finishOmarchyBackendReprobe()
         }
     }
 
     FileView {
         id: notificationsStateFile
         path: theme.notificationsStatePath
-        watchChanges: theme._notifOmarchyShellBackend
+        watchChanges: theme._notifOmarchyShellSystem
         printErrors: false
         onFileChanged: notificationsStateFile.reload()
         onLoaded: {
-            if (theme._notifOmarchyShellBackend) theme.parseNotificationsState(notificationsStateFile.text())
+            if (theme._notifOmarchyShellSystem) theme.parseNotificationsState(notificationsStateFile.text())
         }
         onLoadFailed: {
-            if (theme._notifOmarchyShellBackend) theme.notifSilenced = false
+            if (theme._notifOmarchyShellSystem) theme.notifSilenced = false
+        }
+    }
+
+    Timer {
+        id: omarchyBackendProbeDebounce
+        interval: 250
+        repeat: false
+        onTriggered: theme.reprobeOmarchyShellBackends()
+    }
+
+    Timer {
+        id: omarchyBackendRetryTimer
+        repeat: false
+        onTriggered: theme.reprobeOmarchyShellBackends()
+    }
+
+    Timer {
+        id: omarchyBackendConfirmTimer
+        interval: 2000
+        repeat: false
+        onTriggered: {
+            theme._omarchyBackendRetryIndex = Math.max(1, theme._omarchyBackendRetryIndex)
+            theme.reprobeOmarchyShellBackends()
+        }
+    }
+
+    FileView {
+        id: omarchyShellConfigFile
+        path: theme.omarchyShellConfigPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: {
+            omarchyShellConfigFile.reload()
+            theme.resetOmarchyBackendProbes()
         }
     }
 
@@ -1747,7 +1830,7 @@ Item {
         command: ["pgrep", "-x", "hypridle"]
         running: false
         onExited: (exitCode) => {
-            if (!theme._idleOmarchyShellBackend) theme.stayAwake = exitCode !== 0
+            if (!theme._idleOmarchyShellSystem) theme.stayAwake = exitCode !== 0
         }
     }
 
@@ -1756,11 +1839,11 @@ Item {
         command: ["makoctl", "mode"]
         running: false
         onExited: (exitCode) => {
-            if (exitCode !== 0 && !theme._notifOmarchyShellBackend) theme.notifSilenced = false
+            if (exitCode !== 0 && !theme._notifOmarchyShellSystem) theme.notifSilenced = false
         }
         stdout: StdioCollector {
             onStreamFinished: {
-                if (!theme._notifOmarchyShellBackend) theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0
+                if (!theme._notifOmarchyShellSystem) theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0
             }
         }
     }
