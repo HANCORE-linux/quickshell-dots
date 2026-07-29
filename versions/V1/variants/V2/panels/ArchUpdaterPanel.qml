@@ -1603,6 +1603,31 @@ PanelWindow {
                     width: parent.width
                     spacing: 8
 
+                    // Check themes — runs the read-only check script; disabled while scanning
+                    Rectangle {
+                        width: (parent.width - 8) / 2
+                        height: 28; radius: root.panelButtonRadius
+                        color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.fillHover : root.fillIdle
+                        border.color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.seal : root.sep
+                        border.width: 1
+                        opacity: root.themeUpdChecking ? 0.5 : 1.0
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        UiText {
+                            anchors.centerIn: parent
+                            text: root.themeUpdChecking ? "Checking…" : "Check themes"
+                            color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 11
+                        }
+                        MouseArea {
+                            id: checkMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: !root.themeUpdChecking
+                            cursorShape: root.themeUpdChecking ? Qt.ArrowCursor : Qt.PointingHandCursor
+                            onClicked: root.themeCheckTick++
+                        }
+                    }
+
                     // Update clean — applies only clean themes with a saved target
                     // commit; blocked/local-edits stay untouched for review.
                     Rectangle {
@@ -1629,31 +1654,6 @@ PanelWindow {
                             enabled: parent.canApply
                             cursorShape: parent.canApply ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: archPanel.updateAllThemes()
-                        }
-                    }
-
-                    // Check themes — runs the read-only check script; disabled while scanning
-                    Rectangle {
-                        width: (parent.width - 8) / 2
-                        height: 28; radius: root.panelButtonRadius
-                        color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.fillHover : root.fillIdle
-                        border.color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.seal : root.sep
-                        border.width: 1
-                        opacity: root.themeUpdChecking ? 0.5 : 1.0
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                        UiText {
-                            anchors.centerIn: parent
-                            text: root.themeUpdChecking ? "Checking…" : "Check themes"
-                            color: (checkMa.containsMouse && !root.themeUpdChecking) ? root.seal : root.ink
-                            font.family: root.mono; font.pixelSize: 11
-                        }
-                        MouseArea {
-                            id: checkMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: !root.themeUpdChecking
-                            cursorShape: root.themeUpdChecking ? Qt.ArrowCursor : Qt.PointingHandCursor
-                            onClicked: root.themeCheckTick++
                         }
                     }
                 }

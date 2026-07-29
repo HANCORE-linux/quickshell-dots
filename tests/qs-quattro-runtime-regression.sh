@@ -13,8 +13,10 @@ USAGE="$REPO_ROOT/docs/usage.md"
 V1_THEME="$REPO_ROOT/versions/V1/Theme.qml"
 V1_PALETTE="$REPO_ROOT/versions/V1/Palette.js"
 V1_CONTROL_PANEL="$REPO_ROOT/versions/V1/panels/ControlPanel.qml"
+V1_ARCH_UPDATER="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
 V1_MPRIS_WIDGET="$REPO_ROOT/versions/V1/modules/MprisWidget.qml"
 V1_MPRIS_PANEL="$REPO_ROOT/versions/V1/panels/MprisPanel.qml"
+V2_ARCH_UPDATER="$REPO_ROOT/versions/V1/variants/V2/panels/ArchUpdaterPanel.qml"
 V2_MPRIS_WIDGET="$REPO_ROOT/versions/V1/variants/V2/modules/MprisWidget.qml"
 V2_MPRIS_PANEL="$REPO_ROOT/versions/V1/variants/V2/panels/MprisPanel.qml"
 WORK="$(mktemp -d /tmp/qs-quattro-runtime-test.XXXXXX)"
@@ -1027,6 +1029,10 @@ case_static_contracts() {
     "$GETTING_STARTED" "non-interactive prompt docs"
   assert_contains "hypridle cava)" "$INSTALLER" "CAVA optional dependency check"
   assert_contains "real-time CAVA waveform" "$USAGE" "CAVA optional dependency docs"
+  assert_before "// Check themes" "// Update clean" "$V1_ARCH_UPDATER" \
+    "V1 theme check before apply action"
+  assert_before "// Check themes" "// Update clean" "$V2_ARCH_UPDATER" \
+    "V2 theme check before apply action"
 
   # V1's palette and MPRIS presentation are persisted extensions of the legacy
   # cache schema. Guard both ends so a UI-only refactor cannot silently leave a
