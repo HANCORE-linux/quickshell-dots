@@ -9,6 +9,12 @@ Item {
     id: theme
     property var variantHost: null
 
+    // Injected by the Omarchy host (see shell.qml's root Item) so dynamically
+    // installed `kind:"bar-widget"` plugins (theme-manager bar plugin add)
+    // can be rendered inside Rise's own bar, not just the built-in one.
+    property var barWidgetRegistry: null
+    property var barConfig: null
+
     property string omarchyCurrentRoot: Quickshell.env("HOME") + "/.config/omarchy/current"
     property string omarchyInstallRoot: Quickshell.env("HOME") + "/.local/share/omarchy"
     property bool omarchyCurrentRootResolved: false
