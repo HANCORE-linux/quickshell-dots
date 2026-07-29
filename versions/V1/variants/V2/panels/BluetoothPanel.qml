@@ -30,8 +30,29 @@ PanelWindow {
         return n
     }
     property string connCmd: ""
+    readonly property color deviceActionFill: Qt.rgba(
+        root.paper.r * 0.88,
+        root.paper.g * 0.88,
+        root.paper.b * 0.88,
+        1.0)
 
     function refresh() { btData.running = false; btData.running = true }
+
+    function activateDevice(device) {
+        if (!device || connProc.running) return
+        var mac = String(device.mac || "")
+        if (!/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac)) return
+        if (device.connected) {
+            connCmd = "bluetoothctl disconnect " + mac
+        } else if (device.paired) {
+            connCmd = "bluetoothctl connect " + mac
+        } else {
+            connCmd = "bluetoothctl trust " + mac
+                + " && bluetoothctl pair " + mac
+                + " && bluetoothctl connect " + mac
+        }
+        connProc.running = true
+    }
 
     property real reveal: root.bluetoothVisible ? 1 : 0
     Behavior on reveal {
@@ -193,9 +214,9 @@ PanelWindow {
                     delegate: Rectangle {
                         id: devTile
                         required property var modelData
-                        readonly property bool hovered: devMa.containsMouse
+                        readonly property bool hovered: tileHover.containsMouse || actionMa.containsMouse
                         width: col.width
-                        height: 30; radius: root.panelButtonRadius
+                        height: 42; radius: root.panelButtonRadius
                         color: modelData.connected ? root.fillActive
                                : hovered ? root.fillHover : root.fillIdle
                         border.color: modelData.connected ? root.seal
@@ -203,41 +224,58 @@ PanelWindow {
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
-                        UiText {
-                            anchors.left: parent.left; anchors.leftMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - tag.width - 24
-                            text: devTile.modelData.name
-                            color: root.ink; font.family: root.mono; font.pixelSize: 11
-                            elide: Text.ElideRight
+                        MouseArea {
+                            id: tileHover
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
                         }
-                        UiText {
-                            id: tag
+
+                        Column {
+                            anchors.left: parent.left; anchors.leftMargin: 8
+                            anchors.right: actionButton.left; anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 1
+                            UiText {
+                                width: parent.width
+                                text: devTile.modelData.name
+                                color: root.ink; font.family: root.mono; font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            UiText {
+                                width: parent.width
+                                text: devTile.modelData.connected ? "Connected"
+                                      : devTile.modelData.paired ? "Paired" : "Available"
+                                color: root.ink
+                                font.family: root.mono; font.pixelSize: 10; font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Rectangle {
+                            id: actionButton
                             anchors.right: parent.right; anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            text: devTile.modelData.connected ? "Connected"
-                                  : devTile.modelData.paired ? "Paired" : "Connect"
-                            color: devTile.modelData.connected ? root.seal
-                                   : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
-                            font.family: root.mono; font.pixelSize: 9; font.letterSpacing: 0.5
-                        }
-                        MouseArea {
-                            id: devMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                var m = devTile.modelData
-                                if (m.connected) {
-                                    btPanel.connCmd = "bluetoothctl disconnect " + m.mac
-                                } else if (m.paired) {
-                                    btPanel.connCmd = "bluetoothctl connect " + m.mac
-                                } else {
-                                    btPanel.connCmd = "bluetoothctl trust " + m.mac
-                                        + " && bluetoothctl pair " + m.mac
-                                        + " && bluetoothctl connect " + m.mac
-                                }
-                                connProc.running = false; connProc.running = true
+                            width: actionLabel.implicitWidth + 14
+                            height: 24; radius: root.panelButtonRadius
+                            color: btPanel.deviceActionFill
+                            border.color: root.sep
+                            border.width: 1
+                            opacity: connProc.running ? 0.45 : 1
+                            UiText {
+                                id: actionLabel
+                                anchors.centerIn: parent
+                                text: devTile.modelData.connected ? "Disconnect" : "Connect"
+                                color: actionMa.containsMouse ? root.seal : root.ink
+                                font.family: root.mono; font.pixelSize: 10
+                            }
+                            MouseArea {
+                                id: actionMa
+                                anchors.fill: parent
+                                enabled: !connProc.running
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: btPanel.activateDevice(devTile.modelData)
                             }
                         }
                     }

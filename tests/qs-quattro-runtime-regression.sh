@@ -11,12 +11,15 @@ GETTING_STARTED="$REPO_ROOT/docs/getting-started.md"
 MAINTENANCE="$REPO_ROOT/docs/maintenance-and-recovery.md"
 USAGE="$REPO_ROOT/docs/usage.md"
 V1_THEME="$REPO_ROOT/versions/V1/Theme.qml"
+V2_THEME="$REPO_ROOT/versions/V1/variants/V2/Theme.qml"
 V1_PALETTE="$REPO_ROOT/versions/V1/Palette.js"
 V1_CONTROL_PANEL="$REPO_ROOT/versions/V1/panels/ControlPanel.qml"
 V1_ARCH_UPDATER="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
+V1_BLUETOOTH_PANEL="$REPO_ROOT/versions/V1/panels/BluetoothPanel.qml"
 V1_MPRIS_WIDGET="$REPO_ROOT/versions/V1/modules/MprisWidget.qml"
 V1_MPRIS_PANEL="$REPO_ROOT/versions/V1/panels/MprisPanel.qml"
 V2_ARCH_UPDATER="$REPO_ROOT/versions/V1/variants/V2/panels/ArchUpdaterPanel.qml"
+V2_BLUETOOTH_PANEL="$REPO_ROOT/versions/V1/variants/V2/panels/BluetoothPanel.qml"
 V2_MPRIS_WIDGET="$REPO_ROOT/versions/V1/variants/V2/modules/MprisWidget.qml"
 V2_MPRIS_PANEL="$REPO_ROOT/versions/V1/variants/V2/panels/MprisPanel.qml"
 WORK="$(mktemp -d /tmp/qs-quattro-runtime-test.XXXXXX)"
@@ -1006,6 +1009,72 @@ SCRIPT
   assert_file "$root/home/.config/quickshell/bar/.qsrise" "registry failure config preservation"
 }
 
+case_bluetooth_settings_launcher_matrix() {
+  local root="$WORK/bluetooth-settings-launcher" launch_command
+  mkdir -p "$root/bin"
+
+  cat > "$root/bin/omarchy-launch-bluetooth" <<'SCRIPT'
+#!/bin/bash
+printf 'legacy\n' >> "${QSR_BT_LOG:?}"
+SCRIPT
+  cat > "$root/bin/omarchy-launch-or-focus-tui" <<'SCRIPT'
+#!/bin/bash
+printf 'quattro:%s\n' "$*" >> "${QSR_BT_LOG:?}"
+SCRIPT
+  cat > "$root/bin/bluetui" <<'SCRIPT'
+#!/bin/bash
+exit 0
+SCRIPT
+  cat > "$root/bin/bluetoothctl" <<'SCRIPT'
+#!/bin/bash
+exit 0
+SCRIPT
+  cat > "$root/bin/rfkill" <<'SCRIPT'
+#!/bin/bash
+printf 'rfkill:%s\n' "$*" >> "${QSR_BT_LOG:?}"
+SCRIPT
+  cat > "$root/bin/notify-send" <<'SCRIPT'
+#!/bin/bash
+printf 'notify:%s\n' "$*" >> "${QSR_BT_LOG:?}"
+SCRIPT
+  chmod 0755 "$root/bin/"*
+  : > "$root/actions.log"
+  export QSR_BT_LOG="$root/actions.log"
+
+  launch_command="$(sed -n 's/^[[:space:]]*readonly property string launchBtCmd:[[:space:]]*"\(.*\)"$/\1/p' "$V1_THEME")"
+  [[ -n $launch_command ]] || fail "V1 Bluetooth settings launcher is not a single shell command"
+  [[ $launch_command != *\\* ]] \
+    || fail "Bluetooth settings launcher test requires an escape-free QML string"
+  assert_eq "$launch_command" \
+    "$(sed -n 's/^[[:space:]]*readonly property string launchBtCmd:[[:space:]]*"\(.*\)"$/\1/p' "$V2_THEME")" \
+    "V1/V2 Bluetooth settings launcher"
+
+  PATH="$root/bin" /usr/bin/bash -c "$launch_command"
+  assert_eq "legacy" "$(cat "$root/actions.log")" "Omarchy 3.8 Bluetooth launcher"
+
+  : > "$root/actions.log"
+  rm "$root/bin/omarchy-launch-bluetooth"
+  PATH="$root/bin" /usr/bin/bash -c "$launch_command"
+  assert_eq $'rfkill:unblock bluetooth\nquattro:bluetui' \
+    "$(cat "$root/actions.log")" "bluetui fallback"
+
+  : > "$root/actions.log"
+  rm "$root/bin/bluetui"
+  PATH="$root/bin" /usr/bin/bash -c "$launch_command"
+  assert_eq $'rfkill:unblock bluetooth\nquattro:bluetoothctl' \
+    "$(cat "$root/actions.log")" "Omarchy Quattro bluetoothctl fallback"
+
+  : > "$root/actions.log"
+  rm "$root/bin/bluetoothctl"
+  PATH="$root/bin" /usr/bin/bash -c "$launch_command"
+  assert_contains "notify:" "$root/actions.log" "missing Bluetooth settings backend notification"
+
+  : > "$root/actions.log"
+  rm "$root/bin/notify-send"
+  PATH="$root/bin" /usr/bin/bash -c "$launch_command"
+  assert_eq "" "$(cat "$root/actions.log")" "missing Bluetooth backend and notifier"
+}
+
 case_static_contracts() {
   local shared_function
 
@@ -1033,6 +1102,28 @@ case_static_contracts() {
     "V1 theme check before apply action"
   assert_before "// Check themes" "// Update clean" "$V2_ARCH_UPDATER" \
     "V2 theme check before apply action"
+  for bluetooth_panel in "$V1_BLUETOOTH_PANEL" "$V2_BLUETOOTH_PANEL"; do
+    assert_contains 'text: devTile.modelData.connected ? "Connected"' \
+      "$bluetooth_panel" "Bluetooth device status"
+    assert_contains 'font.pixelSize: 10; font.weight: Font.Medium' \
+      "$bluetooth_panel" "Bluetooth device status legibility"
+    assert_contains 'text: devTile.modelData.connected ? "Disconnect" : "Connect"' \
+      "$bluetooth_panel" "explicit Bluetooth device action"
+    assert_contains 'btPanel.activateDevice(devTile.modelData)' \
+      "$bluetooth_panel" "Bluetooth device action wiring"
+    assert_contains 'tileHover.containsMouse || actionMa.containsMouse' \
+      "$bluetooth_panel" "Bluetooth tile hover continuity"
+    assert_contains 'readonly property color deviceActionFill: Qt.rgba(' \
+      "$bluetooth_panel" "opaque Bluetooth action fill"
+    assert_contains 'color: btPanel.deviceActionFill' \
+      "$bluetooth_panel" "consistent Bluetooth action fill"
+    assert_contains 'border.color: root.sep' \
+      "$bluetooth_panel" "consistent Bluetooth action border"
+    assert_contains 'color: actionMa.containsMouse ? root.seal : root.ink' \
+      "$bluetooth_panel" "Bluetooth action text hover"
+    assert_not_contains 'IconMap.icon("link_off")' \
+      "$bluetooth_panel" "obsolete Bluetooth disconnect icon"
+  done
 
   # V1's palette and MPRIS presentation are persisted extensions of the legacy
   # cache schema. Guard both ends so a UI-only refactor cannot silently leave a
@@ -1082,6 +1173,7 @@ case_uninstall_legacy_and_generic
 case_uninstall_removes_lifecycle_controller
 case_uninstall_keeps_ownership_but_removes_lifecycle_state
 case_uninstall_registry_failure_aborts
+case_bluetooth_settings_launcher_matrix
 case_static_contracts
 
 printf 'PASS: Quattro lifecycle, ownership, fail-open, registry, uninstall, legacy, and generic regressions\n'

@@ -1881,9 +1881,10 @@ Item {
 
     // ── wifi/bluetooth settings launchers (Omarchy way, via uwsm-app) ──
     // iwd (Omarchy 3.8.x) → impala/bluetui through omarchy-launch-*; if NetworkManager
-    // is the active backend (Omarchy 4.0) → nmtui instead.
+    // is the active backend (Omarchy 4.0) → nmtui instead. Quattro removed the
+    // dedicated Bluetooth launcher; prefer a retained bluetui, then bluetoothctl.
     readonly property string launchWifiCmd: "if systemctl is-active --quiet NetworkManager 2>/dev/null; then omarchy-launch-or-focus-tui nmtui; else omarchy-launch-wifi; fi"
-    readonly property string launchBtCmd:   "omarchy-launch-bluetooth"
+    readonly property string launchBtCmd:   "if command -v omarchy-launch-bluetooth >/dev/null 2>&1; then exec omarchy-launch-bluetooth; elif command -v omarchy-launch-or-focus-tui >/dev/null 2>&1; then if command -v bluetui >/dev/null 2>&1; then command -v rfkill >/dev/null 2>&1 && rfkill unblock bluetooth >/dev/null 2>&1 || true; exec omarchy-launch-or-focus-tui bluetui; elif command -v bluetoothctl >/dev/null 2>&1; then command -v rfkill >/dev/null 2>&1 && rfkill unblock bluetooth >/dev/null 2>&1 || true; exec omarchy-launch-or-focus-tui bluetoothctl; fi; fi; command -v notify-send >/dev/null 2>&1 && notify-send -a QS-Shell -u critical 'Bluetooth settings unavailable' 'No supported Bluetooth settings backend was found' || true; exit 0"
     property bool modPower:      false   // default off (toggle in ControlPanel)
     property bool modBluetooth:  false   // default off (toggle in ControlPanel)
     property bool modBrightness: true
