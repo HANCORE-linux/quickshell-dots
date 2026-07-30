@@ -195,6 +195,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: mprisPanel.root
+            ownerActive: mprisPanel.root.mprisVisible
             targetX: mprisPanel.root.mprisBarX
             reveal: mprisPanel.reveal
         }

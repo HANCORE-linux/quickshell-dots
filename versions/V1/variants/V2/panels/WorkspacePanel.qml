@@ -42,6 +42,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: wsPanel.root
+            ownerActive: wsPanel.root.workspaceVisible
             targetX: wsPanel.root.workspaceBarX
             reveal: wsPanel.reveal
         }

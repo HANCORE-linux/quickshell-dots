@@ -78,6 +78,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: briPanel.root
+            ownerActive: briPanel.root.brightnessVisible
             targetX: briPanel.root.brightnessBarX
             reveal: briPanel.reveal
         }

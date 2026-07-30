@@ -51,6 +51,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: profilePanel.root
+            ownerActive: profilePanel.root.powerProfileVisible
             targetX: profilePanel.root.powerBarX
             reveal: profilePanel.reveal
         }

@@ -383,6 +383,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: netPanel.root
+            ownerActive: netPanel.root.networkVisible
             targetX: netPanel.root.networkBarX
             reveal: netPanel.reveal
         }

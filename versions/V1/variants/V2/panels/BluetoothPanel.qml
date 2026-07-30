@@ -77,6 +77,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: btPanel.root
+            ownerActive: btPanel.root.bluetoothVisible
             targetX: btPanel.root.bluetoothBarX
             reveal: btPanel.reveal
         }

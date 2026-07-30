@@ -135,6 +135,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: wxPanel.root
+            ownerActive: wxPanel.root.weatherVisible
             targetX: wxPanel.root.weatherBarX
             reveal: wxPanel.reveal
         }

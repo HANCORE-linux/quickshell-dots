@@ -240,6 +240,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: ctrlPanel.root
+            ownerActive: ctrlPanel.root.controlVisible
             targetX: ctrlPanel.root.launcherBarX
             reveal: ctrlPanel.reveal
         }

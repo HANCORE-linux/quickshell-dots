@@ -252,6 +252,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: storagePanel.root
+            ownerActive: storagePanel.root.storageVisible
             targetX: storagePanel.root.storageBarX
             reveal: storagePanel.reveal
         }

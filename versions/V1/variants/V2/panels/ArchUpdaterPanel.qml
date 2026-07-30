@@ -675,6 +675,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: archPanel.root
+            ownerActive: archPanel.root.archVisible
             targetX: archPanel.root.archCaretBarX
             reveal: archPanel.reveal
         }

@@ -92,6 +92,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: cpuPanel.root
+            ownerActive: cpuPanel.root.cpuVisible
             targetX: cpuPanel.root.cpuBarX
             reveal: cpuPanel.reveal
         }

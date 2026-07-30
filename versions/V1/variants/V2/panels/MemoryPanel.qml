@@ -55,6 +55,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: memPanel.root
+            ownerActive: memPanel.root.memVisible
             targetX: memPanel.root.memoryBarX
             reveal: memPanel.reveal
         }

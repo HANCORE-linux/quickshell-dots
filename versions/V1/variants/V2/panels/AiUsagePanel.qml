@@ -198,6 +198,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: aiPanel.root
+            ownerActive: aiPanel.root.aiUsageVisible
             targetX: aiPanel.root.aiBarX
             reveal: aiPanel.reveal
         }

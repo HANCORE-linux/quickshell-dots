@@ -257,6 +257,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: notifPanel.root
+            ownerActive: notifPanel.root.notifVisible
             targetX: notifPanel.root.notifCaretBarX
             reveal: notifPanel.reveal
         }

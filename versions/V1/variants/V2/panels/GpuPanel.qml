@@ -82,6 +82,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: gpuPanel.root
+            ownerActive: gpuPanel.root.gpuVisible
             targetX: gpuPanel.root.gpuBarX
             reveal: gpuPanel.reveal
         }

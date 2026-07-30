@@ -3025,28 +3025,6 @@ Item {
         || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
         || workspaceVisible || notifVisible || powerProfileVisible || storageVisible
         || archVisible || trayVisible
-    readonly property real activePanelCaretX:
-        calendarVisible ? calendarBarX
-        : cpuVisible ? cpuBarX
-        : gpuVisible ? gpuBarX
-        : thermalVisible ? thermalBarX
-        : aiUsageVisible ? aiBarX
-        : memVisible ? memoryBarX
-        : volVisible ? volumeBarX
-        : controlVisible ? launcherBarX
-        : networkVisible ? networkBarX
-        : bluetoothVisible ? bluetoothBarX
-        : batteryVisible ? batteryBarX
-        : brightnessVisible ? brightnessBarX
-        : mprisVisible ? mprisBarX
-        : weatherVisible ? weatherBarX
-        : workspaceVisible ? workspaceBarX
-        : notifVisible ? notifCaretBarX
-        : powerProfileVisible ? powerBarX
-        : storageVisible ? storageBarX
-        : archVisible ? archCaretBarX
-        : trayVisible ? trayCaretBarX
-        : 0
 
     // Preserve the panel surface's actually rendered tip while it closes so
     // the matching bar notch retracts at the same point. Edge panels clamp the
@@ -3054,14 +3032,8 @@ Item {
     // always the final rendered position.
     property real panelInsetX: 0
     property bool panelInsetReady: false
-    function setPanelInsetX(x, sourceTargetX) {
-        // Closing and opening panels animate concurrently during a direct
-        // switch. Accept geometry only from the panel that owns the current
-        // bar anchor; otherwise the closing surface can overwrite the new one.
-        if (!anchoredPanelVisible
-                || !isFinite(sourceTargetX)
-                || Math.abs(sourceTargetX - activePanelCaretX) > 0.5)
-            return
+    function setPanelInsetX(x) {
+        if (!anchoredPanelVisible) return
 
         if (isFinite(x) && x > 0) {
             panelInsetX = x

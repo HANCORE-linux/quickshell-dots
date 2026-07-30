@@ -44,6 +44,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: calPopup.root
+            ownerActive: calPopup.root.calendarVisible
             targetX: calPopup.root.calendarBarX
             reveal: calPopup.reveal
         }

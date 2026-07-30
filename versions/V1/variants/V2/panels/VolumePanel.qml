@@ -164,6 +164,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: volPanel.root
+            ownerActive: volPanel.root.volVisible
             targetX: volPanel.root.volumeBarX
             reveal: volPanel.reveal
         }

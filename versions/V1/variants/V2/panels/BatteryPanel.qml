@@ -63,6 +63,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: batPanel.root
+            ownerActive: batPanel.root.batteryVisible
             targetX: batPanel.root.batteryBarX
             reveal: batPanel.reveal
         }

@@ -62,6 +62,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: trayPanel.root
+            ownerActive: trayPanel.root.trayVisible
             targetX: trayPanel.root.trayCaretBarX
             reveal: trayPanel.reveal
         }

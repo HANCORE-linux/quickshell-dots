@@ -1197,14 +1197,34 @@ case_static_contracts() {
   assert_contains "real-time CAVA waveform" "$USAGE" "CAVA optional dependency docs"
   assert_contains 'property bool panelInsetReady: false' \
     "$V2_THEME" "V2 connected panel geometry readiness"
-  assert_contains 'Math.abs(sourceTargetX - activePanelCaretX) > 0.5' \
-    "$V2_THEME" "V2 stale panel geometry rejection"
-  assert_contains 'root.setPanelInsetX(resolvedTargetX, targetX)' \
+  assert_not_contains 'activePanelCaretX' \
+    "$V2_THEME" "V2 coordinate-based panel ownership"
+  assert_contains 'required property bool ownerActive' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 explicit connected panel ownership"
+  assert_contains 'if (!ownerActive || !root) return' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 inactive panel geometry rejection"
+  assert_contains 'readonly property bool hostGeometryCoversTarget:' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 first-map host geometry guard"
+  assert_contains 'if (reveal <= 0.001 || !hostGeometryCoversTarget)' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 provisional connected panel anchor"
+  assert_contains 'root.setPanelInsetX(targetX)' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 provisional connected panel geometry"
+  assert_contains 'root.setPanelInsetX(resolvedTargetX)' \
     "$V2_CONNECTED_PANEL_SURFACE" "V2 connected panel geometry ownership"
+  assert_contains 'onTargetXChanged: publishResolvedTarget()' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 connected panel style-change retry"
   assert_contains '&& barSlot.root.panelInsetReady' \
     "$V2_BAR_SLOT" "V2 connected border readiness gate"
   assert_not_contains 'bridgeOpen' \
     "$V2_BAR_SLOT" "V2 stale connected border fallback"
+  local connected_panel connected_panel_count=0
+  while IFS= read -r connected_panel; do
+    connected_panel_count=$((connected_panel_count + 1))
+    assert_contains 'ownerActive:' \
+      "$connected_panel" "V2 connected panel owner binding"
+  done < <(grep -Rl --include='*.qml' 'ConnectedPanelSurface {' \
+    "$REPO_ROOT/versions/V1/variants/V2/panels")
+  assert_eq "20" "$connected_panel_count" "V2 connected panel owner coverage"
   for theme_file in "$V1_THEME" "$V2_THEME"; do
     assert_contains 'omarchy-shell idle status' "$theme_file" "live Omarchy idle service probe"
     assert_contains 'omarchy-shell notifications ping' "$theme_file" "live Omarchy notification service probe"

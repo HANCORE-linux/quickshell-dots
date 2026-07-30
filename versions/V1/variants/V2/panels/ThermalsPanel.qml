@@ -138,6 +138,7 @@ PanelWindow {
         PillShadow { theme: root }
         ConnectedPanelSurface {
             root: thermalPanel.root
+            ownerActive: thermalPanel.root.thermalVisible
             targetX: thermalPanel.root.thermalBarX
             reveal: thermalPanel.reveal
         }
