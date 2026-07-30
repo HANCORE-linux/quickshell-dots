@@ -103,11 +103,18 @@ Run picker commands from a terminal:
 barctl="$HOME/.config/quickshell/bin/qs-barctl"
 "$barctl" ipc picker theme
 "$barctl" ipc picker wallpaper
+"$barctl" ipc picker animated      # live Wallpaper Engine wallpapers (optional; needs omarchy-we)
 "$barctl" ipc picker screenshots
 "$barctl" ipc picker videos
 ```
 
 The controller forwards arbitrary targets, functions, and string arguments to the single registered Rise instance. It rejects calls when no instance or more than one matching instance exists.
+
+`picker animated` is a self-disabling integration — it only does anything when the
+optional [`omarchy-we`](https://github.com/dkgamer02ai/omarchy-wallpaper-engine)
+CLI is installed and reports a compatible contract. See
+[Animated (Wallpaper Engine) picker](wallpaper-engine.md) for compatibility, GPU
+implications, and how it works.
 
 ## Route Omarchy keybindings to Rise
 

@@ -87,7 +87,8 @@ PanelWindow {
                 panel.selFilt       = 0
                 panel.reveal        = 0
                 panel.dealT         = 0
-                currentProc.running = false; currentProc.running = true
+                if (panel.isAnimatedMode) root.wallpaperEngine.refresh()
+                else { currentProc.running = false; currentProc.running = true }
             }
         } else {
             panel.imagesLoaded  = false; panel.scanDone = false
@@ -96,19 +97,30 @@ PanelWindow {
             panel.dealT         = 0
         }
     }
+    // Adopt the adapter's validated rows for the "animated" (Wallpaper Engine)
+    // mode, reusing the same applyScan path as the theme/wallpaper scans.
+    function adoptAnimated() {
+        if (!panel.isAnimatedMode || !panel.active || !root.imagePickerVisible) return
+        panel.currentImage = root.wallpaperEngine.currentId
+        panel.applyScan(root.wallpaperEngine.rowsText, false)
+    }
     Connections {
         target: root
         function onImagePickerVisibleChanged() { panel.syncOpen() }
+        function onImagePickerModeChanged()     { panel.syncOpen() }
         function onPickerStyleChanged()         { panel.syncOpen() }
+    }
+    Connections {
+        target: root.wallpaperEngine
+        enabled: panel.isAnimatedMode
+        function onReady() { panel.adoptAnimated() }
     }
     Component.onCompleted: panel.syncOpen()
 
     // step 1: current image
     Process {
         id: currentProc
-        command: panel.isAnimatedMode
-            ? ["bash", "-c", "omarchy-we ipc current 2>/dev/null | sed -n 's/.*\"id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p'"]
-            : panel.isThemeMode
+        command: panel.isThemeMode
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
                "name=$(cat " + panel.shq(root.themeNamePath) + " 2>/dev/null || true); " +
@@ -138,7 +150,7 @@ PanelWindow {
     }
 
     // scan-result cache → instant (re)open (shared cache file with the other theme styles)
-    readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isAnimatedMode ? "animated" : isThemeMode ? "theme" : "wallpaper")
+    readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isThemeMode ? "theme" : "wallpaper")
     property string _lastScan: ""
     function scanHasOriginalThumbs(text) {
         var rows = String(text || "").split("\n")
@@ -177,10 +189,6 @@ PanelWindow {
     }
 
     function buildScanCmd() {
-        if (isAnimatedMode) {
-            // Rows are "id \t preview \t (dir empty) \t label" from omarchy-we.
-            return ["bash", "-c", "omarchy-we ipc entries 2>/dev/null | python3 -c \"import json,sys; arr=json.load(sys.stdin); [print('%s\\t%s\\t\\t%s' % (e.get('id',''), e.get('preview',''), (e.get('title') or e.get('id') or '') + ((' ('+e['type']+')') if e.get('type') else ''))) for e in arr if e.get('preview')]\" 2>/dev/null"]
-        }
         if (isThemeMode) {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
@@ -223,13 +231,14 @@ PanelWindow {
         if (selFilt < 0 || selFilt >= filtered.length) return
         var path = filtered[selFilt].filePath; if (!path) return
         if (isAnimatedMode) {
-            applyBgProc.command = ["omarchy-we", "ipc", "set", path]
-            applyBgProc.running = false; applyBgProc.running = true
+            root.wallpaperEngine.apply(path)
         } else if (isThemeMode) {
+            if (root.wallpaperEngine.available) root.wallpaperEngine.stopRenderer()
             var name = Model.nameForPath(path)
             applyThemeProc.command = ["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]
             applyThemeProc.running = false; applyThemeProc.running = true
         } else {
+            if (root.wallpaperEngine.available) root.wallpaperEngine.stopRenderer()
             applyBgProc.command = ["bash", "-c", "omarchy-theme-bg-set '" + path.replace(/'/g, "'\\''") + "'"]
             applyBgProc.running = false; applyBgProc.running = true
         }
@@ -460,7 +469,9 @@ PanelWindow {
         anchors.centerIn: parent
         horizontalAlignment: Text.AlignHCenter
         text: panel.scanDone
-              ? (panel.isAnimatedMode ? "No live wallpapers found" : panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
+              ? (panel.isAnimatedMode
+                    ? (root.wallpaperEngine.errorText !== "" ? root.wallpaperEngine.errorText : "No live wallpapers found")
+                    : panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
               : "Loading…"
         color: panel.textLight
         font.family: root.mono; font.pixelSize: 16; font.letterSpacing: 1

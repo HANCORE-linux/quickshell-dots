@@ -84,6 +84,7 @@ Each guide covers one task and links back to this page.
 | [Maintenance and recovery](docs/maintenance-and-recovery.md) | Lifecycle, updates, logs, compatibility, and recovery |
 | [Development](docs/development.md) | Repository startup, tests, linting, and releases |
 | [Architecture](docs/architecture.md) | Variants, controller, state, IPC, and project layout |
+| [Animated wallpaper picker](docs/wallpaper-engine.md) | Optional live Wallpaper Engine picker: compatibility, GPU, invocation |
 
 ## Credits
 

@@ -10,6 +10,11 @@ Item {
     property var variantHost: null
     signal reactorTest(string kind, string arg)
 
+    // Wallpaper Engine "animated" picker integration — one adapter shared by all
+    // picker styles (capability probe, entries fetch, apply, renderer teardown).
+    WallpaperEngineAdapter { id: wallpaperEngineAdapter }
+    readonly property alias wallpaperEngine: wallpaperEngineAdapter
+
     property string omarchyCurrentRoot: Quickshell.env("HOME") + "/.config/omarchy/current"
     property string omarchyInstallRoot: Quickshell.env("HOME") + "/.local/share/omarchy"
     property bool omarchyCurrentRootResolved: false
@@ -2487,7 +2492,12 @@ Item {
     }
 
     function ipcOpenPicker(mode) {
-        if (mode === "theme" || mode === "wallpaper" || mode === "animated") openImagePicker(mode)
+        if (mode === "animated") {
+            // Capability guard: no-op when omarchy-we is known to be absent or
+            // incompatible (Omarchy 3.8 / generic Hyprland without the tool).
+            if (theme.wallpaperEngine.checked && !theme.wallpaperEngine.available) return
+            openImagePicker(mode)
+        } else if (mode === "theme" || mode === "wallpaper") openImagePicker(mode)
         else if (mode === "screenshots" || mode === "videos") openMediaBrowser(mode)
     }
 
