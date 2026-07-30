@@ -594,19 +594,14 @@ PanelWindow {
             id: edgeBorder
             readonly property bool popupScreenActive:
                 barSlot.root.isActivePopupScreenName(barSlot.screen ? barSlot.screen.name : "")
-            readonly property bool bridgeOpen: barSlot.root.anchoredPanelVisible
-                && popupScreenActive
-                && barSlot.root.activePanelCaretX > 0
             readonly property real curvedInsetReveal: popupScreenActive
                 ? barSlot.root.panelInsetReveal
                 : 0
             readonly property real curvedInsetAnchor: barSlot.root.panelInsetX
             readonly property bool curvedInsetRendering: popupScreenActive
+                && barSlot.root.panelInsetReady
                 && curvedInsetAnchor > 0
                 && (barSlot.root.anchoredPanelVisible || curvedInsetReveal > 0.001)
-            readonly property real bridgeX: Math.max(0, Math.min(width,
-                barSlot.root.activePanelCaretX - continuousBarSurface.x))
-            readonly property int bridgePixel: Math.round(bridgeX)
             readonly property real curvedInsetX: Math.max(0, Math.min(width,
                 curvedInsetAnchor - continuousBarSurface.x))
             readonly property int curvedInsetPixel: Math.round(curvedInsetX)
@@ -2099,19 +2094,15 @@ PanelWindow {
             y: barSlot.root.barPosition === "bottom" ? 0 : foregroundEdgeBorder.height - 1
             width: edgeBorder.curvedInsetRendering
                 ? Math.max(0, edgeBorder.curvedInsetPixel - 12 - x)
-                : edgeBorder.bridgeOpen
-                    ? Math.max(0, edgeBorder.bridgePixel - 7 - x)
-                    : Math.max(0, parent.width - edgeBorder.endInset - x)
+                : Math.max(0, parent.width - edgeBorder.endInset - x)
             height: 1
             color: barSlot.root.v2BarBorder
         }
 
         Rectangle {
-            visible: edgeBorder.bridgeOpen || edgeBorder.curvedInsetRendering
+            visible: edgeBorder.curvedInsetRendering
             x: Math.max(edgeBorder.endInset, Math.min(parent.width - edgeBorder.endInset,
-                edgeBorder.curvedInsetRendering
-                    ? edgeBorder.curvedInsetPixel + 12
-                    : edgeBorder.bridgePixel + 7))
+                edgeBorder.curvedInsetPixel + 12))
             y: barSlot.root.barPosition === "bottom" ? 0 : foregroundEdgeBorder.height - 1
             width: Math.max(0, parent.width - edgeBorder.endInset - x)
             height: 1

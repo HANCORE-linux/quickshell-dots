@@ -12,6 +12,8 @@ MAINTENANCE="$REPO_ROOT/docs/maintenance-and-recovery.md"
 USAGE="$REPO_ROOT/docs/usage.md"
 V1_THEME="$REPO_ROOT/versions/V1/Theme.qml"
 V2_THEME="$REPO_ROOT/versions/V1/variants/V2/Theme.qml"
+V2_BAR_SLOT="$REPO_ROOT/versions/V1/variants/V2/BarSlot.qml"
+V2_CONNECTED_PANEL_SURFACE="$REPO_ROOT/versions/V1/variants/V2/modules/ConnectedPanelSurface.qml"
 V1_PALETTE="$REPO_ROOT/versions/V1/Palette.js"
 V1_CONTROL_PANEL="$REPO_ROOT/versions/V1/panels/ControlPanel.qml"
 V1_ARCH_UPDATER="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
@@ -1193,6 +1195,16 @@ case_static_contracts() {
     "$GETTING_STARTED" "non-interactive prompt docs"
   assert_contains "hypridle cava)" "$INSTALLER" "CAVA optional dependency check"
   assert_contains "real-time CAVA waveform" "$USAGE" "CAVA optional dependency docs"
+  assert_contains 'property bool panelInsetReady: false' \
+    "$V2_THEME" "V2 connected panel geometry readiness"
+  assert_contains 'Math.abs(sourceTargetX - activePanelCaretX) > 0.5' \
+    "$V2_THEME" "V2 stale panel geometry rejection"
+  assert_contains 'root.setPanelInsetX(resolvedTargetX, targetX)' \
+    "$V2_CONNECTED_PANEL_SURFACE" "V2 connected panel geometry ownership"
+  assert_contains '&& barSlot.root.panelInsetReady' \
+    "$V2_BAR_SLOT" "V2 connected border readiness gate"
+  assert_not_contains 'bridgeOpen' \
+    "$V2_BAR_SLOT" "V2 stale connected border fallback"
   for theme_file in "$V1_THEME" "$V2_THEME"; do
     assert_contains 'omarchy-shell idle status' "$theme_file" "live Omarchy idle service probe"
     assert_contains 'omarchy-shell notifications ping' "$theme_file" "live Omarchy notification service probe"

@@ -410,8 +410,20 @@ Item {
         _closingPopups = false
     }
 
+    function popupUsesConnectedInset(prop) {
+        return prop !== "imagePickerVisible"
+            && prop !== "mediaBrowserVisible"
+            && prop !== "trayMenuVisible"
+    }
+
     function popupOpened(prop) {
-        if (!_closingPopups && theme[prop]) closePopups(prop)
+        if (!_closingPopups && theme[prop]) {
+            // The new panel surface publishes its clamped caret position on the
+            // first reveal tick. Invalidate the previous panel's cached position
+            // now so the bar cannot render one frame at that stale anchor.
+            if (popupUsesConnectedInset(prop)) panelInsetReady = false
+            closePopups(prop)
+        }
     }
 
     function openImagePicker(mode, screen) {
@@ -3041,10 +3053,26 @@ Item {
     // tip away from their rounded corner, so the raw widget center is not
     // always the final rendered position.
     property real panelInsetX: 0
-    function setPanelInsetX(x) {
-        if (isFinite(x) && x > 0) panelInsetX = x
+    property bool panelInsetReady: false
+    function setPanelInsetX(x, sourceTargetX) {
+        // Closing and opening panels animate concurrently during a direct
+        // switch. Accept geometry only from the panel that owns the current
+        // bar anchor; otherwise the closing surface can overwrite the new one.
+        if (!anchoredPanelVisible
+                || !isFinite(sourceTargetX)
+                || Math.abs(sourceTargetX - activePanelCaretX) > 0.5)
+            return
+
+        if (isFinite(x) && x > 0) {
+            panelInsetX = x
+            panelInsetReady = true
+        }
     }
     property real panelInsetReveal: anchoredPanelVisible ? 1 : 0
+    onPanelInsetRevealChanged: {
+        if (!anchoredPanelVisible && panelInsetReveal <= 0.001)
+            panelInsetReady = false
+    }
     Behavior on panelInsetReveal {
         NumberAnimation {
             duration: theme.anchoredPanelVisible ? 160 : 120

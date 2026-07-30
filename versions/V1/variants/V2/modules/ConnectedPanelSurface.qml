@@ -10,7 +10,7 @@ AiPanelSurface {
 
     function publishResolvedTarget() {
         if (reveal > 0.001 && root && resolvedTargetX > 0)
-            root.setPanelInsetX(resolvedTargetX)
+            root.setPanelInsetX(resolvedTargetX, targetX)
     }
 
     onResolvedTargetXChanged: publishResolvedTarget()
