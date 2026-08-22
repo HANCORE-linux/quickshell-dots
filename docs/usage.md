@@ -44,6 +44,12 @@ $HOME/.config/quickshell/bin/qs-barctl switch-wait v2
 
 The shared host closes variant panels, destroys the old interface, loads the target, and waits for `ready=true`. It stores the new choice only after the target remains ready.
 
+## Use localized date and weather text
+
+Clock tooltips, calendar month/day labels, and weather-panel controls follow the process locale. Rise checks `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Italian locales use the included Italian strings and `it_IT` date formatting; other locales currently fall back to English and `en_US`.
+
+The shared helper lives at `versions/V1/i18n/Translation.qml`, so additional languages can extend one stable translation table without duplicating locale logic in V1 and V2.
+
 ## Choose workspace and bar styles
 
 Workspace count and visual style are independent settings. Both variants support 10, 5, and active-only workspace modes.

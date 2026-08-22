@@ -1,10 +1,13 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../../../i18n"
 
 Item {
     id: rootMod
     required property var root
+
+    Translation { id: i18n }
 
     property date now: new Date()
     readonly property color contentColor: root.widgetContentColor("G8", root.ink)
@@ -19,11 +22,8 @@ Item {
         return pad(now.getHours()) + ":" + pad(now.getMinutes())
     }
 
-    readonly property var months: ["January","February","March","April","May","June",
-                                    "July","August","September","October","November","December"]
-    readonly property var days: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-
-    readonly property string tooltipText: days[now.getDay()] + ", " + now.getDate() + " " + months[now.getMonth()] + " " + now.getFullYear()
+    readonly property string tooltipText:
+        now.toLocaleString(Qt.locale(i18n.localeName), "ddd, d MMMM yyyy")
 
     implicitWidth: label.implicitWidth
     implicitHeight: 28

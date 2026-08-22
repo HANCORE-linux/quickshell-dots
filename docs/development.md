@@ -28,7 +28,7 @@ Use the same literal configuration path for startup, logs, IPC, and process sele
 
 ## Run the regression suites
 
-The six shell suites use isolated fixtures for lifecycle, installer, updater, theme, package, and AI usage behavior.
+The seven shell suites use isolated fixtures for lifecycle, installer, updater, theme, package, AI usage, and localization behavior.
 
 Run them from the repository root:
 
@@ -36,6 +36,7 @@ Run them from the repository root:
 ./tests/qs-arch-update-regression.sh
 ./tests/qs-barctl-regression.sh
 ./tests/qs-codex-usage-regression.sh
+./tests/qs-i18n-regression.sh
 ./tests/qs-quattro-runtime-regression.sh
 ./tests/qs-shell-update-regression.sh
 ./tests/qs-theme-update-regression.sh
@@ -112,7 +113,7 @@ The shell updater compares the installed commit with the repository’s `main` b
 Before updating `main`:
 
 1. Group code and documentation into reviewable commits
-2. Run all six regression suites
+2. Run all seven regression suites
 3. Run shell syntax, ShellCheck, QML, and whitespace checks
 4. Test V1 and V2 through the installed controller
 5. Confirm installer, updater, hooks, and controller come from the same commit
