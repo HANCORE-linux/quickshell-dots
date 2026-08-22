@@ -606,6 +606,7 @@ PanelWindow {
                     MouseArea {
                         id: mkMa
                         anchors.fill: parent
+                        enabled: barSlot.root.barUnlocked
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: if (toggleGap) toggleGap(slot.index)
@@ -976,6 +977,7 @@ PanelWindow {
             MouseArea {
                 id: bMa
                 anchors.fill: parent
+                enabled: barSlot.root.barUnlocked
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: if (bm.toggleFn) bm.toggleFn()

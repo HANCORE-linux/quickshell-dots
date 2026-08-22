@@ -1745,6 +1745,7 @@ PanelWindow {
                     MouseArea {
                         id: sepMa
                         anchors.fill: parent
+                        enabled: barSlot.root.barUnlocked
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: barSlot.root.toggleSep(slot.gid)
