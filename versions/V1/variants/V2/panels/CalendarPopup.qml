@@ -1,11 +1,20 @@
 import QtQuick
 import "../modules"
+import "../../../i18n"
 import Quickshell
 import Quickshell.Wayland
 
 PanelWindow {
     id: calPopup
     required property var root
+
+    Translation { id: i18n }
+
+    function monthTitle() {
+        var now = new Date()
+        var month = now.getMonth() + root.calendarMonthOffset
+        return i18n.monthName(now.getFullYear(), month) + "  " + root.calendarYear
+    }
 
     screen: root.activePopupScreen
 
@@ -100,7 +109,7 @@ PanelWindow {
                 // month + year — click to jump back to today
                 UiText {
                     anchors.centerIn: parent
-                    text: root.calendarMonthName + "  " + root.calendarYear
+                    text: calPopup.monthTitle()
                     color: monthMa.containsMouse && root.calendarMonthOffset !== 0 ? root.seal : root.ink
                     font.family: root.mono
                     font.pixelSize: 12
@@ -143,7 +152,11 @@ PanelWindow {
             Row {
                 width: parent.width
                 Repeater {
-                    model: ["MO","TU","WE","TH","FR","SA","SU"]
+                    model: [
+                        i18n.weekdayShort(1), i18n.weekdayShort(2), i18n.weekdayShort(3),
+                        i18n.weekdayShort(4), i18n.weekdayShort(5), i18n.weekdayShort(6),
+                        i18n.weekdayShort(0)
+                    ]
                     delegate: Item {
                         required property string modelData
                         required property int index
